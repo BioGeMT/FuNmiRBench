@@ -1,0 +1,18 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual envs / env configs
+.venv/
+.env/
+
+# Conda / local tools (never commit these)
+miniconda3/
+
+# VS Code / editor settings (optional)
+.vscode/
+
+# Data directories (we do NOT store GEO data in the repo)
+data/processed_GEO/
+data/raw_GEO/
+
