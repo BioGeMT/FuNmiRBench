@@ -17,3 +17,16 @@ Each file in `data/processed_GEO/`:
 
 ```text
 gene_name    logFC    logCPM    F    PValue    FDR
+```
+(The first column contains Ensembl gene IDs)
+
+The filenames must match the paths specified in metadata/datasets.json, e.g.:
+```json
+{
+  "id": "001",
+  "data_path": "data/processed_GEO/GSE210778_edger_out_oe_hsa_miR_375_3p_oe.tsv",
+  "miRNA": "hsa-miR-375-3p",
+  "perturbation": "overexpression",
+  ...
+}
+```
