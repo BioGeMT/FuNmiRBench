@@ -33,6 +33,7 @@ Make the code discoverable:
 export PYTHONPATH="$PWD/src:$PYTHONPATH"
 ```
 📂 Project structure
+```
 FuNmiRBench/
 ├── data/
 │   ├── processed_GEO/   # GEO DE tables (NOT stored in git; see data/README.md)
@@ -53,7 +54,7 @@ FuNmiRBench/
 │       └── evaluation/          # placeholder for metrics & plots
 │
 └── tests/                       # tests (planned)
-
+```
 📊 Using the dataset API
 
 Basic loading:
