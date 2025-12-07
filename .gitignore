@@ -13,6 +13,6 @@ miniconda3/
 .vscode/
 
 # Data directories (we do NOT store GEO data in the repo)
-data/processed_GEO/
-data/raw_GEO/
+data/processed_GEO/*
+data/raw_GEO/*
 
