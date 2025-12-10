@@ -10,7 +10,7 @@ FuNmiRBench provides:
   - load differential expression tables (edgeR outputs) into pandas  
   - summarize the available datasets
 - A foundation for baseline models and future dashboards (visualization & evaluation)
-
+........
 ---
 
 ## 🔧 Installation (development setup)
@@ -36,24 +36,38 @@ export PYTHONPATH="$PWD/src:$PYTHONPATH"
 ```
 FuNmiRBench/
 ├── data/
-│   ├── processed_GEO/   # GEO DE tables (NOT stored in git; see data/README.md)
-│   └── raw_GEO/         # optional raw inputs (also NOT stored in git)
+│   ├── processed_GEO/           # DE tables (not in git)
+│   ├── raw_GEO/                 # raw / counts / etc (not in git)
+│   └── predictions/             # precomputed tool scores (not in git)
+│       └── tool_name.tsv        # e.g. targetscan.tsv
 │
 ├── metadata/
-│   ├── datasets.json            # metadata for all experiments 
-│   └── mirna_experiment_info.tsv  # curated table describing each experiment (Taken by Zenobo)
+│   ├── datasets_core.json       # curated DIANA/Zenodo datasets
+│   ├── datasets_user.json       # user-registered datasets (optional)
+│   ├── datasets.json            # combined view (core + user) - auto-built
+│   ├── mirna_experiment_info.tsv
+│   └── predictions.json         # metadata about prediction files
+│
+├── pipelines/
+│   └── geo/
+│       ├── README.md            # how the GEO -> DE pipeline works
+│       ├── env.yml / env.R      # environment spec
+│       ├── run_pipeline.sh      # entry point script
 │
 ├── scripts/
-│   └── build_index.py           # script to generate metadata/datasets.json
+│   ├── build_index.py           # builds metadata/datasets*.json
+│   └── build_predictions_index.py  # builds metadata/predictions.json (future)
 │
 ├── src/
 │   └── funmirbench/
 │       ├── __init__.py
-│       ├── datasets.py          # main dataset API
-│       ├── models/              # placeholder for baseline models
-│       └── evaluation/          # placeholder for metrics & plots
+│       ├── datasets.py          # everything about DE tables & metadata
+│       ├── predictions.py       # everything about prediction tool scores
+│       ├── models/              # baseline models (seed, alignment, etc.)
+│       └── evaluation/          # correlation, PR curves, plots
 │
-└── tests/                       # tests (planned)
+└── tests/
+    └── test_datasets.py, test_predictions.py, ...
 ```
 📊 Using the dataset API
 
