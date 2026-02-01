@@ -1,10 +1,10 @@
 # FuNmiRBench
 
-Benchmarking framework for **functional miRNA target prediction**.
+Benchmarking framework for **functional microRNA target prediction**.
 
 FuNmiRBench provides:
 
-- Standardized metadata for >50 GEO functional miRNA perturbation datasets  
+- Standardized metadata for >50 GEO functional miRNA perturbation datasets  (maybe even more)
 - A unified Python API to:
   - list and filter experiments by miRNA, cell line, perturbation type, tissue, GEO accession  
   - load differential expression tables (edgeR outputs) into pandas  
@@ -39,7 +39,7 @@ FuNmiRBench/
 │   ├── processed_GEO/           # DE tables (not in git)
 │   ├── raw_GEO/                 # raw / counts / etc (not in git)
 │   └── predictions/             # precomputed tool scores (not in git)
-│       └── tool_name.tsv        # e.g. targetscan.tsv
+│       └── tool_name.tsv        # e.g. targetscan.tsv (not defined yet the structure)
 │
 ├── metadata/
 │   ├── datasets_core.json       # curated DIANA/Zenodo datasets
