@@ -17,3 +17,6 @@ miniconda3/
 data/processed_GEO/*
 data/raw_GEO/*
 
+# testing
+data/predictions/mock/canonical/mock.tsv
+
