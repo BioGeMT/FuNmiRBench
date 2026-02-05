@@ -1,0 +1,12 @@
+[
+  {
+    "tool_id": "mock",
+    "display_name": "Mock predictor",
+    "organism": "Homo sapiens",
+    "score_direction": "higher_is_stronger",
+    "score_range": "0-1",
+    "input_id_type": "ensembl_gene",
+    "canonical_id_type": "ensembl_gene",
+    "canonical_tsv_path": "data/predictions/mock/canonical/mock.tsv"
+  }
+]

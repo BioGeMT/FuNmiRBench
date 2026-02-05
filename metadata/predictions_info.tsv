@@ -1,0 +1,2 @@
+tool_id	display_name	organism	score_direction	score_range	input_id_type	canonical_id_type	canonical_tsv_path
+mock	Mock predictor	Homo sapiens	higher_is_stronger	0-1	ensembl_gene	ensembl_gene	data/predictions/mock/canonical/mock.tsv
