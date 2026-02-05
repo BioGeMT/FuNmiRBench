@@ -44,8 +44,8 @@ FuNmiRBench/
 ├── metadata/
 │   ├── datasets_core.json       # curated DIANA/Zenodo datasets
 │   ├── datasets_user.json       # user-registered datasets (optional)
-│   ├── datasets.json            # combined view (core + user) - auto-built
-│   ├── mirna_experiment_info.tsv
+│   ├── datasets.json            # generated dataset index (built from TSV)
+│   ├── mirna_experiment_info.tsv  # curated input table (one row per dataset)
 │   └── predictions.json         # metadata about prediction files
 │
 ├── pipelines/
@@ -69,6 +69,15 @@ FuNmiRBench/
 └── tests/
     └── test_datasets.py, test_predictions.py, ...
 ```
+
+To regenerate `metadata/datasets.json` from the curated TSV:
+
+```bash
+python scripts/build_index.py
+```
+
+### !!! Planned additions (not yet in the repo): user-registered datasets, prediction indices, and additional ingestion pipelines.
+
 📊 Using the dataset API
 
 Basic loading:
