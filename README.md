@@ -4,9 +4,9 @@ Benchmarking framework for **functional microRNA target prediction**.
 
 FuNmiRBench provides:
 
-- Standardized metadata for >50 GEO functional miRNA perturbation datasets  (maybe even more)
+- Standardized metadata for >50 functional miRNA perturbation RNA-seq datasets (currently sourced from GEO)
 - A unified Python API to:
-  - list and filter experiments by miRNA, cell line, perturbation type, tissue, GEO accession  
+  - list and filter datasets by miRNA, cell line, perturbation type, tissue, and GEO accession
   - load differential expression tables (edgeR outputs) into pandas  
   - summarize the available datasets
 - A foundation for baseline models and future dashboards (visualization & evaluation)
@@ -42,11 +42,9 @@ FuNmiRBench/
 │       └── tool_name.tsv        # e.g. targetscan.tsv (not defined yet the structure)
 │
 ├── metadata/
-│   ├── datasets_core.json       # curated DIANA/Zenodo datasets
-│   ├── datasets_user.json       # user-registered datasets (optional)
-│   ├── datasets.json            # combined view (core + user) - auto-built
-│   ├── mirna_experiment_info.tsv
-│   └── predictions.json         # metadata about prediction files
+│   ├── README.md                 # explains metadata inputs/outputs
+│   ├── mirna_experiment_info.tsv # curated input table (one row per dataset)
+│   └── datasets.json             # generated dataset index (built from TSV)
 │
 ├── pipelines/
 │   └── geo/
@@ -69,6 +67,15 @@ FuNmiRBench/
 └── tests/
     └── test_datasets.py, test_predictions.py, ...
 ```
+
+To regenerate `metadata/datasets.json` from the curated TSV:
+
+```bash
+python scripts/build_index.py
+```
+
+### !!! Planned additions (not yet in the repo): user-registered datasets, prediction indices, and additional ingestion pipelines.
+
 📊 Using the dataset API
 
 Basic loading:
