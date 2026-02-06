@@ -9,7 +9,7 @@ This module:
 """
 
 from __future__ import annotations
-
+import os
 import json
 import pathlib
 from dataclasses import dataclass
@@ -17,8 +17,33 @@ from typing import List, Optional, Dict, Any
 
 
 # Project root (FuNmiRBench/)
-ROOT = pathlib.Path(__file__).resolve().parents[2]
-DATASETS_JSON = ROOT / "metadata" / "datasets.json"
+# Defaults (can be overridden via function args or env vars)
+DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[2]
+DEFAULT_DATASETS_JSON = DEFAULT_ROOT / "metadata" / "datasets.json"
+
+
+def get_root(root: Optional[pathlib.Path] = None) -> pathlib.Path:
+    """Resolve project root, allowing override via arg or FUNMIRBENCH_ROOT."""
+    if root is not None:
+        return root
+    env_root = os.getenv("FUNMIRBENCH_ROOT")
+    if env_root:
+        return pathlib.Path(env_root).expanduser().resolve()
+    return DEFAULT_ROOT
+
+
+def get_datasets_json(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> pathlib.Path:
+    """Resolve datasets.json path, allowing override via arg or FUNMIRBENCH_DATASETS_JSON."""
+    if datasets_json is not None:
+        return datasets_json
+    env_path = os.getenv("FUNMIRBENCH_DATASETS_JSON")
+    if env_path:
+        return pathlib.Path(env_path).expanduser().resolve()
+    return get_root(root) / "metadata" / "datasets.json"
 
 
 @dataclass
@@ -38,34 +63,44 @@ class DatasetMeta:
     pubmed_id: Optional[str]
     gse_url: Optional[str]
     data_path: str
+    root: pathlib.Path = DEFAULT_ROOT  # resolved root for this dataset
 
     @property
     def full_path(self) -> pathlib.Path:
         """Absolute path to the TSV file on disk."""
-        return ROOT / self.data_path
+        return self.root / self.data_path
 
-
-def _load_raw_metadata() -> List[Dict[str, Any]]:
+def _load_raw_metadata(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> List[Dict[str, Any]]:
     """Load raw JSON objects from metadata/datasets.json."""
-    if not DATASETS_JSON.exists():
-        raise FileNotFoundError(f"Metadata file not found: {DATASETS_JSON}")
+    path = get_datasets_json(root=root, datasets_json=datasets_json)
+    if not path.exists():
+        raise FileNotFoundError(f"Metadata file not found: {path}")
 
-    with DATASETS_JSON.open("r", encoding="utf-8") as f:
+    with path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
     if not isinstance(data, list):
-        raise ValueError(f"Expected a list in {DATASETS_JSON}, got {type(data)}")
+        raise ValueError(f"Expected a list in {path}, got {type(data)}")
 
     return data
 
 
-def load_metadata() -> List[DatasetMeta]:
+def load_metadata(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> List[DatasetMeta]:
     """
     Return a list of DatasetMeta objects for all experiments.
 
     This is the main entry point to inspect available datasets.
     """
-    raw = _load_raw_metadata()
+    resolved_root = get_root(root)
+    raw = _load_raw_metadata(root=resolved_root, datasets_json=datasets_json)
     metas: List[DatasetMeta] = []
 
     for entry in raw:
@@ -84,6 +119,7 @@ def load_metadata() -> List[DatasetMeta]:
                 pubmed_id=entry.get("pubmed_id"),
                 gse_url=entry.get("gse_url"),
                 data_path=entry["data_path"],
+                root=resolved_root,
             )
         )
 
@@ -106,6 +142,8 @@ def list_datasets(
     perturbation: Optional[str] = None,
     tissue: Optional[str] = None,
     geo_accession: Optional[str] = None,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
 ) -> List[DatasetMeta]:
     """
     Return a list of DatasetMeta filtered by the given criteria.
@@ -115,7 +153,7 @@ def list_datasets(
     - list_datasets(perturbation="overexpression")
     - list_datasets(miRNA="hsa-miR-124-3p", cell_line="HeLa")
     """
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     results: List[DatasetMeta] = []
 
     for m in metas:
@@ -134,15 +172,26 @@ def list_datasets(
     return results
 
 
-def get_dataset(id: str) -> Optional[DatasetMeta]:
+def get_dataset(
+    id: str,
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> Optional[DatasetMeta]:
     """Return the DatasetMeta with the given ID, or None if not found."""
-    for m in load_metadata():
+    for m in load_metadata(root=root, datasets_json=datasets_json):
         if m.id == id:
             return m
     return None
 
 
-def load_dataset(id: str, *, sep: str = "\t"):
+def load_dataset(
+    id: str,
+    *,
+    sep: str = "\t",
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+):
     """
     Load a single dataset's TSV as a pandas DataFrame.
 
@@ -157,7 +206,7 @@ def load_dataset(id: str, *, sep: str = "\t"):
     -------
     pandas.DataFrame
     """
-    meta = get_dataset(id)
+    meta = get_dataset(id, root=root, datasets_json=datasets_json)
     if meta is None:
         raise ValueError(f"No dataset with id {id!r}")
 
@@ -184,6 +233,8 @@ def load_all_datasets(
     tissue: Optional[str] = None,
     geo_accession: Optional[str] = None,
     sep: str = "\t",
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
 ):
     """
     Load and concatenate multiple datasets into a single DataFrame.
@@ -205,6 +256,8 @@ def load_all_datasets(
         perturbation=perturbation,
         tissue=tissue,
         geo_accession=geo_accession,
+        root=root,
+        datasets_json=datasets_json
     )
 
     frames = []
@@ -325,9 +378,13 @@ def group_by_geo() -> Dict[str, List[DatasetMeta]]:
     return grouped
 
 
-def list_ids() -> List[str]:
-    """Return a sorted list of all dataset IDs."""
-    metas = load_metadata()
+def list_ids(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> List[str]:
+    # return a short list of dataset ids.
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     return sorted(m.id for m in metas)
 
 
@@ -335,7 +392,11 @@ def list_datasets_by_cell_line(cell_line: str) -> List[DatasetMeta]:
     """Return all datasets associated with a specific cell line."""
     return list_datasets(cell_line=cell_line)
 
-def summarize_datasets() -> List[Dict[str, Any]]:
+def summarize_datasets(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> List[Dict[str, Any]]:
     """
     Return a list of lightweight summaries, one per dataset.
 
@@ -348,7 +409,7 @@ def summarize_datasets() -> List[Dict[str, Any]]:
     - geo_accession
     - pubmed_id
     """
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     summaries: List[Dict[str, Any]] = []
 
     for m in metas:
