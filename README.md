@@ -125,3 +125,62 @@ datasets.summarize_mirnas()
 
 summaries = datasets.summarize_datasets()
 ```
+
+📥 End-to-end workflow (experiments → predictions)
+
+Here’s a clean, minimal block you can paste almost verbatim:
+
+## 🚀 End-to-end workflow (experiments → predictions)
+
+FuNmiRBench follows a simple, explicit workflow:
+
+### 1. Import experiment tables
+Download the published benchmark experiments (DE tables) from Zenodo
+into `data/experiments/processed/`:
+
+```bash
+python -m funmirbench.cli.import_experiments --token "<TOKEN>"
+
+
+(The token is provided by Zenodo for restricted records; alternatively set
+ZENODO_TOKEN as an environment variable.)
+
+2. Build the experiment index
+
+Generate the machine-readable dataset registry from curated metadata:
+
+python -m funmirbench.cli.build_experiments_index
+
+
+This produces metadata/datasets.json.
+
+3. Generate prediction scores
+
+Run a prediction tool (currently a deterministic mock predictor) to produce
+canonical miRNA–gene scores:
+
+python -m funmirbench.cli.build_predictions --tool mock
+
+
+This writes a canonical TSV under data/predictions/<tool>/.
+
+4. Register prediction tools
+
+Index the prediction tool metadata:
+
+python -m funmirbench.cli.build_predictions_index
+
+
+This produces metadata/predictions.json.
+
+At this point, FuNmiRBench has:
+
+experiment metadata (datasets.json)
+
+experiment data (DE tables)
+
+prediction scores (canonical TSV)
+
+prediction tool registry (predictions.json)
+
+These are the inputs required for downstream analysis and evaluation.

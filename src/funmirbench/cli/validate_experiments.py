@@ -1,0 +1,114 @@
+"""
+Validate local experiment availability and DE table readability.
+
+Checks:
+- metadata/datasets.json entries exist on disk
+- DE tables can be read (tab or whitespace fallback)
+- a usable gene identifier column exists (gene_id/gene_name or first column)
+"""
+
+from __future__ import annotations
+
+import argparse
+import pathlib
+from typing import List, Optional, Tuple
+
+from funmirbench.datasets import load_metadata  # type: ignore
+
+
+DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
+DEFAULT_DATASETS_JSON = pathlib.Path("metadata/datasets.json")
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Validate experiment files referenced by metadata/datasets.json")
+    p.add_argument("--datasets-json", type=pathlib.Path, default=DEFAULT_DATASETS_JSON)
+    p.add_argument("--root", type=pathlib.Path, default=DEFAULT_ROOT)
+    p.add_argument("--max-show-missing", type=int, default=20)
+    return p.parse_args()
+
+
+def _read_de_table(pd, path: pathlib.Path):
+    df = pd.read_csv(path, sep="\t")
+    df.columns = [str(c).strip() for c in df.columns]
+    if "gene_name" not in df.columns and "gene_id" not in df.columns:
+        df2 = pd.read_csv(path, sep=r"\s+", engine="python")
+        df2.columns = [str(c).strip() for c in df2.columns]
+        df = df2
+    return df
+
+
+def _pick_gene_col(df) -> str:
+    for candidate in ("gene_id", "gene_name"):
+        if candidate in df.columns:
+            return candidate
+    return str(df.columns[0])
+
+
+def main() -> None:
+    args = parse_args()
+    root = args.root.expanduser().resolve()
+
+    datasets_json = args.datasets_json
+    if not datasets_json.is_absolute():
+        datasets_json = root / datasets_json
+
+    try:
+        import pandas as pd  # type: ignore
+    except ImportError as exc:
+        raise ImportError("validate_experiments requires pandas.") from exc
+
+    metas = load_metadata(datasets_json=datasets_json, root=root)
+
+    total = len(metas)
+    present = 0
+    readable = 0
+    bad_gene_col = 0
+    missing: List[Tuple[str, str]] = []
+    unreadable: List[Tuple[str, str]] = []
+
+    for m in metas:
+        p = m.full_path
+        if not p.exists():
+            missing.append((m.id, str(p)))
+            continue
+        present += 1
+
+        try:
+            df = _read_de_table(pd, p)
+        except Exception as e:
+            unreadable.append((m.id, f"{p} :: {e}"))
+            continue
+
+        readable += 1
+
+        gene_col = _pick_gene_col(df)
+        if gene_col not in df.columns:
+            bad_gene_col += 1
+
+    print(f"Datasets in metadata: {total}")
+    print(f"Files present locally: {present}")
+    print(f"Readable DE tables:   {readable}")
+    if missing:
+        print(f"Missing files:        {len(missing)}")
+        for ds_id, path in missing[: args.max_show_missing]:
+            print(f"  - {ds_id}: {path}")
+        if len(missing) > args.max_show_missing:
+            print(f"  ... {len(missing) - args.max_show_missing} more")
+    else:
+        print("Missing files:        0")
+
+    if unreadable:
+        print(f"Unreadable files:     {len(unreadable)}")
+        for ds_id, msg in unreadable[: args.max_show_missing]:
+            print(f"  - {ds_id}: {msg}")
+        if len(unreadable) > args.max_show_missing:
+            print(f"  ... {len(unreadable) - args.max_show_missing} more")
+    else:
+        print("Unreadable files:     0")
+
+    print(f"Gene-id column issues: {bad_gene_col}")
+
+
+if __name__ == "__main__":
+    main()
