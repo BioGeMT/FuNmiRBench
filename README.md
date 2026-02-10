@@ -26,11 +26,11 @@ Create and activate a conda env (example):
 
 ```bash
 eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
-conda create -n funmirbench python=3.12 pandas -y
+conda create -n funmirbench python=3.12
 conda activate funmirbench
 ```
 
-Install the package in editable mode (no PYTHONPATH needed):
+Install the package in editable mode:
 
 ```bash
 pip install -e .
@@ -43,6 +43,7 @@ FuNmiRBench/
 ├── data/
 │   ├── README.md                 # explains expected local data layout (not tracked)
 │   └── predictions/              # placeholder (not tracked)
+│   └── experiments/              # placeholder (not tracked)
 │
 ├── metadata/
 │   ├── README.md                 # explains metadata inputs/outputs
@@ -54,7 +55,7 @@ FuNmiRBench/
 ├── pipelines/
 │   └── geo/
 │       ├── README.md             # how the GEO -> DE pipeline works
-│       ├── env.yml / env.R       # environment spec
+│       ├── env.yml               # environment spec
 │       ├── run_pipeline.sh       # entry point script
 │
 ├── src/
