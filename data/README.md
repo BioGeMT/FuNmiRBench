@@ -1,47 +1,63 @@
 # Data layout for FuNmiRBench
 
-The **full differential expression (DE) tables** used in FuNmiRBench are **not stored in this repository** and are **not tracked by git**.
+FuNmiRBench does **not** store large experiment tables or prediction outputs in git.
 
-They should be placed under:
+All local data lives under the `data/` folder, which is ignored by default.
 
-- `data/experiments/processed/` – processed DE tables (edgeR outputs, TSV)
-- `data/raw_GEO/` – optional raw tables / intermediate files (if needed)
+---
 
-## Getting the published benchmark corpus (Zenodo)
+## 📁 Expected folder structure
 
-FuNmiRBench publishes the processed DE tables as a Zenodo record (files may be restricted to link requests).
-
-1. Obtain an access token (from the link request / Zenodo UI).
-2. Download all files into `data/experiments/processed/`:
-
-```bash
-# either provide token explicitly...
-python -m funmirbench.cli.download_zenodo_corpus --token "<TOKEN>"
-
-# ...or via environment variable
-export ZENODO_TOKEN="<TOKEN>"
-python -m funmirbench.cli.download_zenodo_corpus
+```
+data/
+├── experiments/
+│   ├── processed/     # processed DE tables (TSV)
+│   └── raw/           # optional raw / intermediate files
+│
+├── predictions/       # canonical tool outputs (TSV)
+├── joined/            # joined experiment + prediction tables (TSV)
+└── plots/             # output plots (PNG + TXT summaries)
 ```
 
-The record DOI is: `10.5281/zenodo.17585186`.
+---
 
-## Expected format of processed experiment tables
+## Processed experiment tables
 
-Each file in `data/experiments/processed/`:
+Each file in:
 
-- is a tab-separated file `.tsv`
+```
+data/experiments/processed/
+```
+
+- is a tab-separated `.tsv`
 - contains differential expression results for one experiment
+- is typically an edgeR output table
 
-edgeR outputs do **not** include a gene symbol column by default. FuNmiRBench only requires a stable gene identifier column,
-typically the first column (often Ensembl gene IDs). If available, the column name may be `gene_name` or `gene_id`.
+### Gene identifiers
 
-Common columns include:
+edgeR outputs do not always include a gene column named `gene_name`.
 
+FuNmiRBench supports both of the following formats:
+
+#### Format A (explicit gene column)
 ```text
 gene_name    logFC    logCPM    F    PValue    FDR
+ENSG00000123456   ...
 ```
 
-The filenames must match the paths specified in `metadata/datasets.json`, e.g.:
+#### Format B (gene IDs stored as row names / first column)
+```text
+logFC    logCPM    F    PValue    FDR
+ENSG00000123456   ...
+```
+
+FuNmiRBench detects gene IDs robustly (preferring Ensembl-like IDs such as `ENSG...`).
+
+---
+
+## Linking data to metadata
+
+The file paths are referenced in `metadata/datasets.json` via the `data_path` field, e.g.:
 
 ```json
 {
@@ -51,3 +67,26 @@ The filenames must match the paths specified in `metadata/datasets.json`, e.g.:
   "perturbation": "overexpression"
 }
 ```
+
+---
+
+## Downloading benchmark experiments
+
+To download the published benchmark experiment corpus from Zenodo:
+
+```bash
+python -m funmirbench.cli.import_experiments --token "<TOKEN>"
+```
+
+This will populate:
+
+```
+data/experiments/processed/
+```
+
+---
+
+## Notes
+
+- `data/` is intended for **local reproducibility**, not version control.
+- `metadata/` contains the versioned curated registry of what datasets exist.
