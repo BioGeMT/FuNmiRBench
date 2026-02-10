@@ -1,42 +1,65 @@
-# Data layout for FuNmiRBench
+# GEO ingestion pipeline
 
-The **full differential expression (DE) tables** used in FuNmiRBench are **not stored in this repository** and are **not tracked by git**.
+This folder documents the **current GEO-based ingestion workflow** for FuNmiRBench experiments.
 
-They should be placed under:
+At the moment, GEO is the only supported source of functional miRNA perturbation experiments,
+but the pipeline is designed so that **additional experiment sources can be added later**
+without changing the core benchmarking logic.
 
-- `data/processed_GEO/` – processed DE tables (edgeR outputs, TSV)
-- `data/raw_GEO/` – optional raw tables / intermediate files (if needed)
+---
 
-## Expected format of processed_GEO files
+## Purpose
 
-Each file in `data/processed_GEO/`:
+The GEO pipeline is responsible for:
 
-- is a tab-separated file `.tsv`
-- contains differential expression results for one experiment
-- must have at least the following columns (names must match, order does not matter):
+1. Downloading raw expression data from GEO
+2. Running differential expression analysis (e.g. edgeR)
+3. Producing **processed DE tables** (TSV)
+4. Placing those tables under `data/processed_GEO/` so they can be indexed by FuNmiRBench
+
+The resulting DE tables are **not tracked by git**.
+
+---
+
+## Relation to metadata
+
+This pipeline does **not** modify metadata directly.
+
+Instead:
+
+- Experiment metadata is curated in `metadata/mirna_experiment_info.tsv`
+- DE table filenames produced by this pipeline must match the `de_table_path` column
+- The dataset index is generated separately via:
+
+```bash
+python -m funmirbench.cli.build_experiments_index
+```
+
+This separation keeps metadata curation and data processing decoupled.
+
+---
+
+## Output format (processed DE tables)
+
+Each processed DE table:
+
+- is a tab-separated `.tsv` file
+- corresponds to exactly one experiment
+- must contain at least the following columns (names must match; order does not matter):
 
 ```text
 gene_name    logFC    logCPM    F    PValue    FDR
 ```
 
-### Column specification
+See `data/README.md` for a detailed column specification.
 
-- `gene_name`: Ensembl gene ID (e.g. `ENSG00000123456`)
-- `logFC`: log2 fold change between perturbation and control
-- `logCPM`: average log2 counts per million
-- `F`: edgeR quasi-likelihood F-statistic
-- `PValue`: raw p-value
-- `FDR`: Benjamini–Hochberg adjusted p-value
+---
 
-> Note: FuNmiRBench primarily requires a stable gene identifier column. The remaining columns are used for downstream evaluation/visualization.
+## Running the pipeline
 
-The filenames must match the paths specified in `metadata/datasets.json`, e.g.:
+The concrete steps depend on the GEO study and analysis choices.
+Typical execution is orchestrated via:
 
-```json
-{
-  "id": "001",
-  "data_path": "data/processed_GEO/GSE210778_edger_out_oe_hsa_miR_375_3p_oe.tsv",
-  "miRNA": "hsa-miR-375-3p",
-  "perturbation": "overexpression"
-}
-```
+- `run_pipeline.sh`
+- the accompanying python / conda environments
+

@@ -6,17 +6,15 @@ from the **data files** themselves (which are not tracked by git).
 ## Dataset metadata flow
 
 1. Curate `mirna_experiment_info.tsv` (source of truth)
-2. Run `python scripts/build_experiments_index.py`
+2. Run `python -m funmirbench.cli.build_experiments_index`
 3. Commit the updated `datasets.json`
 
 ## Prediction tool registry flow
 
 1. Curate `predictions_info.tsv` (source of truth)
-2. Ensure the canonical TSV exists (e.g. `python scripts/build_predictions.py --tool mock`)
-3. Run `python scripts/build_predictions_index.py`
+2. Ensure the canonical TSV exists (e.g. `python -m funmirbench.cli.build_predictions --tool mock`)
+3. Run `python -m funmirbench.cli.build_predictions_index`
 4. Commit the updated `predictions.json`
-
-## Files in this folder
 
 ## Dataset metadata
 
@@ -38,7 +36,7 @@ Key columns:
 - `de_table_path`: filename of the processed DE table (TSV) for this experiment
 
 ### `datasets.json` (generated index)
-JSON list of dataset entries produced by `scripts/build_experiments_index.py`.
+JSON list of dataset entries produced by `python -m funmirbench.cli.build_experiments_index`.
 
 Each entry includes:
 - `id`: FuNmiRBench dataset ID (e.g. `"001"`)
@@ -65,7 +63,7 @@ Key columns:
 - `canonical_tsv_path`: repo-relative path to the tool’s canonical score TSV (like datasets’ `data_path`)
 
 ### `predictions.json` (generated registry)
-JSON list of prediction tool entries produced by `scripts/build_predictions_index.py`.
+JSON list of prediction tool entries produced by `python -m funmirbench.cli.build_predictions_index`.
 
 Each entry includes the normalized fields from `predictions_info.tsv`, including `canonical_tsv_path`.
 
@@ -75,10 +73,10 @@ From the repository root:
 
 ```bash
 # datasets.json
-python scripts/build_experiments_index.py
+python -m funmirbench.cli.build_experiments_index
 
 # predictions.json
-python scripts/build_predictions_index.py
+python -m funmirbench.cli.build_predictions_index
 ```
 
 ## Why both TSV and JSON?

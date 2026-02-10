@@ -30,7 +30,7 @@ conda create -n funmirbench python=3.12 pandas -y
 conda activate funmirbench
 ```
 
-Make the code discoverable:
+Install the package in editable mode (no PYTHONPATH needed):
 
 ```bash
 pip install -e .
@@ -54,36 +54,40 @@ FuNmiRBench/
 ├── pipelines/
 │   └── geo/
 │       ├── README.md             # how the GEO -> DE pipeline works
-│       ├── env.yml / env.R       # environment spec
+│       ├──
 │       ├── run_pipeline.sh       # entry point script
-│
-├── scripts/
-│   ├── build_experiments_index.py   # builds metadata/datasets.json
-│   ├── build_predictions.py         # builds canonical TSV scores for a tool (mock for now)
-│   └── build_predictions_index.py   # builds metadata/predictions.json
 │
 ├── src/
 │   └── funmirbench/
 │       ├── __init__.py
-│       ├── datasets.py          # everything about DE tables & metadata
-│       ├── predictions.py       # everything about prediction tool scores
-│       ├── models/              # baseline models (seed, alignment, etc.)
-│       └── evaluation/          # correlation, PR curves, plots
+│       ├── datasets.py           # everything about DE tables & metadata
+│       ├── predictions.py        # everything about prediction tool scores
+│       ├── cli/                  # command-line entrypoints (python -m ...)
+│       ├── models/               # baseline models (seed, alignment, etc.)
+│       └── evaluation/           # correlation, PR curves, plots
 │
 └── tests/
     └── test_datasets.py, test_predictions.py, ...
 ```
 
+## Regenerating indexes
+
 To regenerate `metadata/datasets.json` from the curated TSV:
 
 ```bash
-python scripts/build_experiments_index.py
+python -m funmirbench.cli.build_experiments_index
 ```
 
 To regenerate `metadata/predictions.json` from the curated TSV:
 
 ```bash
-python scripts/build_predictions_index.py
+python -m funmirbench.cli.build_predictions_index
+```
+
+To regenerate the canonical TSV scores for the mock predictor:
+
+```bash
+python -m funmirbench.cli.build_predictions --tool mock
 ```
 
 Planned additions: user-registered datasets, prediction indices, and additional ingestion pipelines.
