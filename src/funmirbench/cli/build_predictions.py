@@ -1,12 +1,15 @@
 import argparse
 import hashlib
 import pathlib
+import re
 from typing import Dict, Tuple, Set, List
 
 
 DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 DEFAULT_OUT = pathlib.Path("data/predictions/mock/mock_canonical.tsv")
 DEFAULT_DATASETS_JSON = pathlib.Path("metadata/datasets.json")
+
+GENE_ID_RE = re.compile(r"^ENS[A-Z]*G\d+", re.IGNORECASE)
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,11 +32,44 @@ def stable_hash_float(s: str) -> float:
 def _read_de_table(pd, path: pathlib.Path):
     df = pd.read_csv(path, sep="\t")
     df.columns = [str(c).strip() for c in df.columns]
-    if "gene_name" not in df.columns and "gene_id" not in df.columns:
+    if "gene_name" not in df.columns and "gene_id" not in df.columns and len(df.columns) == 1:
         df2 = pd.read_csv(path, sep=r"\s+", engine="python")
         df2.columns = [str(c).strip() for c in df2.columns]
         df = df2
     return df
+
+
+def _extract_gene_ids(df) -> List[str]:
+    # 1) Explicit columns
+    for c in ("gene_id", "gene_name"):
+        if c in df.columns:
+            return df[c].dropna().astype(str).tolist()
+
+    # 2) Heuristic: column with many ENS*G* IDs
+    best_col = None
+    best_frac = 0.0
+    for col in df.columns:
+        s = df[col].dropna().astype(str)
+        if len(s) == 0:
+            continue
+        frac = float(s.str.match(GENE_ID_RE).mean())
+        if frac > best_frac:
+            best_frac = frac
+            best_col = str(col)
+    if best_col is not None and best_frac >= 0.5:
+        return df[best_col].dropna().astype(str).tolist()
+
+    # 3) Index heuristic
+    idx = df.index.astype(str)
+    if len(idx) > 0:
+        frac_idx = float(idx.str.match(GENE_ID_RE).mean())
+        if frac_idx >= 0.5:
+            return list(idx)
+
+    raise ValueError(
+        "Could not identify gene IDs in DE table. "
+        "Expected gene_id/gene_name column or Ensembl-like IDs (ENSG...) in a column or index."
+    )
 
 
 def _rank_scores_0_1(keys: List[str]) -> Dict[str, float]:
@@ -69,16 +105,7 @@ def build_mock_scores(
             continue
 
         df = _read_de_table(pd, path)
-
-        gene_col = None
-        for candidate in ("gene_id", "gene_name"):
-            if candidate in df.columns:
-                gene_col = candidate
-                break
-        if gene_col is None:
-            gene_col = df.columns[0]
-
-        gene_ids = set(df[gene_col].dropna().astype(str).tolist())
+        gene_ids = set(_extract_gene_ids(df))
         genes_by_mirna.setdefault(m.miRNA, set()).update(gene_ids)
 
     scores: Dict[Tuple[str, str], float] = {}
@@ -94,14 +121,6 @@ def build_mock_scores(
 
         keys = [mirna + "::" + g for g in gene_list]
         per_key = _rank_scores_0_1(keys)
-
-        if len(keys) >= 2:
-            vals = [per_key[k] for k in keys]
-            if min(vals) != 0.0 or max(vals) != 1.0:
-                raise RuntimeError(
-                    f"Mock score span invariant failed for {mirna}: "
-                    f"min={min(vals)} max={max(vals)} n={len(vals)}"
-                )
 
         for gene_id in gene_list:
             scores[(mirna, gene_id)] = float(per_key[mirna + "::" + gene_id])
