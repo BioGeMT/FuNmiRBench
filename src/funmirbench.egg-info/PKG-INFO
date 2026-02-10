@@ -1,3 +1,12 @@
+Metadata-Version: 2.4
+Name: funmirbench
+Version: 0.0.0
+Summary: Benchmarking framework for functional microRNA target prediction.
+Author: BioGeMT Project Team
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: pandas
+
 # FuNmiRBench
 
 Benchmarking framework for **functional microRNA target prediction**.
@@ -33,7 +42,7 @@ conda activate funmirbench
 Make the code discoverable:
 
 ```bash
-pip install -e .
+export PYTHONPATH="$PWD/src:$PYTHONPATH"
 ```
 
 ## 📂 Project structure

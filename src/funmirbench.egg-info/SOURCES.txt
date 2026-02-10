@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+src/funmirbench/__init__.py
+src/funmirbench/datasets.py
+src/funmirbench.egg-info/PKG-INFO
+src/funmirbench.egg-info/SOURCES.txt
+src/funmirbench.egg-info/dependency_links.txt
+src/funmirbench.egg-info/requires.txt
+src/funmirbench.egg-info/top_level.txt
