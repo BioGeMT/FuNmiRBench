@@ -281,44 +281,44 @@ def load_all_datasets(
 # Convenience listing / summarizing helpers
 # ---------------------------------------------------------------------------
 
-def list_cell_lines() -> List[str]:
+def list_cell_lines(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> List[str]:
     """Return a sorted list of all unique cell lines."""
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     cell_lines = {m.cell_line for m in metas if m.cell_line is not None}
     return sorted(cell_lines)
 
 
-def list_mirnas() -> List[str]:
+def list_mirnas(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> List[str]:
     """Return a sorted list of all unique miRNAs."""
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     mirnas = {m.miRNA for m in metas if m.miRNA is not None}
     return sorted(mirnas)
 
 
-def list_tissues() -> List[str]:
+def list_tissues(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> List[str]:
     """Return a sorted list of all unique tissues."""
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     tissues = {m.tissue for m in metas if m.tissue is not None}
     return sorted(tissues)
 
 
-def list_geo_accessions() -> List[str]:
+def list_geo_accessions(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> List[str]:
     """Return a sorted list of all unique GEO accessions."""
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     geos = {m.geo_accession for m in metas if m.geo_accession is not None}
     return sorted(geos)
 
 
-def list_perturbations() -> List[str]:
+def list_perturbations(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> List[str]:
     """Return a sorted list of all unique perturbation types."""
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     kinds = {m.perturbation for m in metas if m.perturbation is not None}
     return sorted(kinds)
 
 
-def summarize_cell_lines() -> Dict[str, int]:
+def summarize_cell_lines(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> Dict[str, int]:
     """Return a dict: cell_line -> number of datasets."""
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     counts: Dict[str, int] = {}
     for m in metas:
         if m.cell_line is None:
@@ -327,18 +327,18 @@ def summarize_cell_lines() -> Dict[str, int]:
     return dict(sorted(counts.items()))
 
 
-def summarize_mirnas() -> Dict[str, int]:
+def summarize_mirnas(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> Dict[str, int]:
     """Return a dict: miRNA -> number of datasets."""
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     counts: Dict[str, int] = {}
     for m in metas:
         counts[m.miRNA] = counts.get(m.miRNA, 0) + 1
     return dict(sorted(counts.items()))
 
 
-def summarize_tissues() -> Dict[str, int]:
+def summarize_tissues(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> Dict[str, int]:
     """Return a dict: tissue -> number of datasets."""
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     counts: Dict[str, int] = {}
     for m in metas:
         if m.tissue is None:
@@ -347,9 +347,9 @@ def summarize_tissues() -> Dict[str, int]:
     return dict(sorted(counts.items()))
 
 
-def summarize_perturbations() -> Dict[str, int]:
+def summarize_perturbations(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> Dict[str, int]:
     """Return a dict: perturbation -> number of datasets."""
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     counts: Dict[str, int] = {}
     for m in metas:
         if m.perturbation is None:
@@ -358,18 +358,18 @@ def summarize_perturbations() -> Dict[str, int]:
     return dict(sorted(counts.items()))
 
 
-def group_by_mirna() -> Dict[str, List[DatasetMeta]]:
+def group_by_mirna(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> Dict[str, List[DatasetMeta]]:
     """Return a dict: miRNA -> list of DatasetMeta."""
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     grouped: Dict[str, List[DatasetMeta]] = {}
     for m in metas:
         grouped.setdefault(m.miRNA, []).append(m)
     return grouped
 
 
-def group_by_geo() -> Dict[str, List[DatasetMeta]]:
+def group_by_geo(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> Dict[str, List[DatasetMeta]]:
     """Return a dict: GEO accession -> list of DatasetMeta."""
-    metas = load_metadata()
+    metas = load_metadata(root=root, datasets_json=datasets_json)
     grouped: Dict[str, List[DatasetMeta]] = {}
     for m in metas:
         if m.geo_accession is None:
@@ -388,9 +388,14 @@ def list_ids(
     return sorted(m.id for m in metas)
 
 
-def list_datasets_by_cell_line(cell_line: str) -> List[DatasetMeta]:
+def list_datasets_by_cell_line(
+    cell_line: str,
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> List[DatasetMeta]:
     """Return all datasets associated with a specific cell line."""
-    return list_datasets(cell_line=cell_line)
+    return list_datasets(cell_line=cell_line, root=root, datasets_json=datasets_json)
 
 def summarize_datasets(
     *,
