@@ -126,61 +126,116 @@ datasets.summarize_mirnas()
 summaries = datasets.summarize_datasets()
 ```
 
-📥 End-to-end workflow (experiments → predictions)
+## 🚀 End-to-end workflow (experiments → predictions → plots)
 
-Here’s a clean, minimal block you can paste almost verbatim:
-
-## 🚀 End-to-end workflow (experiments → predictions)
-
-FuNmiRBench follows a simple, explicit workflow:
+FuNmiRBench follows a simple, explicit workflow.  
+Each step produces a concrete artifact that can be inspected, versioned, or reused.
 
 ### 1. Import experiment tables
-Download the published benchmark experiments (DE tables) from Zenodo
+
+Download the published benchmark experiments (processed DE tables) from Zenodo
 into `data/experiments/processed/`:
 
 ```bash
 python -m funmirbench.cli.import_experiments --token "<TOKEN>"
+```
 
+- The token is provided by Zenodo for restricted records  
+- Alternatively, set `ZENODO_TOKEN` as an environment variable  
+- This step only downloads data; nothing in metadata is modified
 
-(The token is provided by Zenodo for restricted records; alternatively set
-ZENODO_TOKEN as an environment variable.)
+---
 
-2. Build the experiment index
+### 2. Build the experiment index
 
 Generate the machine-readable dataset registry from curated metadata:
 
+```bash
 python -m funmirbench.cli.build_experiments_index
+```
 
+This produces:
 
-This produces metadata/datasets.json.
+- `metadata/datasets.json`
 
-3. Generate prediction scores
+which links experiment metadata to local DE table paths.
+
+---
+
+### 3. Validate local experiments (recommended)
+
+Before running predictions, verify that all datasets are present and readable:
+
+```bash
+python -m funmirbench.cli.validate_experiments
+```
+
+This checks that:
+- all `data_path` entries exist locally
+- DE tables are readable
+- gene identifiers can be detected robustly
+
+---
+
+### 4. Generate prediction scores
 
 Run a prediction tool (currently a deterministic mock predictor) to produce
 canonical miRNA–gene scores:
 
+```bash
 python -m funmirbench.cli.build_predictions --tool mock
+```
 
+This writes a canonical TSV under:
 
-This writes a canonical TSV under data/predictions/<tool>/.
+```
+data/predictions/mock/
+```
 
-4. Register prediction tools
+---
+
+### 5. Register prediction tools
 
 Index the prediction tool metadata:
 
+```bash
 python -m funmirbench.cli.build_predictions_index
+```
 
+This produces:
 
-This produces metadata/predictions.json.
+- `metadata/predictions.json`
 
-At this point, FuNmiRBench has:
+---
 
-experiment metadata (datasets.json)
+### 6. Join experiments with predictions
 
-experiment data (DE tables)
+Combine one experiment’s DE table with one tool’s predictions:
 
-prediction scores (canonical TSV)
+```bash
+python -m funmirbench.cli.join_experiment_predictions \
+  --dataset-id 001 \
+  --tool mock \
+  --out data/joined/001_mock.tsv
+```
 
-prediction tool registry (predictions.json)
+This produces a joined TSV containing:
+- gene identifiers
+- prediction scores
+- DE statistics (e.g. logFC, FDR)
 
-These are the inputs required for downstream analysis and evaluation.
+---
+
+### 7. Plot score–DE correlation
+
+Generate a simple correlation scatter plot and summary statistics:
+
+```bash
+python -m funmirbench.cli.plot_correlation \
+  --joined-tsv data/joined/001_mock.tsv \
+  --out-dir data/plots
+```
+
+This produces:
+- a PNG scatter plot
+- a TXT summary with Pearson and Spearman correlations
