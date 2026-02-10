@@ -1,65 +1,75 @@
+
+# FuNmiRBench pipeline overview
+
+Legend:
+✅ implemented
+⏳ planned / not implemented
+
+```
                  ┌──────────────────────────────┐
                  │   Curated metadata (repo)     │
-                 │  metadata/mirna_experiment    │
+                 │  mirna_experiment_info.tsv    │
                  └──────────────┬───────────────┘
-                                │  ✅ implemented
+                                │  ✅
                                 ▼
                  ┌──────────────────────────────┐
                  │ build_experiments_index       │
-                 │  -> metadata/datasets.json    │
+                 │  → metadata/datasets.json    │
                  └──────────────┬───────────────┘
                                 │
-                                │ uses data_path pointers
                                 ▼
 ┌──────────────────────────────┐        ┌──────────────────────────────┐
 │   Benchmark corpus (Zenodo)   │        │   User-provided experiments   │
-│   processed DE tables (TSV)   │        │   (already processed tables)  │
+│   processed DE tables (TSV)   │        │   (processed tables)          │
 └──────────────┬───────────────┘        └──────────────┬───────────────┘
-               │  ✅ implemented via token             │  ⏳ not implemented (planned)
-               ▼                                       ▼
+               │  ✅                               │  ⏳
+               ▼                                   ▼
 ┌──────────────────────────────┐        ┌──────────────────────────────┐
 │ import_experiments (Zenodo)   │        │ import_experiments --from-dir │
-│ -> data/experiments/processed │        │ -> data/experiments/processed │
+│ → data/experiments/processed │        │ → data/experiments/processed │
 └──────────────┬───────────────┘        └──────────────────────────────┘
                │
-               │  ✅ implemented
+               │  ✅
                ▼
 ┌──────────────────────────────┐
 │ validate_experiments          │
 │ (existence + readable + gene) │
 └──────────────┬───────────────┘
                │
-               │
                ▼
         ┌──────────────────────────────────────────────┐
-        │          Predictions tool registry (repo)     │
-        │     metadata/predictions_info.tsv (source)    │
+        │     Prediction tool metadata (repo)           │
+        │     predictions_info.tsv (source of truth)    │
         └───────────────────────┬──────────────────────┘
-                                │ ✅ implemented
+                                │  ✅
                                 ▼
                  ┌──────────────────────────────┐
                  │ build_predictions_index       │
-                 │ -> metadata/predictions.json  │
+                 │ → metadata/predictions.json  │
                  └──────────────┬───────────────┘
-                                │
                                 │
                                 ▼
                  ┌──────────────────────────────┐
                  │ build_predictions --tool mock │
-                 │ -> data/predictions/mock/...  │
+                 │ → data/predictions/mock/*.tsv│
                  └──────────────┬───────────────┘
-                                │  ✅ implemented (mock only)
+                                │  ✅ (mock only)
                                 ▼
                  ┌──────────────────────────────┐
                  │ join_experiment_predictions   │
-                 │ (DE genes ∩ predicted genes)  │
-                 │ -> data/joined/<id>_<tool>.tsv│
+                 │ → data/joined/<id>_<tool>.tsv │
                  └──────────────┬───────────────┘
-                                │  ✅ implemented
+                                │  ✅
                                 ▼
                  ┌──────────────────────────────┐
                  │ plot_correlation              │
-                 │ score vs logFC scatter + corr │
-                 │ -> data/plots/*.png + *.txt   │
+                 │ → data/plots/*.png + *.txt   │
                  └──────────────────────────────┘
-                                ✅ implemented
+                                ✅
+
+Not implemented yet:
+- User-provided experiment ingestion (--from-dir)
+- Real evaluation metrics (AUC, PR, enrichment)
+- Full RNA-seq processing pipeline
+- Dashboards / reports
+```
