@@ -5,9 +5,10 @@ import pathlib
 from typing import Dict, Tuple, Set
 
 
+# NOTE: defaults are repo-relative, like datasets.json "data_path"
 DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[1]
-DEFAULT_OUT = DEFAULT_ROOT / "data" / "predictions" / "mock" / "mock_canonical.tsv"
-DEFAULT_DATASETS_JSON = DEFAULT_ROOT / "metadata" / "datasets.json"
+DEFAULT_OUT = pathlib.Path("data/predictions/mock/mock_canonical.tsv")
+DEFAULT_DATASETS_JSON = pathlib.Path("metadata/datasets.json")
 
 
 def parse_args() -> argparse.Namespace:
@@ -52,9 +53,31 @@ def stable_hash_float(s: str) -> float:
     return v / 2**64
 
 
-
 def logistic(x: float) -> float:
     return 1.0 / (1.0 + math.exp(-x))
+
+
+def _read_de_table(pd, path: pathlib.Path):
+    """
+    Read a DE table robustly.
+
+    Some files are mostly TSV but have one or more whitespace-separated header fields
+    (e.g., 'gene_name   logFC\tlogCPM...'), which makes sep='\\t' parse a bogus first column.
+    Strategy:
+      1) try tab
+      2) if required columns aren't found, retry whitespace
+    """
+    # 1) tab
+    df = pd.read_csv(path, sep="\t")
+    df.columns = [str(c).strip() for c in df.columns]
+
+    # If a whitespace-glued header happened, retry with whitespace split.
+    if "gene_name" not in df.columns and "gene_id" not in df.columns:
+        df2 = pd.read_csv(path, sep=r"\s+", engine="python")
+        df2.columns = [str(c).strip() for c in df2.columns]
+        df = df2
+
+    return df
 
 
 def build_mock_scores(
@@ -86,18 +109,19 @@ def build_mock_scores(
             # Data not present locally; skip
             continue
 
-    try:
-        # Most DE tables are TSV (tab-separated)
-        df = pd.read_csv(path, sep="\t")
-    except Exception:
-        # Fallback: any whitespace (some tables are space-delimited)
-        df = pd.read_csv(path, sep=r"\s+", engine="python")
-        df.columns = [c.strip() for c in df.columns]
+        df = _read_de_table(pd, path)
 
-        if "gene_name" not in df.columns:
-            raise ValueError(f"{path} missing required column 'gene_name'")
+        # Prefer an explicit gene column if present; otherwise fall back to first column.
+        gene_col = None
+        for candidate in ("gene_id", "gene_name"):
+            if candidate in df.columns:
+                gene_col = candidate
+                break
+        if gene_col is None:
+            # Minimal assumption: first column contains gene identifiers
+            gene_col = df.columns[0]
 
-        gene_ids = set(df["gene_name"].dropna().astype(str).tolist())
+        gene_ids = set(df[gene_col].dropna().astype(str).tolist())
         genes_by_mirna.setdefault(m.miRNA, set()).update(gene_ids)
 
     scores: Dict[Tuple[str, str], float] = {}
@@ -113,11 +137,8 @@ def build_mock_scores(
             )[:max_genes_per_mirna]
 
         for gene_id in gene_list:
-            # base in [0,1)
             base = stable_hash_float(mirna + "::" + gene_id)
-            # map to probability via logistic; center to avoid all ~0.5
             score = 0.05 + 0.95 * base  # uniform-ish in [0.05, 1.0)
-
             scores[(mirna, gene_id)] = float(score)
 
     return scores
@@ -138,6 +159,7 @@ def main() -> None:
     datasets_json = args.datasets_json
     out_path = args.out
 
+    # Resolve repo-relative paths (like datasets.json "data_path")
     if not datasets_json.is_absolute():
         datasets_json = root / datasets_json
     if not out_path.is_absolute():

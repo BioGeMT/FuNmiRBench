@@ -1,12 +1,15 @@
 [
   {
     "tool_id": "mock",
-    "display_name": "Mock predictor",
+    "official_name": "Mock predictor",
     "organism": "Homo sapiens",
+    "score_type": "probability",
     "score_direction": "higher_is_stronger",
     "score_range": "0-1",
-    "input_id_type": "ensembl_gene",
-    "canonical_id_type": "ensembl_gene",
-    "canonical_tsv_path": "data/predictions/mock/canonical/mock.tsv"
+    "input_id_gene_type": "ensembl_v109",
+    "canonical_id_gene_type": "ensembl_v109",
+    "input_id_mirna_type": "mirbase_v22",
+    "canonical_id_mirna_type": "mirbase_v22",
+    "canonical_tsv_path": "data/predictions/mock/mock_canonical.tsv"
   }
 ]
