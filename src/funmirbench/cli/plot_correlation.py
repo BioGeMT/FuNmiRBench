@@ -18,6 +18,13 @@ from __future__ import annotations
 import argparse
 import pathlib
 from typing import Optional
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
@@ -127,7 +134,8 @@ def main() -> None:
     )
     summary_path.write_text(summary, encoding="utf-8")
 
-    print(summary)
+    logger.info(summary)
+
 
 
 if __name__ == "__main__":

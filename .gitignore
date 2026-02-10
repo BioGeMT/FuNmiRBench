@@ -12,11 +12,9 @@ miniconda3/
 # VS Code / editor settings (optional)
 .vscode/
 
-
-# Data directories (we do NOT store GEO data in the repo)
-data/processed_GEO/*
-data/raw_GEO/*
-
-# testing
-data/predictions/mock/canonical/mock.tsv
-
+# Local data outputs (NOT tracked)
+data/experiments/processed/
+data/experiments/raw/
+data/predictions/
+data/joined/
+data/plots/
