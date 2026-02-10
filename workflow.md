@@ -1,6 +1,6 @@
                  ┌──────────────────────────────┐
                  │   Curated metadata (repo)     │
-                 │  metadata/mirna_experiment... │
+                 │  metadata/mirna_experiment    │
                  └──────────────┬───────────────┘
                                 │  ✅ implemented
                                 ▼
