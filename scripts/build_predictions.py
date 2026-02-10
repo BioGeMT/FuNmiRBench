@@ -6,7 +6,7 @@ from typing import Dict, Tuple, Set
 
 
 DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[1]
-DEFAULT_OUT = DEFAULT_ROOT / "data" / "predictions" / "mock" / "canonical" / "mock.tsv"
+DEFAULT_OUT = DEFAULT_ROOT / "data" / "predictions" / "mock" / "mock_canonical.tsv"
 DEFAULT_DATASETS_JSON = DEFAULT_ROOT / "metadata" / "datasets.json"
 
 
@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
         "--out",
         type=pathlib.Path,
         default=DEFAULT_OUT,
-        help="Output TSV path (default: data/predictions/mock/canonical/mock.tsv).",
+        help="Output TSV path (default: data/predictions/mock/mock_canonical.tsv).",
     )
     p.add_argument(
         "--datasets-json",
@@ -46,10 +46,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def stable_hash_float(s: str) -> float:
-    """Deterministic float in [0,1)."""
-    h = hashlib.sha256(s.encode("utf-8")).hexdigest()
-    v = int(h[:12], 16)  # 48-bit chunk
-    return (v % 1_000_000) / 1_000_000.0
+    """Deterministic float in [0, 1)."""
+    h = hashlib.sha256(s.encode("utf-8")).digest()
+    v = int.from_bytes(h[:8], "big")  # 64-bit integer
+    return v / 2**64
+
 
 
 def logistic(x: float) -> float:
@@ -85,6 +86,11 @@ def build_mock_scores(
             # Data not present locally; skip
             continue
 
+    try:
+        # Most DE tables are TSV (tab-separated)
+        df = pd.read_csv(path, sep="\t")
+    except Exception:
+        # Fallback: any whitespace (some tables are space-delimited)
         df = pd.read_csv(path, sep=r"\s+", engine="python")
         df.columns = [c.strip() for c in df.columns]
 
@@ -110,7 +116,7 @@ def build_mock_scores(
             # base in [0,1)
             base = stable_hash_float(mirna + "::" + gene_id)
             # map to probability via logistic; center to avoid all ~0.5
-            score = logistic((base - 0.5) * 6.0)
+            score = 0.05 + 0.95 * base  # uniform-ish in [0.05, 1.0)
 
             scores[(mirna, gene_id)] = float(score)
 

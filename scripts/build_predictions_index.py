@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import pathlib
+import re
 from typing import Dict, List
 
 
@@ -9,17 +10,26 @@ DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_INFO_TSV = DEFAULT_ROOT / "metadata" / "predictions_info.tsv"
 DEFAULT_OUT_JSON = DEFAULT_ROOT / "metadata" / "predictions.json"
 
-
 REQUIRED_COLUMNS = [
     "tool_id",
-    "display_name",
+    "official_name",
     "organism",
+    "score_type",
     "score_direction",
     "score_range",
-    "input_id_type",
-    "canonical_id_type",
+    "input_id_gene_type",
+    "canonical_id_gene_type",
+    "input_id_mirna_type",
+    "canonical_id_mirna_type",
     "canonical_tsv_path",
 ]
+
+# Fixed-ish ID-type format: <database>_<version>
+# Examples: ensembl_109, mirbase_v22, refseq_2024_05
+IDTYPE_RE = re.compile(r"^[a-z0-9]+_[a-z0-9._-]+$", re.IGNORECASE)
+
+SCORE_DIRECTIONS = {"higher_is_stronger", "lower_is_stronger", "unknown"}
+SCORE_TYPES = {"probability", "regression", "rank", "pvalue", "energy", "binary", "other"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,7 +40,7 @@ def parse_args() -> argparse.Namespace:
         "--info-tsv",
         type=pathlib.Path,
         default=DEFAULT_INFO_TSV,
-        help="Input TSV with prediction resources (default: metadata/predictions_info.tsv).",
+        help="Input TSV with prediction tool registry (default: metadata/predictions_info.tsv).",
     )
     p.add_argument(
         "--out-json",
@@ -52,11 +62,37 @@ def _validate_row(row: Dict[str, str], row_num: int) -> None:
     if missing:
         raise ValueError(f"Row {row_num} is missing required columns: {missing}")
 
-    # Minimal validation for score_range like "0-1" or "0-100"
-    score_range = row["score_range"].strip()
-    if "-" not in score_range:
+    sd = row["score_direction"].strip()
+    if sd not in SCORE_DIRECTIONS:
         raise ValueError(
-            f"Row {row_num} has invalid score_range {score_range!r}; expected like '0-1' or '0-100'."
+            f"Row {row_num} has invalid score_direction {sd!r}. "
+            f"Allowed: {sorted(SCORE_DIRECTIONS)}"
+        )
+
+    st = row["score_type"].strip()
+    if st not in SCORE_TYPES:
+        raise ValueError(
+            f"Row {row_num} has invalid score_type {st!r}. "
+            f"Allowed: {sorted(SCORE_TYPES)}"
+        )
+
+    for k in ("input_id_gene_type", "canonical_id_gene_type", "input_id_mirna_type", "canonical_id_mirna_type"):
+        v = row[k].strip()
+        if not IDTYPE_RE.match(v):
+            raise ValueError(
+                f"Row {row_num} has invalid {k}={v!r}. "
+                "Expected format like 'ensembl_109' or 'mirbase_v22'."
+            )
+
+    # canonical_tsv_path should be a relative path (like datasets.json data_path)
+    p = row["canonical_tsv_path"].strip()
+    if p.startswith("/") or p.startswith("~"):
+        raise ValueError(
+            f"Row {row_num} canonical_tsv_path must be a repo-relative path (got {p!r})."
+        )
+    if not p.endswith(".tsv"):
+        raise ValueError(
+            f"Row {row_num} canonical_tsv_path should point to a .tsv file (got {p!r})."
         )
 
 
@@ -64,7 +100,6 @@ def main() -> None:
     args = parse_args()
 
     root = args.root.expanduser().resolve()
-
     info_tsv = args.info_tsv
     out_json = args.out_json
 
@@ -84,7 +119,7 @@ def main() -> None:
         if reader.fieldnames is None:
             raise ValueError(f"TSV has no header row: {info_tsv}")
 
-        for i, row in enumerate(reader, start=2):  # header is line 1
+        for i, row in enumerate(reader, start=2):
             _validate_row(row, i)
 
             tool_id = row["tool_id"].strip()
@@ -92,19 +127,22 @@ def main() -> None:
                 raise ValueError(f"Duplicate tool_id {tool_id!r} at row {i}")
             seen_tool_ids.add(tool_id)
 
-            entry = {
-                "tool_id": tool_id,
-                "display_name": row["display_name"].strip(),
-                "organism": row["organism"].strip(),
-                "score_direction": row["score_direction"].strip(),
-                "score_range": row["score_range"].strip(),
-                "input_id_type": row["input_id_type"].strip(),
-                "canonical_id_type": row["canonical_id_type"].strip(),
-                "canonical_tsv_path": row["canonical_tsv_path"].strip(),
-            }
-            entries.append(entry)
+            entries.append(
+                {
+                    "tool_id": tool_id,
+                    "official_name": row["official_name"].strip(),
+                    "organism": row["organism"].strip(),
+                    "score_type": row["score_type"].strip(),
+                    "score_direction": row["score_direction"].strip(),
+                    "score_range": row["score_range"].strip(),
+                    "input_id_gene_type": row["input_id_gene_type"].strip(),
+                    "canonical_id_gene_type": row["canonical_id_gene_type"].strip(),
+                    "input_id_mirna_type": row["input_id_mirna_type"].strip(),
+                    "canonical_id_mirna_type": row["canonical_id_mirna_type"].strip(),
+                    "canonical_tsv_path": row["canonical_tsv_path"].strip(),
+                }
+            )
 
-    # Stable output order
     entries = sorted(entries, key=lambda d: d["tool_id"])
 
     out_json.parent.mkdir(parents=True, exist_ok=True)
