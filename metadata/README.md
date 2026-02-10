@@ -6,7 +6,7 @@ from the **data files** themselves (which are not tracked by git).
 ## Dataset metadata flow
 
 1. Curate `mirna_experiment_info.tsv` (source of truth)
-2. Run `python scripts/build_index.py`
+2. Run `python scripts/build_experiments_index.py`
 3. Commit the updated `datasets.json`
 
 ## Prediction tool registry flow
@@ -38,7 +38,7 @@ Key columns:
 - `de_table_path`: filename of the processed DE table (TSV) for this experiment
 
 ### `datasets.json` (generated index)
-JSON list of dataset entries produced by `scripts/build_index.py`.
+JSON list of dataset entries produced by `scripts/build_experiments_index.py`.
 
 Each entry includes:
 - `id`: FuNmiRBench dataset ID (e.g. `"001"`)

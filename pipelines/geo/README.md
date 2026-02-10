@@ -1,18 +1,7 @@
-# GEO ingestion pipeline (GEO → processed DE tables)
+# GEO pipeline
 
-This directory will contain the pipeline that converts raw GEO data
-into differential expression (DE) tables compatible with FuNmiRBench.
+This folder documents the current (GEO-based) ingestion workflow for FuNmiRBench experiments.
 
-> Note: the processed directory can be configured when building `datasets.json` via `scripts/build_index.py --processed-dir ...`.
+> Note: the processed directory can be configured when building `datasets.json`. See `python scripts/build_experiments_index.py --help` for the available options.
 
-Expected output format: TSV files with columns:
-
-- gene_name
-- logFC
-- logCPM
-- F
-- PValue
-- FDR
-
-and filenames that match `metadata/datasets*.json` entries,
-stored under `data/processed_GEO/`.
+The output format spec for processed DE tables is described here; consider moving it to a repo-level `pipelines/README.md` once additional pipelines are added.
