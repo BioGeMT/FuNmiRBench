@@ -54,7 +54,7 @@ FuNmiRBench/
 ├── pipelines/
 │   └── geo/
 │       ├── README.md             # how the GEO -> DE pipeline works
-│       ├──
+│       ├── env.yml / env.R       # environment spec
 │       ├── run_pipeline.sh       # entry point script
 │
 ├── src/

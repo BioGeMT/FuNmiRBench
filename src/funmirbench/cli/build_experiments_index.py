@@ -11,7 +11,7 @@ DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 # Defaults are repo-relative (like datasets.json "data_path")
 DEFAULT_INFO_TSV = pathlib.Path("metadata/mirna_experiment_info.tsv")
 DEFAULT_OUT_JSON = pathlib.Path("metadata/datasets.json")
-DEFAULT_PROCESSED_DIR = pathlib.Path("data/processed_GEO")
+DEFAULT_PROCESSED_DIR = pathlib.Path("data/experiments/processed")
 
 REQUIRED_COLUMNS = [
     "mirna_name",
@@ -81,7 +81,7 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_PROCESSED_DIR,
         help=(
             "Repo-relative base directory for processed experiment files. "
-            "Used to form data_path (default: data/processed_GEO)."
+            "Used to form data_path (default: data/experiments/processed)."
         ),
     )
     p.add_argument(
@@ -131,9 +131,9 @@ def main() -> None:
     info_tsv = _resolve_under_root(root, args.info_tsv)
     out_json = _resolve_under_root(root, args.out_json)
 
-    processed_dir_rel = _root_relative_or_error(
-        root, _resolve_under_root(root, args.processed_dir), arg_name="--processed-dir"
-    )
+    # Keep processed_dir written into JSON as repo-relative by default (like data_path),
+    # but allow absolute paths IF they are under root (then convert to relative).
+    processed_dir_rel = _root_relative_or_error(root, _resolve_under_root(root, args.processed_dir), arg_name="--processed-dir")
 
     if not info_tsv.exists():
         raise FileNotFoundError(f"Input TSV not found: {info_tsv}")
@@ -161,6 +161,7 @@ def main() -> None:
             if not mirna_name or not mirna_seq or not pubmed_id or not gse_url or not de_table_path:
                 raise ValueError(f"Row {i} missing required values (check TSV): {info_tsv}")
 
+            # Build a repo-relative data_path string
             data_path = (processed_dir_rel / de_table_path).as_posix()
 
             entry = {

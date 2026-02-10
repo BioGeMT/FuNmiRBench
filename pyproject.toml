@@ -12,6 +12,7 @@ authors = [
   { name = "BioGeMT Project Team" }
 ]
 dependencies = [
+  "requests",
   "pandas",
 ]
 
