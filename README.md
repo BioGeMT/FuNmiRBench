@@ -227,7 +227,7 @@ This produces a joined TSV containing:
 
 ---
 
-### 7. Plot score–DE correlation
+### 7. Plot score-DE correlation
 
 Generate a simple correlation scatter plot and summary statistics:
 
