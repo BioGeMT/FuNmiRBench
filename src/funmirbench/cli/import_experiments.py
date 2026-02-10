@@ -15,6 +15,13 @@ import sys
 import zipfile
 from typing import Optional, List, Tuple
 from urllib.parse import urlparse, parse_qs, urlunparse, urlencode
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 try:
     import requests  # type: ignore
@@ -181,7 +188,8 @@ def main() -> None:
         path.write_bytes(data)
         written += 1
 
-    print(f"Downloaded {written} TSV files to {out_dir}")
+    logger.info("Downloaded %d TSV files to %s", written, out_dir)
+
 
 
 if __name__ == "__main__":

@@ -10,18 +10,24 @@ Checks:
 from __future__ import annotations
 
 import argparse
+import logging
 import pathlib
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from funmirbench.datasets import load_metadata  # type: ignore
 
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 DEFAULT_DATASETS_JSON = pathlib.Path("metadata/datasets.json")
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Validate experiment files referenced by metadata/datasets.json")
+    p = argparse.ArgumentParser(
+        description="Validate experiment files referenced by metadata/datasets.json"
+    )
     p.add_argument("--datasets-json", type=pathlib.Path, default=DEFAULT_DATASETS_JSON)
     p.add_argument("--root", type=pathlib.Path, default=DEFAULT_ROOT)
     p.add_argument("--max-show-missing", type=int, default=20)
@@ -86,28 +92,29 @@ def main() -> None:
         if gene_col not in df.columns:
             bad_gene_col += 1
 
-    print(f"Datasets in metadata: {total}")
-    print(f"Files present locally: {present}")
-    print(f"Readable DE tables:   {readable}")
+    logger.info("Datasets in metadata: %d", total)
+    logger.info("Files present locally: %d", present)
+    logger.info("Readable DE tables:   %d", readable)
+
     if missing:
-        print(f"Missing files:        {len(missing)}")
+        logger.warning("Missing files:        %d", len(missing))
         for ds_id, path in missing[: args.max_show_missing]:
-            print(f"  - {ds_id}: {path}")
+            logger.warning("  - %s: %s", ds_id, path)
         if len(missing) > args.max_show_missing:
-            print(f"  ... {len(missing) - args.max_show_missing} more")
+            logger.warning("  ... %d more", len(missing) - args.max_show_missing)
     else:
-        print("Missing files:        0")
+        logger.info("Missing files:        0")
 
     if unreadable:
-        print(f"Unreadable files:     {len(unreadable)}")
+        logger.warning("Unreadable files:     %d", len(unreadable))
         for ds_id, msg in unreadable[: args.max_show_missing]:
-            print(f"  - {ds_id}: {msg}")
+            logger.warning("  - %s: %s", ds_id, msg)
         if len(unreadable) > args.max_show_missing:
-            print(f"  ... {len(unreadable) - args.max_show_missing} more")
+            logger.warning("  ... %d more", len(unreadable) - args.max_show_missing)
     else:
-        print("Unreadable files:     0")
+        logger.info("Unreadable files:     0")
 
-    print(f"Gene-id column issues: {bad_gene_col}")
+    logger.info("Gene-id column issues: %d", bad_gene_col)
 
 
 if __name__ == "__main__":

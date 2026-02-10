@@ -4,7 +4,13 @@ import json
 import pathlib
 import re
 from typing import Dict, List
+import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 DEFAULT_INFO_TSV = pathlib.Path("metadata/predictions_info.tsv")
@@ -138,7 +144,7 @@ def main() -> None:
     with out_json.open("w", encoding="utf-8") as f:
         json.dump(entries, f, indent=2)
 
-    print(f"Wrote {len(entries)} entries to {out_json}")
+    logger.info("Wrote %d entries to %s", len(datasets), out_json)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,13 @@ import hashlib
 import pathlib
 import re
 from typing import Dict, Tuple, Set, List
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -151,7 +158,7 @@ def main() -> None:
     if args.tool == "mock":
         scores = build_mock_scores(datasets_json, max_genes_per_mirna=args.max_genes_per_mirna)
         write_tsv(scores, out_path)
-        print(f"Wrote {len(scores)} rows to {out_path}")
+        logger.info("Wrote %d rows to %s", len(scores), out_path)
         return
 
     raise ValueError(f"Unknown tool: {args.tool}")

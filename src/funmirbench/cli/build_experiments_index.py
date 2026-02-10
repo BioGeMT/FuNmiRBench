@@ -4,7 +4,13 @@ import json
 import pathlib
 import urllib.parse
 from typing import List, Dict, Optional
+import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
@@ -185,7 +191,7 @@ def main() -> None:
     with out_json.open("w", encoding="utf-8") as f:
         json.dump(datasets, f, indent=2)
 
-    print(f"Wrote {len(datasets)} entries to {out_json}")
+    logger.info("Wrote %d entries to %s", len(datasets), out_json)
 
 
 if __name__ == "__main__":

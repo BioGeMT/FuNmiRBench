@@ -23,7 +23,13 @@ import sys
 from typing import Dict, Optional
 
 from funmirbench.datasets import get_dataset  # type: ignore
+import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 DEFAULT_PREDICTIONS_JSON = pathlib.Path("metadata/predictions.json")
@@ -192,7 +198,8 @@ def main() -> None:
             out_path = root / out_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
         joined.to_csv(out_path, sep="\t", index=False)
-        print(f"Wrote {len(joined)} rows to {out_path}")
+        logger.info("Wrote %d rows to %s", len(joined), out_path)
+
 
 
 if __name__ == "__main__":
