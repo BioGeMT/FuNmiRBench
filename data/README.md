@@ -13,20 +13,30 @@ Each file in `data/processed_GEO/`:
 
 - is a tab-separated file `.tsv`
 - contains differential expression results for one experiment
-- must have at least the following columns:
+- must have at least the following columns (names must match, order does not matter):
 
 ```text
 gene_name    logFC    logCPM    F    PValue    FDR
 ```
-(The first column contains Ensembl gene IDs)
 
-The filenames must match the paths specified in metadata/datasets.json, e.g.:
+### Column specification
+
+- `gene_name`: Ensembl gene ID (e.g. `ENSG00000123456`)
+- `logFC`: log2 fold change between perturbation and control
+- `logCPM`: average log2 counts per million
+- `F`: edgeR quasi-likelihood F-statistic
+- `PValue`: raw p-value
+- `FDR`: Benjamini–Hochberg adjusted p-value
+
+> Note: FuNmiRBench primarily requires a stable gene identifier column. The remaining columns are used for downstream evaluation/visualization.
+
+The filenames must match the paths specified in `metadata/datasets.json`, e.g.:
+
 ```json
 {
   "id": "001",
   "data_path": "data/processed_GEO/GSE210778_edger_out_oe_hsa_miR_375_3p_oe.tsv",
   "miRNA": "hsa-miR-375-3p",
-  "perturbation": "overexpression",
-  ...
+  "perturbation": "overexpression"
 }
 ```

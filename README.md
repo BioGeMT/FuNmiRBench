@@ -7,10 +7,10 @@ FuNmiRBench provides:
 - Standardized metadata for >50 functional miRNA perturbation RNA-seq datasets (currently sourced from GEO)
 - A unified Python API to:
   - list and filter datasets by miRNA, cell line, perturbation type, tissue, and GEO accession
-  - load differential expression tables (edgeR outputs) into pandas  
+  - load differential expression tables (edgeR outputs) into pandas
   - summarize the available datasets
 - A foundation for baseline models and future dashboards (visualization & evaluation)
-........
+
 ---
 
 ## 🔧 Installation (development setup)
@@ -21,7 +21,9 @@ Clone the repo:
 git clone git@github.com:BioGeMT/FuNmiRBench.git
 cd FuNmiRBench
 ```
+
 Create and activate a conda env (example):
+
 ```bash
 eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
 conda create -n funmirbench python=3.12 pandas -y
@@ -29,10 +31,13 @@ conda activate funmirbench
 ```
 
 Make the code discoverable:
+
 ```bash
 export PYTHONPATH="$PWD/src:$PYTHONPATH"
 ```
-📂 Project structure
+
+## 📂 Project structure
+
 ```
 FuNmiRBench/
 ├── data/
@@ -42,17 +47,20 @@ FuNmiRBench/
 ├── metadata/
 │   ├── README.md                 # explains metadata inputs/outputs
 │   ├── mirna_experiment_info.tsv # curated input table (one row per dataset)
-│   └── datasets.json             # generated dataset index (built from TSV)
+│   ├── datasets.json             # generated dataset index (built from TSV)
+│   ├── predictions_info.tsv      # curated input table (one row per prediction tool)
+│   └── predictions.json          # generated prediction tool registry (built from TSV)
 │
 ├── pipelines/
 │   └── geo/
-│       ├── README.md            # how the GEO -> DE pipeline works
-│       ├── env.yml / env.R      # environment spec
-│       ├── run_pipeline.sh      # entry point script
+│       ├── README.md             # how the GEO -> DE pipeline works
+│       ├── env.yml / env.R       # environment spec
+│       ├── run_pipeline.sh       # entry point script
 │
 ├── scripts/
-│   ├── build_index.py           # builds metadata/datasets*.json
-│   └── build_predictions_index.py  # builds metadata/predictions.json (future)
+│   ├── build_experiments_index.py   # builds metadata/datasets.json
+│   ├── build_predictions.py         # builds canonical TSV scores for a tool (mock for now)
+│   └── build_predictions_index.py   # builds metadata/predictions.json
 │
 ├── src/
 │   └── funmirbench/
@@ -69,14 +77,23 @@ FuNmiRBench/
 To regenerate `metadata/datasets.json` from the curated TSV:
 
 ```bash
-python scripts/build_index.py
+python scripts/build_experiments_index.py
+```
+
+To regenerate `metadata/predictions.json` from the curated TSV:
+
+```bash
+python scripts/build_predictions_index.py
 ```
 
 Planned additions: user-registered datasets, prediction indices, and additional ingestion pipelines.
 
-📊 Using the dataset API
+---
+
+## 📊 Using the dataset API
 
 Basic loading:
+
 ```python
 from funmirbench import load_dataset, load_all_datasets
 
@@ -92,6 +109,7 @@ df_kd = load_all_datasets(perturbation="knockdown")
 ```
 
 Metadata exploration:
+
 ```python
 from funmirbench import datasets
 

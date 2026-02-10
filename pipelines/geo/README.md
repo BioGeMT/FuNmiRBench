@@ -1,7 +1,67 @@
-# GEO pipeline
+# GEO ingestion pipeline
 
-This folder documents the current (GEO-based) ingestion workflow for FuNmiRBench experiments.
+This folder documents the **current GEO-based ingestion workflow** for FuNmiRBench experiments.
 
-> Note: the processed directory can be configured when building `datasets.json`. See `python scripts/build_experiments_index.py --help` for the available options.
+At the moment, GEO is the only supported source of functional miRNA perturbation experiments,
+but the pipeline is designed so that **additional experiment sources can be added later**
+without changing the core benchmarking logic.
 
-The output format spec for processed DE tables is described here; consider moving it to a repo-level `pipelines/README.md` once additional pipelines are added.
+---
+
+## Purpose
+
+The GEO pipeline is responsible for:
+
+1. Downloading raw expression data from GEO
+2. Running differential expression analysis (e.g. edgeR)
+3. Producing **processed DE tables** (TSV)
+4. Placing those tables under `data/processed_GEO/` so they can be indexed by FuNmiRBench
+
+The resulting DE tables are **not tracked by git**.
+
+---
+
+## Relation to metadata
+
+This pipeline does **not** modify metadata directly.
+
+Instead:
+
+- Experiment metadata is curated in `metadata/mirna_experiment_info.tsv`
+- DE table filenames produced by this pipeline must match the `de_table_path` column
+- The dataset index is generated separately via:
+
+```bash
+python scripts/build_experiments_index.py
+```
+
+This separation keeps metadata curation and data processing decoupled.
+
+---
+
+## Output format (processed DE tables)
+
+Each processed DE table:
+
+- is a tab-separated `.tsv` file
+- corresponds to exactly one experiment
+- must contain at least the following columns (names must match; order does not matter):
+
+```text
+gene_name    logFC    logCPM    F    PValue    FDR
+```
+
+See `data/README.md` for a detailed column specification.
+
+---
+
+## Running the pipeline
+
+The concrete steps depend on the GEO study and analysis choices.
+Typical execution is orchestrated via:
+
+- `run_pipeline.sh`
+- the accompanying python / conda environments
+
+This README intentionally avoids prescribing a single execution path;
+its role is to document **interfaces and expectations**, not enforce implementation details.
