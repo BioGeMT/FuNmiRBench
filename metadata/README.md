@@ -1,7 +1,13 @@
 # Metadata
 
-FuNmiRBench separates **dataset metadata** (what datasets exist and where their DE tables live)
+FuNmiRBench separates **curated metadata** (what datasets exist and where their DE tables live)
 from the **data files** themselves (which are not tracked by git).
+
+The intended flow is:
+
+1. Curate `mirna_experiment_info.tsv` (source of truth)
+2. Run `python scripts/build_index.py`
+3. Commit the updated `datasets.json`
 
 ## Files in this folder
 
@@ -39,3 +45,12 @@ From the repository root:
 
 ```bash
 python scripts/build_index.py
+```
+
+## Why both TSV and JSON?
+
+- The TSV is **human-friendly** (easy to edit, review, and version-control).
+- The JSON is **machine-friendly** (stable schema, easy for Python code to load).
+
+The TSV should be treated as the **single source of truth**.
+If the TSV and JSON disagree, the TSV wins — regenerate the JSON.
