@@ -36,10 +36,8 @@ export PYTHONPATH="$PWD/src:$PYTHONPATH"
 ```
 FuNmiRBench/
 ├── data/
-│   ├── processed_GEO/           # DE tables (not in git)
-│   ├── raw_GEO/                 # raw / counts / etc (not in git)
-│   └── predictions/             # precomputed tool scores (not in git)
-│       └── tool_name.tsv        # e.g. targetscan.tsv (not defined yet the structure)
+│   ├── README.md                 # explains expected local data layout (not tracked)
+│   └── predictions/              # placeholder (not tracked)
 │
 ├── metadata/
 │   ├── README.md                 # explains metadata inputs/outputs
@@ -74,7 +72,7 @@ To regenerate `metadata/datasets.json` from the curated TSV:
 python scripts/build_index.py
 ```
 
-### !!! Planned additions (not yet in the repo): user-registered datasets, prediction indices, and additional ingestion pipelines.
+Planned additions: user-registered datasets, prediction indices, and additional ingestion pipelines.
 
 📊 Using the dataset API
 
