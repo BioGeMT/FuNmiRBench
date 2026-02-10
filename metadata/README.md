@@ -75,7 +75,7 @@ From the repository root:
 
 ```bash
 # datasets.json
-python scripts/build_index.py
+python scripts/build_experiments_index.py
 
 # predictions.json
 python scripts/build_predictions_index.py
