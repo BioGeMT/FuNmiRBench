@@ -71,5 +71,4 @@ Not implemented yet:
 - User-provided experiment ingestion (--from-dir)
 - Real evaluation metrics (AUC, PR, enrichment)
 - Full RNA-seq processing pipeline
-- Dashboards / reports
 ```
