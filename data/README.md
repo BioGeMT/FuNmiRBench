@@ -78,6 +78,14 @@ To download the published benchmark experiment corpus from Zenodo:
 python -m funmirbench.cli.import_experiments --token "<TOKEN>"
 ```
 
+If you already have local processed DE tables, import them directly:
+
+```bash
+python -m funmirbench.cli.import_experiments --from-dir /path/to/processed_tables
+```
+
+Use `--overwrite` if files already exist in `data/experiments/processed/`.
+
 This will populate:
 
 ```
