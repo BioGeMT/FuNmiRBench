@@ -20,8 +20,13 @@ miniconda3/
 # -------------------------
 # Local / Generated Data (NOT tracked)
 # -------------------------
+
+# Top-level benchmark data
 data/experiments/raw/
 data/experiments/processed/
 data/predictions/
 data/joined/
 data/plots/
+
+# Predictor pipeline generated data (downloads + intermediate tables)
+pipelines/standarized_predictors/*/data/*
