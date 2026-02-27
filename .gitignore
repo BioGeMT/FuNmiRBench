@@ -1,20 +1,27 @@
-# Python cache
+# -------------------------
+# Python
+# -------------------------
 __pycache__/
 *.py[cod]
+*.egg-info/
 
-# Virtual envs / env configs
+# -------------------------
+# Virtual environments
+# -------------------------
 .venv/
 .env/
-
-# Conda / local tools (never commit these)
 miniconda3/
 
-# VS Code / editor settings (optional)
+# -------------------------
+# Editors
+# -------------------------
 .vscode/
 
-# Local data outputs (NOT tracked)
-data/experiments/processed/
+# -------------------------
+# Local / Generated Data (NOT tracked)
+# -------------------------
 data/experiments/raw/
+data/experiments/processed/
 data/predictions/
 data/joined/
 data/plots/

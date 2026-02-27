@@ -1,6 +1,0 @@
-joined_tsv: /homes/ezach01/FuNmiRBench/data/joined/001_mock.tsv
-rows: 5000
-y_col: logFC
-pearson: 0.001683
-spearman: 0.007959
-png: /homes/ezach01/FuNmiRBench/data/plots/1_mock_score_vs_logFC.png
