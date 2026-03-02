@@ -1,1 +1,0 @@
-# standarize targetscanCNN 
