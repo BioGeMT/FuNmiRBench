@@ -20,9 +20,20 @@ What this script does
 5) Downloads miRBase mature.fa pinned to release 22.1 (from archive URL) and parses accession->name mapping.
 
 6) Builds three standardized prediction sets from Summary_Counts.all_predictions.txt:
-   - targetscanCNN      (all rows with non-NULL occupancy score)
-   - targetscanCons     (Total num conserved sites > 0)
-   - targetscanNonCons  (Total num nonconserved sites > 0)
+   - targetscanCNN      (score: Predicted occupancy - transfected miRNA)
+   - targetscanCons     (filter: Total num conserved sites > 0; score: Cumulative weighted context++ score)
+   - targetscanNonCons  (filter: Total num nonconserved sites > 0; score: Cumulative weighted context++ score)
+
+Important score handling
+------------------------
+- We keep rows even when the selected score column is NULL.
+- NULL scores are imputed as the *most negative / weakest* score value for that predictor
+  (i.e., the minimum observed non-NULL score after mandatory filters).
+- We write two score columns:
+    Score_raw  : original score with NULL imputed as above
+    Score_norm : min-max normalized to [0, 1] per predictor after imputation
+  For context++ scores, we reverse the normalized score so that higher Score_norm means
+  *stronger predicted repression* (because more negative context++ indicates stronger repression).
 
 Outputs
 -------
@@ -30,7 +41,7 @@ Standardized TSVs are written to:
   data/predictions/<predictor>/<predictor>_standardized.tsv
 
 Schema:
-  Ensembl_ID, Gene_Name, miRNA_ID, miRNA_Name, Score
+  Ensembl_ID, Gene_Name, miRNA_ID, miRNA_Name, Score_raw, Score_norm
 
 Notes
 -----
@@ -134,10 +145,18 @@ def _assert_fasta(path: pathlib.Path) -> None:
             s = line.strip()
             if not s:
                 continue
-            if not s.startswith(">"):
+            if not s.startswith(">") :
                 raise RuntimeError(f"Not FASTA (first line: {s[:120]})")
             return
     raise RuntimeError("FASTA check failed: file appears empty.")
+
+
+def _clamp01(x: float) -> float:
+    if x < 0.0:
+        return 0.0
+    if x > 1.0:
+        return 1.0
+    return x
 
 
 # =============================================================================
@@ -206,11 +225,27 @@ def step2_build_longest_utr_index(
     species_id: str = "9606",
     report_top_n_tx_counts: int = 6,
 ) -> Dict[str, Any]:
+    """
+    Choose ONE transcript per gene: the transcript with the LONGEST annotated UTR,
+    using TargetScan's UTR_Sequences.txt for a single species (default: human 9606).
+
+    Returns:
+      - best_tx_by_gene_id: TargetScan Gene ID -> (Transcript ID, UTR_len, Gene Symbol)
+      - gene_id_by_tx: Transcript ID -> TargetScan Gene ID
+      - gene_symbol_by_gene_id: TargetScan Gene ID -> Gene Symbol
+    """
     logger.info("\n=== STEP 2/7: Build longest-UTR transcript index from UTR_Sequences.txt ===")
 
     utr_sequences_path = pathlib.Path(utr_sequences_path)
     if not utr_sequences_path.exists():
         raise FileNotFoundError(f"UTR sequences file not found: {utr_sequences_path}")
+
+    # Fixed TargetScan vert_80 header (stable)
+    tx_key = "Refseq ID"
+    gene_id_key = "Gene ID"
+    gene_sym_key = "Gene Symbol"
+    sp_key = "Species ID"
+    seq_key = "UTR sequence"
 
     best_tx_by_gene_id: Dict[str, Tuple[str, int, str]] = {}
     gene_id_by_tx: Dict[str, str] = {}
@@ -228,29 +263,13 @@ def step2_build_longest_utr_index(
         if reader.fieldnames is None:
             raise ValueError(f"No header found in {utr_sequences_path}")
 
-        tx_key = None
-        for candidate in ("Transcript ID", "Refseq ID", "RefSeq ID"):
-            if candidate in reader.fieldnames:
-                tx_key = candidate
-                break
-        if tx_key is None:
-            raise ValueError(f"Cannot find Transcript/Refseq column in header: {reader.fieldnames}")
-
-        gene_id_key = "Gene ID"
-        gene_sym_key = "Gene Symbol"
-        sp_key = "Species ID"
-
-        seq_key = None
-        for candidate in ("UTR Sequence", "UTR sequence", "UTR_sequence", "UTR"):
-            if candidate in reader.fieldnames:
-                seq_key = candidate
-                break
-        if seq_key is None:
-            raise ValueError(f"Cannot find UTR sequence column in header: {reader.fieldnames}")
-
-        missing = [c for c in (gene_id_key, gene_sym_key, sp_key) if c not in reader.fieldnames]
+        required = [tx_key, gene_id_key, gene_sym_key, sp_key, seq_key]
+        missing = [c for c in required if c not in reader.fieldnames]
         if missing:
-            raise ValueError(f"Missing required columns {missing} in {utr_sequences_path}")
+            raise ValueError(
+                f"Unexpected header in {utr_sequences_path} (missing {missing}). "
+                f"Got: {reader.fieldnames}"
+            )
 
         for row in reader:
             n_total += 1
@@ -310,7 +329,6 @@ def step2_build_longest_utr_index(
         "gene_id_by_tx": gene_id_by_tx,
         "gene_symbol_by_gene_id": gene_symbol_by_gene_id,
     }
-
 
 # =============================================================================
 # STEP 3/7 - Download Ensembl v115 GTF
@@ -533,7 +551,7 @@ def parse_mirbase_mature(mature_fa: pathlib.Path) -> Dict[str, str]:
     acc2name: Dict[str, str] = {}
     with pathlib.Path(mature_fa).open("r", encoding="utf-8", errors="ignore") as f:
         for line in f:
-            if line.startswith(">"):
+            if line.startswith(">") :
                 parts = line[1:].strip().split()
                 if len(parts) >= 2:
                     acc2name[parts[0]] = parts[1]
@@ -607,7 +625,7 @@ def step_mirfamily_to_human_matures(
 
 
 # =============================================================================
-# Write standardized predictor files (3 splits)
+# Write standardized predictor files (3 splits) with NULL handling + raw+norm
 # =============================================================================
 def step_write_standardized_predictions(
     summary_counts_path: pathlib.Path,
@@ -617,7 +635,6 @@ def step_write_standardized_predictions(
     family_to_mirs: Dict[str, List[MirnaEntry]],
     out_predictions_dir: pathlib.Path,
     species_id: str = "9606",
-    score_col: str = "Predicted occupancy - transfected miRNA",
 ) -> None:
     logger.info("\n=== Write standardized predictions (targetscanCNN/Cons/NonCons) ===")
 
@@ -634,34 +651,55 @@ def step_write_standardized_predictions(
     out_predictions_dir = pathlib.Path(out_predictions_dir)
     out_predictions_dir.mkdir(parents=True, exist_ok=True)
 
-    required = [
+    # Predictor-specific scoring
+    SCORE_SPECS = {
+        "targetscanCNN": {
+            "score_col": "Predicted occupancy - transfected miRNA",
+            "reverse": False,  # higher occupancy => stronger
+        },
+        "targetscanCons": {
+            "score_col": "Cumulative weighted context++ score",
+            "reverse": True,   # more negative => stronger, so reverse after min-max
+        },
+        "targetscanNonCons": {
+            "score_col": "Cumulative weighted context++ score",
+            "reverse": True,
+        },
+    }
+
+    required_common = [
         "Transcript ID",
         "Gene Symbol",
         "miRNA family",
         "Species ID",
         "Total num conserved sites",
         "Total num nonconserved sites",
-        score_col,
     ]
+    required_scores = sorted({spec["score_col"] for spec in SCORE_SPECS.values()})
 
-    # Pass 1: compute min/max on final CNN set (after all mandatory filters)
-    minv = math.inf
-    maxv = -math.inf
-    stats_minmax = Counter()
+    # -------------------------------------------------------------------------
+    # Pass 1: compute per-predictor min/max among non-NULL scores AFTER filters
+    # -------------------------------------------------------------------------
+    stats = {pred: Counter() for pred in SCORE_SPECS}
+    min_nonnull = {pred: math.inf for pred in SCORE_SPECS}
+    max_nonnull = {pred: -math.inf for pred in SCORE_SPECS}
 
     with summary_counts_path.open("r", encoding="utf-8") as fin:
         reader = csv.DictReader(fin, delimiter="\t")
         if reader.fieldnames is None:
             raise ValueError(f"No header found in {summary_counts_path}")
-        missing = [c for c in required if c not in reader.fieldnames]
+
+        missing = [c for c in required_common if c not in reader.fieldnames]
         if missing:
             raise ValueError(f"Missing required columns {missing} in {summary_counts_path}")
 
+        missing_scores = [c for c in required_scores if c not in reader.fieldnames]
+        if missing_scores:
+            raise ValueError(f"Missing score columns {missing_scores} in {summary_counts_path}")
+
         for row in reader:
-            stats_minmax["rows_total"] += 1
             if row["Species ID"].strip() != species_id:
                 continue
-            stats_minmax["rows_species"] += 1
 
             tx_raw = row["Transcript ID"].strip()
             gene_id_ts = gene_id_by_tx_ts.get(tx_raw)
@@ -682,28 +720,67 @@ def step_write_standardized_predictions(
             if not mirs:
                 continue
 
-            v = _to_float_or_none(row[score_col])
-            if v is None:
-                stats_minmax["drop_null_score"] += 1
-                continue
-            stats_minmax["rows_scored"] += 1
+            # split membership
+            try:
+                n_cons = int(float(row["Total num conserved sites"]))
+            except Exception:
+                n_cons = 0
+            try:
+                n_noncons = int(float(row["Total num nonconserved sites"]))
+            except Exception:
+                n_noncons = 0
 
-            minv = min(minv, v)
-            maxv = max(maxv, v)
+            memberships = {
+                "targetscanCNN": True,
+                "targetscanCons": n_cons > 0,
+                "targetscanNonCons": n_noncons > 0,
+            }
 
-    if stats_minmax["rows_scored"] == 0:
-        raise ValueError("No scored rows remain after mandatory filters.")
+            for pred, spec in SCORE_SPECS.items():
+                if not memberships[pred]:
+                    continue
+                stats[pred]["rows_after_filters"] += 1
+                v = _to_float_or_none(row[spec["score_col"]])
+                if v is None:
+                    stats[pred]["rows_null_score"] += 1
+                    continue
+                stats[pred]["rows_nonnull_score"] += 1
+                if v < min_nonnull[pred]:
+                    min_nonnull[pred] = v
+                if v > max_nonnull[pred]:
+                    max_nonnull[pred] = v
 
-    logger.info(
-        "Normalization params for %s (FINAL filtered CNN rows): min=%.6g max=%.6g (scored_rows=%d)",
-        score_col, float(minv), float(maxv), stats_minmax["rows_scored"]
-    )
+    # Decide NULL imputation value and normalization ranges per predictor
+    null_fill = {}
+    minv = {}
+    maxv = {}
+    denom = {}
+    for pred in SCORE_SPECS:
+        if stats[pred]["rows_after_filters"] == 0:
+            raise ValueError(f"No rows remain after filters for {pred}.")
+        if stats[pred]["rows_nonnull_score"] == 0:
+            raise ValueError(f"No non-NULL scores remain after filters for {pred}; cannot impute NULLs.")
+        null_fill[pred] = float(min_nonnull[pred])  # NULL becomes weakest score
+        minv[pred] = float(min_nonnull[pred])       # after imputation, min is still min_nonnull
+        maxv[pred] = float(max_nonnull[pred])
+        d = maxv[pred] - minv[pred]
+        if d <= 0:
+            raise ValueError(f"Invalid normalization range for {pred}: min={minv[pred]}, max={maxv[pred]}")
+        denom[pred] = d
 
-    denom = (maxv - minv)
-    if denom <= 0:
-        raise ValueError(f"Invalid normalization range: min={minv}, max={maxv}")
+        logger.info(
+            "%s score column '%s': min(non-NULL)=%.6g max(non-NULL)=%.6g | NULL rows=%d (imputed as %.6g)",
+            pred,
+            SCORE_SPECS[pred]["score_col"],
+            minv[pred],
+            maxv[pred],
+            stats[pred]["rows_null_score"],
+            null_fill[pred],
+        )
 
-    predictors = ["targetscanCNN", "targetscanCons", "targetscanNonCons"]
+    # -------------------------------------------------------------------------
+    # Pass 2: write outputs (family-expanded) with Score_raw + Score_norm
+    # -------------------------------------------------------------------------
     writers: Dict[str, Tuple[csv.DictWriter, Any]] = {}
     out_paths: Dict[str, pathlib.Path] = {}
 
@@ -714,18 +791,18 @@ def step_write_standardized_predictions(
         fout = out_path.open("w", encoding="utf-8", newline="")
         w = csv.DictWriter(
             fout,
-            fieldnames=["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score"],
+            fieldnames=["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score_raw", "Score_norm"],
             delimiter="\t",
         )
         w.writeheader()
         return w, fout, out_path
 
-    for pred in predictors:
+    for pred in SCORE_SPECS:
         w, fout, p = _open_writer(pred)
         writers[pred] = (w, fout)
         out_paths[pred] = p
 
-    split_stats: Dict[str, Counter] = {pred: Counter() for pred in predictors}
+    written = {pred: Counter() for pred in SCORE_SPECS}
 
     with summary_counts_path.open("r", encoding="utf-8") as fin:
         reader = csv.DictReader(fin, delimiter="\t")
@@ -756,13 +833,6 @@ def step_write_standardized_predictions(
             if not mirs:
                 continue
 
-            v = _to_float_or_none(row[score_col])
-            if v is None:
-                continue
-
-            score_norm = (v - minv) / denom
-            score_norm = 0.0 if score_norm < 0.0 else (1.0 if score_norm > 1.0 else score_norm)
-
             try:
                 n_cons = int(float(row["Total num conserved sites"]))
             except Exception:
@@ -772,48 +842,48 @@ def step_write_standardized_predictions(
             except Exception:
                 n_noncons = 0
 
-            in_cnn = True
-            in_cons = n_cons > 0
-            in_noncons = n_noncons > 0
+            memberships = {
+                "targetscanCNN": True,
+                "targetscanCons": n_cons > 0,
+                "targetscanNonCons": n_noncons > 0,
+            }
 
-            for mir in mirs:
-                if in_cnn:
-                    split_stats["targetscanCNN"]["written_rows"] += 1
-                    writers["targetscanCNN"][0].writerow(
-                        {"Ensembl_ID": gene_id_ens, "Gene_Name": gene_name,
-                         "miRNA_ID": mir.mirna_id, "miRNA_Name": mir.mirna_name,
-                         "Score": f"{score_norm:.6g}"}
-                    )
-                if in_cons:
-                    split_stats["targetscanCons"]["written_rows"] += 1
-                    writers["targetscanCons"][0].writerow(
-                        {"Ensembl_ID": gene_id_ens, "Gene_Name": gene_name,
-                         "miRNA_ID": mir.mirna_id, "miRNA_Name": mir.mirna_name,
-                         "Score": f"{score_norm:.6g}"}
-                    )
-                if in_noncons:
-                    split_stats["targetscanNonCons"]["written_rows"] += 1
-                    writers["targetscanNonCons"][0].writerow(
-                        {"Ensembl_ID": gene_id_ens, "Gene_Name": gene_name,
-                         "miRNA_ID": mir.mirna_id, "miRNA_Name": mir.mirna_name,
-                         "Score": f"{score_norm:.6g}"}
-                    )
+            for pred, spec in SCORE_SPECS.items():
+                if not memberships[pred]:
+                    continue
 
-            split_stats["targetscanCNN"]["base_rows"] += 1
-            if in_cons:
-                split_stats["targetscanCons"]["base_rows"] += 1
-            if in_noncons:
-                split_stats["targetscanNonCons"]["base_rows"] += 1
+                v = _to_float_or_none(row[spec["score_col"]])
+                if v is None:
+                    v = null_fill[pred]
 
-    for pred in predictors:
+                norm = (float(v) - minv[pred]) / denom[pred]
+                norm = _clamp01(norm)
+                if spec["reverse"]:
+                    norm = 1.0 - norm
+
+                # expand family -> all human mature miRNAs
+                for mir in mirs:
+                    writers[pred][0].writerow(
+                        {
+                            "Ensembl_ID": gene_id_ens,
+                            "Gene_Name": gene_name,
+                            "miRNA_ID": mir.mirna_id,
+                            "miRNA_Name": mir.mirna_name,
+                            "Score_raw": f"{float(v):.6g}",
+                            "Score_norm": f"{float(norm):.6g}",
+                        }
+                    )
+                    written[pred]["written_rows"] += 1
+
+                written[pred]["base_rows"] += 1
+
+    for pred in SCORE_SPECS:
         writers[pred][1].close()
-
-    for pred in predictors:
         logger.info(
             "%s -> wrote %d rows (family-expanded) from %d base rows. output=%s",
             pred,
-            split_stats[pred]["written_rows"],
-            split_stats[pred]["base_rows"],
+            written[pred]["written_rows"],
+            written[pred]["base_rows"],
             out_paths[pred],
         )
 
@@ -870,8 +940,8 @@ def main() -> None:
     )
 
     mirbase_fa = step6_download_mirbase_mature(data_dir, force=False)
-    mirbase_latest = parse_mirbase_mature(mirbase_fa)
-    # NOTE: mirbase_latest is currently not used downstream; kept for future-proofing.
+    _ = parse_mirbase_mature(mirbase_fa)
+    # NOTE: parsed miRBase is currently not used downstream; kept for future-proofing.
 
     family_to_mirs = step_mirfamily_to_human_matures(files["miR_Family_Info.txt"], species_id="9606")
 
@@ -882,7 +952,6 @@ def main() -> None:
         family_to_mirs=family_to_mirs,
         out_predictions_dir=out_predictions_dir,
         species_id="9606",
-        score_col="Predicted occupancy - transfected miRNA",
     )
 
     compute_final_statistics(out_predictions_dir)
