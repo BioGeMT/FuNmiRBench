@@ -12,9 +12,9 @@ authors = [
   { name = "BioGeMT Project Team" }
 ]
 dependencies = [
-  "matplotlib",
-  "requests",
-  "pandas",
+  "pandas>=2.2,<3",
+  "matplotlib>=3.9,<4",
+  "requests>=2.32,<3",
 ]
 
 [tool.setuptools]
