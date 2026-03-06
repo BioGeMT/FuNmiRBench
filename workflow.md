@@ -1,155 +1,209 @@
-# FuNmiRBench workflow
+# FuNmiRBench Workflow
 
-Legend:
-✅ implemented
-⏳ planned / not implemented
+## Core Principle
 
----
+FuNmiRBench evaluates miRNA perturbation experiments listed in a single registry file:
 
-## High-level pipeline overview
+**metadata/mirna_experiment_info.tsv**
 
-```
-                 ┌──────────────────────────────────────┐
-                 │      Curated dataset metadata (repo)  │
-                 │      metadata/mirna_experiment_info.tsv│
-                 └──────────────────────┬───────────────┘
-                                        │ ✅
-                                        ▼
-                 ┌──────────────────────────────────────┐
-                 │ build_experiments_index              │
-                 │  → metadata/datasets.json            │
-                 └──────────────────────┬───────────────┘
-                                        │
-                                        ▼
-┌──────────────────────────────────────┐        ┌──────────────────────────────────────┐ 
-│ Benchmark corpus (Zenodo)            │        │ User-provided processed experiments  │
-│ processed DE tables (TSV)            │        │ (same TSV schema as benchmark)       │
-└──────────────────────┬───────────────┘        └──────────────────────┬───────────────┘
-                       │ ✅                                   │ ⏳
-                       ▼                                      ▼
-┌──────────────────────────────────────┐        ┌──────────────────────────────────────┐
-│ import_experiments (Zenodo download) │        │ import_experiments --from-dir        │
-│ → data/experiments/processed/        │        │ → data/experiments/processed/        │
-└──────────────────────┬───────────────┘        └──────────────────────────────────────┘
-                       │ ✅
-                       ▼
-┌──────────────────────────────────────┐
-│ validate_experiments                 │
-│ - path exists                         │
-│ - readable TSV                         │
-│ - gene identifier column detectable    │
-└──────────────────────┬───────────────┘
-                       │
-                       ▼
-        ┌──────────────────────────────────────────────┐
-        │     Curated prediction tool metadata (repo)   │
-        │     metadata/predictions_info.tsv             │
-        └───────────────────────┬──────────────────────┘
-                                │ ✅
-                                ▼
-                 ┌──────────────────────────────────────┐
-                 │ build_predictions_index              │
-                 │  → metadata/predictions.json         │
-                 └──────────────────────┬───────────────┘
-                                │
-                                ▼
-                 ┌──────────────────────────────────────┐
-                 │ build_predictions --tool <tool>       │
-                 │  → data/predictions/<tool>/*.tsv      │
-                 └──────────────────────┬───────────────┘
-                                │ ✅ (mock only today)
-                                ▼
-                 ┌──────────────────────────────────────┐
-                 │ join_experiment_predictions           │
-                 │  → data/joined/<dataset>_<tool>.tsv   │
-                 └──────────────────────┬───────────────┘
-                                │ ✅
-                                ▼
-                 ┌──────────────────────────────────────┐
-                 │ plot_correlation                      │
-                 │  → data/plots/*.png + *.txt           │
-                 └──────────────────────────────────────┘
-                                ✅
-```
+This file is the **single source of truth** for experiments used in benchmarking.
+
+If an experiment appears in this TSV, FuNmiRBench assumes:
+
+* A processed differential expression table already exists
+* The table location is specified in `de_table_path`
+* The file is readable and valid
 
 ---
 
-## Concrete artifacts and where they live
+# Workflow Overview
 
-### Inputs (repo-tracked)
-- `metadata/mirna_experiment_info.tsv` — dataset registry source of truth
-- `metadata/predictions_info.tsv` — prediction tool registry source of truth
+The benchmark workflow consists of five logical stages:
 
-### Derived indexes (generated)
-- `metadata/datasets.json` — built from `mirna_experiment_info.tsv`
-- `metadata/predictions.json` — built from `predictions_info.tsv`
+1. Experiment preparation (upstream)
+2. Build experiment index
+3. Validate experiments
+4. Run predictors
+5. Evaluate predictors
 
-### Local data (not necessarily repo-tracked)
-- `data/experiments/processed/*.tsv` — processed DE tables (edgeR outputs)
-- `data/predictions/<tool>/*.tsv` — canonical miRNA–gene score tables
-- `data/joined/*.tsv` — joined DE + prediction tables
-- `data/plots/*` — plots + small text summaries
+Only stages **2–5 are part of FuNmiRBench**.
 
 ---
 
-## CLI workflow (current)
+# 1. Experiment Preparation (Upstream)
 
-### 1) Import benchmark experiments (Zenodo → local)
-Download processed DE tables into `data/experiments/processed/`:
+Experiments must be prepared **before running the benchmark**.
 
-```bash
-python -m funmirbench.cli.import_experiments --token "<TOKEN>"
-# or: export ZENODO_TOKEN=... and omit --token
-```
+Possible sources:
 
-✅ Implemented: downloads only; does not change curated metadata.
+### A. Zenodo benchmark corpus
 
-### 2) Build experiments index
-```bash
-python -m funmirbench.cli.build_experiments_index
-```
-Produces: `metadata/datasets.json`.
+Experiments are downloaded and stored locally.
 
-### 3) Validate local experiments
-```bash
-python -m funmirbench.cli.validate_experiments
-```
-Recommended before running predictions.
+### B. User processed experiments
 
-### 4) Generate prediction scores
-```bash
-python -m funmirbench.cli.build_predictions --tool mock
-```
-Produces: `data/predictions/mock/*.tsv`.
+A user may already have processed differential expression tables.
 
-### 5) Build predictions index
-```bash
-python -m funmirbench.cli.build_predictions_index
-```
-Produces: `metadata/predictions.json`.
+### C. Raw RNA-seq data
 
-### 6) Join one dataset with one tool
-```bash
-python -m funmirbench.cli.join_experiment_predictions \
-  --dataset-id 001 \
-  --tool mock \
-  --out data/joined/001_mock.tsv
-```
+Users may process raw RNA-seq data using the external pipeline. (pipelines/geo)
 
-### 7) Plot correlation
-```bash
-python -m funmirbench.cli.plot_correlation \
-  --joined-tsv data/joined/001_mock.tsv \
-  --out-dir data/plots
-```
-Produces:
-- a PNG scatter plot
-- a TXT summary with Pearson/Spearman correlations
+
+This upstream pipeline has its **own Conda environment**. (including everything needed for standardize predictors also)
+
+Once a processed table exists, the user adds a row to:
+
+metadata/mirna_experiment_info.tsv
 
 ---
 
-## Planned / not implemented yet
-- ⏳ `import_experiments --from-dir` for user-provided processed TSVs
-- ⏳ additional evaluation metrics (PR/ROC, enrichment, AUROC/AUPRC, etc.)
-- ⏳ full RNA-seq processing pipeline (raw → counts → DE)
-- ⏳ multi-dataset / multi-tool batch evaluation + dashboard-ready summaries
+# 2. Experiment Registry
+
+The registry file contains metadata for each experiment.
+
+Example fields:
+
+* mirna_name
+* mirna_sequence
+* article_pubmed_id
+* tested_cell_line
+* treatment
+* tissue
+* experiment_type
+* gse_url
+* de_table_path
+
+Important rule:
+
+Every row must point to a **valid processed DE table** via `de_table_path`.
+
+---
+
+# 3. Build Experiment Index
+
+The registry is converted into a structured metadata file:
+
+datasets.json
+
+Command:
+
+build_experiments_index
+
+Purpose:
+
+* assign dataset IDs
+* normalize metadata
+* store experiment locations
+
+---
+
+# 4. Validate Experiments
+
+The validation step ensures all experiments are usable.
+
+Command:
+
+validate_experiments
+
+Checks include:
+
+* files exist
+* files are readable
+* gene ID column present
+* DE table structure valid
+
+If validation fails, the benchmark should **not continue**.
+
+---
+
+# 5. Run Predictors
+
+Predictors generate target scores for each miRNA.
+
+Example predictor tools:
+
+* mock (testing)
+* TargetScan
+* microT-CNN
+* others
+
+Predictions are stored under:
+
+data/predictions/<tool>/
+
+Example:
+
+data/predictions/mock/mock_canonical.tsv
+
+Command example:
+
+build_predictions --tool mock
+
+---
+
+# 6. Join Predictions with Experiments
+
+Predicted targets are merged with differential expression data.
+
+Command:
+
+join_experiment_predictions
+
+Output:
+
+data/joined/<dataset>_<tool>.tsv
+
+Example:
+
+data/joined/008_mock.tsv
+
+---
+
+# 7. Evaluation
+
+Evaluation measures the relationship between predicted scores and gene expression changes.
+
+Example metrics:
+
+* Pearson correlation
+* Spearman correlation
+
+Command:
+
+plot_correlation
+
+Outputs:
+
+data/plots/<dataset>_<tool>_score_vs_logFC.png
+
+---
+
+# Smoke Run (End-to-End Test)
+
+A smoke run performs a minimal benchmark execution:
+
+1. build experiment index
+2. validate experiments
+3. build mock predictions
+4. evaluate a small dataset subset
+
+Example:
+
+python -m funmirbench.cli.smoke_run --experiment-type OE --cell-line HeLa --limit 2
+
+This verifies the full pipeline works correctly.
+
+---
+
+# Key Design Decisions
+
+### Single Source of Truth
+
+mirna_experiment_info.tsv defines the benchmark dataset.
+
+### Separation of Responsibilities
+
+Experiment preparation → upstream pipelines
+Benchmark evaluation → FuNmiRBench
+
+
