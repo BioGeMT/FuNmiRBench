@@ -13,7 +13,11 @@ FuNmiRBench provides:
 
 ---
 
-## 🔧 Installation (development setup)
+## 🔧 Installation
+
+FuNmiRBench supports two installation modes:
+
+### Option 1 (recommended): reproducible conda environment (pinned versions)
 
 Clone the repo:
 
@@ -21,21 +25,22 @@ Clone the repo:
 git clone git@github.com:BioGeMT/FuNmiRBench.git
 cd FuNmiRBench
 ```
+Create and activate the pinned conda environment:
+```bash
+conda env create -f environment.yml
+conda activate funmirbench
+```
+This installs core dependencies via conda (with fixed versions) and installs the
+package in editable mode (pip install -e .).
 
-Create and activate a conda env (example):
-
+### Option 2: manual development setup (pip-managed deps)
 ```bash
 eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
 conda create -n funmirbench python=3.12
 conda activate funmirbench
-```
 
-Install the package in editable mode:
-
-```bash
 pip install -e .
 ```
-
 ## 📂 Project structure
 
 ```
