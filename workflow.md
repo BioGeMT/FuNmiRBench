@@ -1,7 +1,5 @@
 # FuNmiRBench Workflow
 
-## Core Principle
-
 FuNmiRBench evaluates miRNA perturbation experiments listed in a single registry file:
 
 **metadata/mirna_experiment_info.tsv**
@@ -12,7 +10,6 @@ If an experiment appears in this TSV, FuNmiRBench assumes:
 
 * A processed differential expression table already exists
 * The table location is specified in `de_table_path`
-* The file is readable and valid
 
 ---
 
@@ -23,10 +20,8 @@ The benchmark workflow consists of five logical stages:
 1. Experiment preparation (upstream)
 2. Build experiment index
 3. Validate experiments
-4. Run predictors
+4. Join with predictors (upstream standardization)
 5. Evaluate predictors
-
-Only stages **2–5 are part of FuNmiRBench**.
 
 ---
 
@@ -55,6 +50,7 @@ Once a processed table exists, the user adds a row to:
 
 metadata/mirna_experiment_info.tsv
 
+Should we give the user the ability to include his own predictors?
 ---
 
 # 2. Experiment Registry
@@ -92,7 +88,6 @@ build_experiments_index
 Purpose:
 
 * assign dataset IDs
-* normalize metadata
 * store experiment locations
 
 ---
@@ -178,23 +173,6 @@ data/plots/<dataset>_<tool>_score_vs_logFC.png
 
 ---
 
-# Smoke Run (End-to-End Test)
-
-A smoke run performs a minimal benchmark execution:
-
-1. build experiment index
-2. validate experiments
-3. build mock predictions
-4. evaluate a small dataset subset
-
-Example:
-
-python -m funmirbench.cli.smoke_run --experiment-type OE --cell-line HeLa --limit 2
-
-This verifies the full pipeline works correctly.
-
----
-
 # Key Design Decisions
 
 ### Single Source of Truth
@@ -203,7 +181,7 @@ mirna_experiment_info.tsv defines the benchmark dataset.
 
 ### Separation of Responsibilities
 
-Experiment preparation → upstream pipelines
+Experiment preparation/ Predictors → upstream pipelines
 Benchmark evaluation → FuNmiRBench
 
 
