@@ -15,12 +15,74 @@ If an experiment appears in this TSV, FuNmiRBench assumes:
 
 # Workflow Overview
 
+```
+                     FuNmiRBench Architecture
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│                         UPSTREAM                            │
+│                (experiment preparation)                     │
+│                                                             │
+│  Raw RNA-seq experiments                                    │
+│          │                                                  │
+│          ▼                                                  │
+│   RNA-seq processing pipeline                               │
+│   (alignment, quantification, DE analysis)                  │
+│          │                                                  │
+│          ▼                                                  │
+│   Differential expression tables                            │
+│   gene | logFC | FDR (*) or already processed DE experiments                                │
+│          │                                                  │
+│          ▼                                                  │
+│   metadata/mirna_experiment_info.tsv                        │
+│                                                             │
+└───────────────────────┬─────────────────────────────────────┘
+                        │
+                        │ dataset index + DE tables
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│                        DOWNSTREAM                           │
+│                   (benchmark engine)                        │
+│                                                             │
+│        Dataset selection                                    │
+│        (miRNA / cell line / perturbation)                   │
+│                        │                                    │
+│                        ▼                                    │
+│        Prediction algorithms                                │
+│        (mock / TargetScan / mirDB / etc.)                   │
+│                        │                                    │
+│                        ▼                                    │
+│        Join predictions with experiments                    │
+│                                                             │
+│        gene | score | logFC | FDR (one mirna every time)    │
+│                                                             │
+│                        ▼                                    │
+│        Evaluation metrics                                   │
+│        • PR curves                                          │
+│        • ROC curves                                         │
+│        • enrichment curves                                  │
+│        • score vs logFC                                     │
+│        • CDF plots                                          │
+│        • Heatmap                                            │
+│                                                             │
+│                        ▼                                    │
+│        Benchmark outputs                                    │
+│                                                             │
+│        results/run_*/                                       │
+│        ├── plots/                                           │
+│        ├── reports/ (md)                                    │
+│        ├── joined tables per predictor                      │
+│        └── comparison summaries                             │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
 The benchmark workflow consists of five logical stages:
 
 1. Experiment preparation (upstream)
 2. Build experiment index
 3. Validate experiments
-4. Join with predictors (upstream standardization)
+4. Join with predictors (upstream standardization/preparation?)
 5. Evaluate predictors
 
 ---
@@ -150,7 +212,7 @@ data/joined/<dataset>_<tool>.tsv
 
 Example:
 
-data/joined/008_mock.tsv
+data/joined/EXP008_mock.tsv
 
 ---
 
