@@ -24,16 +24,19 @@ What this script does
    - targetscanCons     (filter: Total num conserved sites > 0; score: Cumulative weighted context++ score)
    - targetscanNonCons  (filter: Total num nonconserved sites > 0; score: Cumulative weighted context++ score)
 
-Important score handling
+Score handling
 ------------------------
-- We keep rows even when the selected score column is NULL.
-- NULL scores are imputed as the *most negative / weakest* score value for that predictor
-  (i.e., the minimum observed non-NULL score after mandatory filters).
-- We write two score columns:
-    Score_raw  : original score with NULL imputed as above
-    Score_norm : min-max normalized to [0, 1] per predictor after imputation
-  For context++ scores, we reverse the normalized score so that higher Score_norm means
-  *stronger predicted repression* (because more negative context++ indicates stronger repression).
+- Keep rows even when the selected score column is NULL.
+- NULL scores are imputed as the weakest observed non-NULL score for that predictor after mandatory filters.
+- Write two score columns:
+    Score      : raw direction-corrected score
+    Score_norm : percentile rank in [0,1] used for benchmarking
+- Score direction is standardized so that higher underlying score always means a stronger/more confident predicted interaction:
+    - targetscanCNN     : use Predicted occupancy - transfected miRNA as is
+    - targetscanCons    : use -1 * (Cumulative weighted context++ score)
+    - targetscanNonCons : use -1 * (Cumulative weighted context++ score)
+- After direction correction and NULL imputation, scores are converted to within-predictor percentile ranks.
+- Ranking is computed at the base-row level before family expansion, so miRNA family size does not affect ranks.
 
 Outputs
 -------
@@ -41,12 +44,12 @@ Standardized TSVs are written to:
   data/predictions/<predictor>/<predictor>_standardized.tsv
 
 Schema:
-  Ensembl_ID, Gene_Name, miRNA_ID, miRNA_Name, Score_raw, Score_norm
+  Ensembl_ID, Gene_Name, miRNA_ID, miRNA_Name, Score, Score_norm
 
 Notes
 -----
 - TargetScan transcripts are versioned (ENST... .6). Ensembl mapping uses stable IDs,
-  so we compare after stripping version.
+  so to compare after stripping version.
 """
 
 from __future__ import annotations
@@ -145,18 +148,46 @@ def _assert_fasta(path: pathlib.Path) -> None:
             s = line.strip()
             if not s:
                 continue
-            if not s.startswith(">") :
+            if not s.startswith(">"):
                 raise RuntimeError(f"Not FASTA (first line: {s[:120]})")
             return
     raise RuntimeError("FASTA check failed: file appears empty.")
 
 
-def _clamp01(x: float) -> float:
-    if x < 0.0:
-        return 0.0
-    if x > 1.0:
-        return 1.0
-    return x
+def _directional_score(value: float, *, reverse: bool) -> float:
+    """Return score with standardized direction: higher = stronger."""
+    return -float(value) if reverse else float(value)
+
+
+def _percentile_ranks(values: List[float]) -> List[float]:
+    """
+    Convert scores to percentile-like ranks in (0, 1], preserving order.
+    Lowest score gets 1/N, highest score gets 1.0.
+    Ties receive the average of their occupied ranks.
+    """
+    n = len(values)
+    if n == 0:
+        return []
+
+    indexed = sorted(enumerate(values), key=lambda x: x[1])
+    ranks = [0.0] * n
+
+    i = 0
+    while i < n:
+        j = i + 1
+        while j < n and indexed[j][1] == indexed[i][1]:
+            j += 1
+
+        avg_rank = ((i + 1) + j) / 2.0
+        pct = avg_rank / n
+
+        for k in range(i, j):
+            orig_idx = indexed[k][0]
+            ranks[orig_idx] = pct
+
+        i = j
+
+    return ranks
 
 
 # =============================================================================
@@ -240,7 +271,6 @@ def step2_build_longest_utr_index(
     if not utr_sequences_path.exists():
         raise FileNotFoundError(f"UTR sequences file not found: {utr_sequences_path}")
 
-    # Fixed TargetScan vert_80 header (stable)
     tx_key = "Refseq ID"
     gene_id_key = "Gene ID"
     gene_sym_key = "Gene Symbol"
@@ -329,6 +359,7 @@ def step2_build_longest_utr_index(
         "gene_id_by_tx": gene_id_by_tx,
         "gene_symbol_by_gene_id": gene_symbol_by_gene_id,
     }
+
 
 # =============================================================================
 # STEP 3/7 - Download Ensembl v115 GTF
@@ -560,6 +591,7 @@ def parse_mirbase_mature(mature_fa: pathlib.Path) -> Dict[str, str]:
     logger.info("Parsed %d mature miRNAs from miRBase", len(acc2name))
     return acc2name
 
+
 # =============================================================================
 # miR family -> human mature miRNAs (many-to-many expansion, validated to miRBase v22.1)
 # =============================================================================
@@ -652,8 +684,9 @@ def step_mirfamily_to_human_matures(
 
     return dict(fam2mirs)
 
+
 # =============================================================================
-# Write standardized predictor files (3 splits) with NULL handling + raw+norm
+# Write standardized predictor files (3 splits) with direction-corrected percentile rank score
 # =============================================================================
 def step_write_standardized_predictions(
     summary_counts_path: pathlib.Path,
@@ -679,15 +712,14 @@ def step_write_standardized_predictions(
     out_predictions_dir = pathlib.Path(out_predictions_dir)
     out_predictions_dir.mkdir(parents=True, exist_ok=True)
 
-    # Predictor-specific scoring
     SCORE_SPECS = {
         "targetscanCNN": {
             "score_col": "Predicted occupancy - transfected miRNA",
-            "reverse": False,  # higher occupancy => stronger
+            "reverse": False,
         },
         "targetscanCons": {
             "score_col": "Cumulative weighted context++ score",
-            "reverse": True,   # more negative => stronger, so reverse after min-max
+            "reverse": True,
         },
         "targetscanNonCons": {
             "score_col": "Cumulative weighted context++ score",
@@ -706,11 +738,11 @@ def step_write_standardized_predictions(
     required_scores = sorted({spec["score_col"] for spec in SCORE_SPECS.values()})
 
     # -------------------------------------------------------------------------
-    # Pass 1: compute per-predictor min/max among non-NULL scores AFTER filters
+    # Pass 1: compute weakest observed direction-corrected score per predictor
     # -------------------------------------------------------------------------
     stats = {pred: Counter() for pred in SCORE_SPECS}
-    min_nonnull = {pred: math.inf for pred in SCORE_SPECS}
-    max_nonnull = {pred: -math.inf for pred in SCORE_SPECS}
+    weakest_nonnull = {pred: math.inf for pred in SCORE_SPECS}
+    strongest_nonnull = {pred: -math.inf for pred in SCORE_SPECS}
 
     with summary_counts_path.open("r", encoding="utf-8") as fin:
         reader = csv.DictReader(fin, delimiter="\t")
@@ -748,7 +780,6 @@ def step_write_standardized_predictions(
             if not mirs:
                 continue
 
-            # split membership
             try:
                 n_cons = int(float(row["Total num conserved sites"]))
             except Exception:
@@ -767,70 +798,45 @@ def step_write_standardized_predictions(
             for pred, spec in SCORE_SPECS.items():
                 if not memberships[pred]:
                     continue
+
                 stats[pred]["rows_after_filters"] += 1
                 v = _to_float_or_none(row[spec["score_col"]])
                 if v is None:
                     stats[pred]["rows_null_score"] += 1
                     continue
-                stats[pred]["rows_nonnull_score"] += 1
-                if v < min_nonnull[pred]:
-                    min_nonnull[pred] = v
-                if v > max_nonnull[pred]:
-                    max_nonnull[pred] = v
 
-    # Decide NULL imputation value and normalization ranges per predictor
+                score = _directional_score(v, reverse=spec["reverse"])
+                stats[pred]["rows_nonnull_score"] += 1
+
+                if score < weakest_nonnull[pred]:
+                    weakest_nonnull[pred] = score
+                if score > strongest_nonnull[pred]:
+                    strongest_nonnull[pred] = score
+
+    # Decide NULL imputation value in direction-corrected score space
     null_fill = {}
-    minv = {}
-    maxv = {}
-    denom = {}
     for pred in SCORE_SPECS:
         if stats[pred]["rows_after_filters"] == 0:
             raise ValueError(f"No rows remain after filters for {pred}.")
         if stats[pred]["rows_nonnull_score"] == 0:
             raise ValueError(f"No non-NULL scores remain after filters for {pred}; cannot impute NULLs.")
-        null_fill[pred] = float(min_nonnull[pred])  # NULL becomes weakest score
-        minv[pred] = float(min_nonnull[pred])       # after imputation, min is still min_nonnull
-        maxv[pred] = float(max_nonnull[pred])
-        d = maxv[pred] - minv[pred]
-        if d <= 0:
-            raise ValueError(f"Invalid normalization range for {pred}: min={minv[pred]}, max={maxv[pred]}")
-        denom[pred] = d
+
+        null_fill[pred] = float(weakest_nonnull[pred])
 
         logger.info(
-            "%s score column '%s': min(non-NULL)=%.6g max(non-NULL)=%.6g | NULL rows=%d (imputed as %.6g)",
+            "%s score column '%s': weakest(non-NULL)=%.6g strongest(non-NULL)=%.6g | NULL rows=%d (imputed as %.6g)",
             pred,
             SCORE_SPECS[pred]["score_col"],
-            minv[pred],
-            maxv[pred],
+            weakest_nonnull[pred],
+            strongest_nonnull[pred],
             stats[pred]["rows_null_score"],
             null_fill[pred],
         )
 
     # -------------------------------------------------------------------------
-    # Pass 2: write outputs (family-expanded) with Score_raw + Score_norm
+    # Pass 2: collect base rows with direction-corrected scores
     # -------------------------------------------------------------------------
-    writers: Dict[str, Tuple[csv.DictWriter, Any]] = {}
-    out_paths: Dict[str, pathlib.Path] = {}
-
-    def _open_writer(pred: str) -> Tuple[csv.DictWriter, Any, pathlib.Path]:
-        out_dir = out_predictions_dir / pred
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"{pred}_standardized.tsv"
-        fout = out_path.open("w", encoding="utf-8", newline="")
-        w = csv.DictWriter(
-            fout,
-            fieldnames=["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score_raw", "Score_norm"],
-            delimiter="\t",
-        )
-        w.writeheader()
-        return w, fout, out_path
-
-    for pred in SCORE_SPECS:
-        w, fout, p = _open_writer(pred)
-        writers[pred] = (w, fout)
-        out_paths[pred] = p
-
-    written = {pred: Counter() for pred in SCORE_SPECS}
+    rows_by_pred: Dict[str, List[Dict[str, Any]]] = {pred: [] for pred in SCORE_SPECS}
 
     with summary_counts_path.open("r", encoding="utf-8") as fin:
         reader = csv.DictReader(fin, delimiter="\t")
@@ -882,28 +888,72 @@ def step_write_standardized_predictions(
 
                 v = _to_float_or_none(row[spec["score_col"]])
                 if v is None:
-                    v = null_fill[pred]
+                    score = null_fill[pred]
+                else:
+                    score = _directional_score(v, reverse=spec["reverse"])
 
-                norm = (float(v) - minv[pred]) / denom[pred]
-                norm = _clamp01(norm)
-                if spec["reverse"]:
-                    norm = 1.0 - norm
+                rows_by_pred[pred].append(
+                    {
+                        "Ensembl_ID": gene_id_ens,
+                        "Gene_Name": gene_name,
+                        "mirs": mirs,
+                        "score": float(score),
+                    }
+                )
 
-                # expand family -> all human mature miRNAs
-                for mir in mirs:
-                    writers[pred][0].writerow(
-                        {
-                            "Ensembl_ID": gene_id_ens,
-                            "Gene_Name": gene_name,
-                            "miRNA_ID": mir.mirna_id,
-                            "miRNA_Name": mir.mirna_name,
-                            "Score_raw": f"{float(v):.6g}",
-                            "Score_norm": f"{float(norm):.6g}",
-                        }
-                    )
-                    written[pred]["written_rows"] += 1
+    # -------------------------------------------------------------------------
+    # Pass 3: percentile-rank normalize per predictor and write outputs
+    # -------------------------------------------------------------------------
+    writers: Dict[str, Tuple[csv.DictWriter, Any]] = {}
+    out_paths: Dict[str, pathlib.Path] = {}
+    written = {pred: Counter() for pred in SCORE_SPECS}
 
-                written[pred]["base_rows"] += 1
+    def _open_writer(pred: str) -> Tuple[csv.DictWriter, Any, pathlib.Path]:
+        out_dir = out_predictions_dir / pred
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{pred}_standardized.tsv"
+        fout = out_path.open("w", encoding="utf-8", newline="")
+        w = csv.DictWriter(
+            fout,
+            fieldnames=["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score", "Score_norm"],
+            delimiter="\t",
+        )
+        w.writeheader()
+        return w, fout, out_path
+
+    for pred in SCORE_SPECS:
+        w, fout, p = _open_writer(pred)
+        writers[pred] = (w, fout)
+        out_paths[pred] = p
+
+    for pred in SCORE_SPECS:
+        rows = rows_by_pred[pred]
+        scores = [r["score"] for r in rows]
+        rank_scores = _percentile_ranks(scores)
+
+        for row_obj, rank_score in zip(rows, rank_scores):
+            for mir in row_obj["mirs"]:
+                writers[pred][0].writerow(
+                    {
+                        "Ensembl_ID": row_obj["Ensembl_ID"],
+                        "Gene_Name": row_obj["Gene_Name"],
+                        "miRNA_ID": mir.mirna_id,
+                        "miRNA_Name": mir.mirna_name,
+                        "Score": f"{float(row_obj['score']):.6g}",
+                        "Score_norm": f"{float(rank_score):.6g}",
+                    }
+                )
+                written[pred]["written_rows"] += 1
+
+            written[pred]["base_rows"] += 1
+
+        logger.info(
+            "%s rank normalization: base_rows=%d | min_rank=%.6g | max_rank=%.6g",
+            pred,
+            len(rows),
+            min(rank_scores) if rank_scores else float("nan"),
+            max(rank_scores) if rank_scores else float("nan"),
+        )
 
     for pred in SCORE_SPECS:
         writers[pred][1].close()
