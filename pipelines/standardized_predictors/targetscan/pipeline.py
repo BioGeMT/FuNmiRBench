@@ -544,23 +544,24 @@ def step6_download_mirbase_mature(
 def parse_mirbase_mature(mature_fa: pathlib.Path) -> Dict[str, str]:
     """
     Parse mature.fa header lines:
-      >MIMAT0000062 hsa-miR-21-5p ...
+      >hsa-miR-21-5p MIMAT0000076 Homo sapiens miR-21-5p
     Returns: accession -> miRNA name
     """
     logger.info("Parsing miRBase mature.fa")
     acc2name: Dict[str, str] = {}
     with pathlib.Path(mature_fa).open("r", encoding="utf-8", errors="ignore") as f:
         for line in f:
-            if line.startswith(">") :
+            if line.startswith(">"):
                 parts = line[1:].strip().split()
                 if len(parts) >= 2:
-                    acc2name[parts[0]] = parts[1]
+                    mir_name = parts[0]
+                    mir_acc = parts[1]
+                    acc2name[mir_acc] = mir_name
     logger.info("Parsed %d mature miRNAs from miRBase", len(acc2name))
     return acc2name
 
-
 # =============================================================================
-# miR family -> human mature miRNAs (many-to-many expansion)
+# miR family -> human mature miRNAs (many-to-many expansion, validated to miRBase v22.1)
 # =============================================================================
 @dataclass(frozen=True)
 class MirnaEntry:
@@ -571,15 +572,25 @@ class MirnaEntry:
 def step_mirfamily_to_human_matures(
     mir_family_info_path: pathlib.Path,
     *,
+    mirbase_acc2name: Dict[str, str],
     species_id: str = "9606",
 ) -> Dict[str, List[MirnaEntry]]:
-    logger.info("\n=== STEP 7/7 Build miRNA family -> human mature miRNAs mapping ===")
+    logger.info("\n=== STEP 7/7 Build miRNA family -> human mature miRNAs mapping (validated against miRBase v22.1) ===")
 
     p = pathlib.Path(mir_family_info_path)
     if not p.exists():
         raise FileNotFoundError(f"miR family file not found: {p}")
 
     fam2mirs: Dict[str, List[MirnaEntry]] = defaultdict(list)
+    seen: Dict[str, set[Tuple[str, str]]] = defaultdict(set)
+
+    n_total = 0
+    n_species = 0
+    n_missing_fields = 0
+    n_acc_missing_in_mirbase = 0
+    n_name_match = 0
+    n_name_replaced = 0
+    n_kept = 0
 
     with p.open("r", encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="\t")
@@ -591,10 +602,6 @@ def step_mirfamily_to_human_matures(
         if missing:
             raise ValueError(f"Missing required columns {missing} in {p}")
 
-        n_total = 0
-        n_species = 0
-        n_kept = 0
-
         for row in reader:
             n_total += 1
             if row["Species ID"].strip() != species_id:
@@ -602,27 +609,48 @@ def step_mirfamily_to_human_matures(
             n_species += 1
 
             seed = row["Seed+m8"].strip()
-            mir_name = row["MiRBase ID"].strip()
+            mir_name_ts = row["MiRBase ID"].strip()
             mir_acc = row["MiRBase Accession"].strip()
 
-            if not seed or not mir_name or not mir_acc:
+            if not seed or not mir_name_ts or not mir_acc:
+                n_missing_fields += 1
                 continue
 
-            fam2mirs[seed].append(MirnaEntry(mirna_id=mir_acc, mirna_name=mir_name))
+            mir_name_v22 = mirbase_acc2name.get(mir_acc)
+            if mir_name_v22 is None:
+                n_acc_missing_in_mirbase += 1
+                continue
+
+            if mir_name_ts == mir_name_v22:
+                n_name_match += 1
+            else:
+                n_name_replaced += 1
+
+            pair = (mir_acc, mir_name_v22)
+            if pair in seen[seed]:
+                continue
+            seen[seed].add(pair)
+
+            fam2mirs[seed].append(MirnaEntry(mirna_id=mir_acc, mirna_name=mir_name_v22))
             n_kept += 1
 
     logger.info(
-        "miR_Family_Info stats: rows_total=%d | rows_species(%s)=%d | mapped_entries=%d | unique_families=%d",
+        "miR_Family_Info stats: rows_total=%d | rows_species(%s)=%d | kept=%d | unique_families=%d",
         n_total, species_id, n_species, n_kept, len(fam2mirs)
+    )
+    logger.info(
+        "miRNA annotation QC vs miRBase v%s: name_match=%d | name_replaced=%d | dropped_missing_accession=%d | dropped_missing_fields=%d",
+        MIRBASE_RELEASE, n_name_match, n_name_replaced, n_acc_missing_in_mirbase, n_missing_fields
     )
 
     if fam2mirs:
         k = next(iter(fam2mirs.keys()))
-        logger.info("  sample family: %s -> %d human miRNAs (e.g., %s)",
-                    k, len(fam2mirs[k]), fam2mirs[k][0].mirna_name)
+        logger.info(
+            "  sample family: %s -> %d human miRNAs after miRBase validation (e.g., %s)",
+            k, len(fam2mirs[k]), fam2mirs[k][0].mirna_name
+        )
 
     return dict(fam2mirs)
-
 
 # =============================================================================
 # Write standardized predictor files (3 splits) with NULL handling + raw+norm
@@ -940,10 +968,13 @@ def main() -> None:
     )
 
     mirbase_fa = step6_download_mirbase_mature(data_dir, force=False)
-    _ = parse_mirbase_mature(mirbase_fa)
-    # NOTE: parsed miRBase is currently not used downstream; kept for future-proofing.
+    mirbase_acc2name = parse_mirbase_mature(mirbase_fa)
 
-    family_to_mirs = step_mirfamily_to_human_matures(files["miR_Family_Info.txt"], species_id="9606")
+    family_to_mirs = step_mirfamily_to_human_matures(
+        files["miR_Family_Info.txt"],
+        mirbase_acc2name=mirbase_acc2name,
+        species_id="9606",
+    )
 
     step_write_standardized_predictions(
         files["Summary_Counts.all_predictions.txt"],
