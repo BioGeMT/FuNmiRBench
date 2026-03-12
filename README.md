@@ -155,6 +155,10 @@ python -m funmirbench.cli.import_experiments --from-dir /path/to/processed_table
 - Validates that each TSV is readable and that gene identifiers can be detected
 - Use `--overwrite` to replace existing files
 
+To combine Zenodo and local tables, run Zenodo import first, then run `--from-dir`
+to add your extra local tables. Use `--overwrite` only when you explicitly want local
+files to replace same-named files already present in the output folder.
+
 ---
 
 ### 2. Build the experiment index

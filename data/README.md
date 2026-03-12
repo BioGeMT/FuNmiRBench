@@ -86,6 +86,10 @@ python -m funmirbench.cli.import_experiments --from-dir /path/to/processed_table
 
 Use `--overwrite` if files already exist in `data/experiments/processed/`.
 
+To combine Zenodo and local tables, run Zenodo import first, then run `--from-dir`
+to copy additional local tables. Use `--overwrite` only if you want local files to
+replace same-named files already imported.
+
 This will populate:
 
 ```
