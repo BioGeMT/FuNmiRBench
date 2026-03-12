@@ -168,8 +168,22 @@ def main() -> None:
             geo_accession = extract_geo_accession(gse_url)
             de_table_path = (row.get("de_table_path") or "").strip()
 
-            if not mirna_name or not mirna_seq or not pubmed_id or not organism or not method or not gse_url or not de_table_path:
-                raise ValueError(f"Row {i} missing required values (check TSV): {info_tsv}")
+            required_columns = [
+                "mirna_name",
+                "mirna_sequence",
+                "article_pubmed_id",
+                "organism",
+                "method",
+                "gse_url",
+                "de_table_path",
+            ]
+
+            missing_fields = [field for field in required_columns if not row.get(field)]
+
+            if missing_fields:
+                raise ValueError(
+                    f"Row {i} missing required values {missing_fields} (check TSV): {info_tsv}"
+                )
 
             # Build a repo-relative data_path string
             data_path = (processed_dir_rel / de_table_path).as_posix()
