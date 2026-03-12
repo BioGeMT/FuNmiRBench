@@ -20,9 +20,8 @@ from typing import List, Optional, Tuple
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from funmirbench.de_table_validation import (  # type: ignore
-    gene_ids_detectable,
     import_pandas_or_error,
-    read_de_table,
+    read_de_table_columns,
 )
 
 logging.basicConfig(
@@ -139,9 +138,7 @@ def _validate_local_tsvs(paths: List[pathlib.Path]) -> None:
 
     for path in paths:
         try:
-            df = read_de_table(pd, path)
-            if not gene_ids_detectable(df):
-                raise ValueError("Could not detect a usable gene identifier column")
+            read_de_table_columns(pd, path)
         except Exception as exc:
             errors.append(f"{path.name}: {exc}")
 

@@ -15,8 +15,8 @@ import pathlib
 from typing import List, Tuple
 
 from funmirbench.de_table_validation import (  # type: ignore
-    gene_ids_detectable,
     import_pandas_or_error,
+    read_de_table_columns,
     read_de_table,
 )
 from funmirbench.datasets import load_metadata  # type: ignore
@@ -72,7 +72,9 @@ def main() -> None:
 
         readable += 1
 
-        if not gene_ids_detectable(df):
+        try:
+            read_de_table_columns(pd, p)
+        except Exception:
             bad_gene_col += 1
 
     logger.info("Datasets in metadata: %d", total)

@@ -32,16 +32,16 @@ def read_de_table(pd, path: pathlib.Path):
     return df
 
 
-def pick_gene_col(df) -> str:
-    for candidate in ("gene_id", "gene_name"):
-        if candidate in df.columns:
-            return candidate
-    return str(df.columns[0])
+def read_de_table_columns(pd, path: pathlib.Path) -> list[str]:
+    """
+    Read DE-table header columns from path (tab delimiter first, then whitespace fallback).
+    """
+    df = pd.read_csv(path, sep="\t", nrows=0)
+    columns = [str(c).strip() for c in df.columns]
+    if "gene_name" not in columns and "gene_id" not in columns:
+        df2 = pd.read_csv(path, sep=r"\s+", engine="python", nrows=0)
+        columns = [str(c).strip() for c in df2.columns]
 
-
-def gene_ids_detectable(df) -> bool:
-    try:
-        gene_col = pick_gene_col(df)
-    except Exception:
-        return False
-    return gene_col in df.columns
+    if not columns:
+        raise ValueError("No columns available to detect gene identifier")
+    return columns
