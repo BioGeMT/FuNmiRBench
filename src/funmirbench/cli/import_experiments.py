@@ -1,35 +1,34 @@
 """
 Download the FuNmiRBench experiment corpus from Zenodo into the local data/ directory.
 
-Supports restricted Zenodo records via access token (link-request token).
+Supports restricted Zenodo records via access token (link-request token),
+and local import of user-supplied processed DE tables.
 """
 
 from __future__ import annotations
 
 import argparse
 import io
+import logging
 import os
 import pathlib
 import re
+import shutil
 import sys
 import zipfile
-from typing import Optional, List, Tuple
-from urllib.parse import urlparse, parse_qs, urlunparse, urlencode
-import logging
+from typing import List, Optional, Tuple
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+from funmirbench.de_table_validation import (  # type: ignore
+    import_pandas_or_error,
+    read_de_table_columns,
+)
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s: %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-try:
-    import requests  # type: ignore
-except Exception as exc:  # pragma: no cover
-    raise ImportError(
-        "This command requires 'requests'. Install it with `pip install requests`."
-    ) from exc
-
 
 DEFAULT_RECORD_URL = "https://zenodo.org/records/17585186"
 DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -38,7 +37,19 @@ DEFAULT_OUT_DIR = pathlib.Path("data/experiments/processed")
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Download experiment DE tables from a Zenodo record into data/experiments/processed/."
+        description=(
+            "Download experiment DE tables from a Zenodo record or import local TSVs "
+            "into data/experiments/processed/."
+        )
+    )
+    p.add_argument(
+        "--from-dir",
+        type=pathlib.Path,
+        default=None,
+        help=(
+            "Import local processed DE tables from a directory (copies top-level *.tsv into out-dir). "
+            "If set, Zenodo download arguments are ignored."
+        ),
     )
     p.add_argument(
         "--record-url",
@@ -60,7 +71,7 @@ def parse_args() -> argparse.Namespace:
         "--root",
         type=pathlib.Path,
         default=DEFAULT_ROOT,
-        help="Repo root (used to resolve relative out-dir).",
+        help="Repo root (used to resolve relative out-dir and --from-dir).",
     )
     p.add_argument(
         "--overwrite",
@@ -68,6 +79,17 @@ def parse_args() -> argparse.Namespace:
         help="Overwrite existing files.",
     )
     return p.parse_args()
+
+
+def _import_requests():
+    try:
+        import requests  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise ImportError(
+            "Zenodo download requires 'requests'. Install it with `pip install requests`, "
+            "or use `--from-dir` for local TSV import."
+        ) from exc
+    return requests
 
 
 def _record_id_from_url(record_url: str) -> str:
@@ -88,9 +110,60 @@ def _with_token(url: str, token: Optional[str]) -> str:
 
 
 def _download_bytes(url: str) -> bytes:
+    requests = _import_requests()
     r = requests.get(url, stream=True, timeout=120)
     r.raise_for_status()
     return r.content
+
+
+def _resolve_under_root(root: pathlib.Path, p: pathlib.Path) -> pathlib.Path:
+    return (root / p).resolve() if not p.is_absolute() else p.resolve()
+
+
+def _list_local_tsvs(from_dir: pathlib.Path) -> List[pathlib.Path]:
+    if not from_dir.exists():
+        raise FileNotFoundError(f"--from-dir not found: {from_dir}")
+    if not from_dir.is_dir():
+        raise NotADirectoryError(f"--from-dir is not a directory: {from_dir}")
+
+    paths = sorted(p for p in from_dir.iterdir() if p.is_file() and p.suffix.lower() == ".tsv")
+    if not paths:
+        raise FileNotFoundError(f"No .tsv files found in {from_dir}")
+    return paths
+
+
+def _validate_local_tsvs(paths: List[pathlib.Path]) -> None:
+    pd = import_pandas_or_error(context="Local import validation")
+    errors: List[str] = []
+
+    for path in paths:
+        try:
+            read_de_table_columns(pd, path)
+        except Exception as exc:
+            errors.append(f"{path.name}: {exc}")
+
+    if errors:
+        shown = "\n".join(f"  - {msg}" for msg in errors[:20])
+        if len(errors) > 20:
+            shown += f"\n  ... {len(errors) - 20} more"
+        raise RuntimeError("Validation failed for local TSV import. No files were copied.\n" + shown)
+
+
+def _import_from_dir(from_dir: pathlib.Path, out_dir: pathlib.Path, *, overwrite: bool) -> Tuple[int, int]:
+    paths = _list_local_tsvs(from_dir)
+    _validate_local_tsvs(paths)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    skipped = 0
+    for src in paths:
+        dst = out_dir / src.name
+        if dst.exists() and not overwrite:
+            skipped += 1
+            continue
+        shutil.copy2(src, dst)
+        copied += 1
+    return copied, skipped
 
 
 def _try_download_archive(record_id: str, token: Optional[str]) -> Optional[bytes]:
@@ -163,6 +236,18 @@ def main() -> None:
     if not out_dir.is_absolute():
         out_dir = root / out_dir
 
+    if args.from_dir is not None:
+        from_dir = _resolve_under_root(root, args.from_dir)
+        copied, skipped = _import_from_dir(from_dir, out_dir, overwrite=args.overwrite)
+        logger.info(
+            "Imported %d TSV files from %s to %s (skipped %d existing)",
+            copied,
+            from_dir,
+            out_dir,
+            skipped,
+        )
+        return
+
     record_id = _record_id_from_url(args.record_url)
 
     if not args.token:
@@ -189,8 +274,6 @@ def main() -> None:
         written += 1
 
     logger.info("Downloaded %d TSV files to %s", written, out_dir)
-
-
 
 if __name__ == "__main__":
     main()

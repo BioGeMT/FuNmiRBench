@@ -23,9 +23,11 @@ REQUIRED_COLUMNS = [
     "mirna_name",
     "mirna_sequence",
     "article_pubmed_id",
+    "organism",
     "tested_cell_line",
     "treatment",
     "tissue",
+    "method",
     "experiment_type",
     "gse_url",
     "de_table_path",
@@ -155,17 +157,33 @@ def main() -> None:
             mirna_name = (row.get("mirna_name") or "").strip()
             mirna_seq = (row.get("mirna_sequence") or "").strip()
             pubmed_id = (row.get("article_pubmed_id") or "").strip()
+            organism = (row.get("organism") or "").strip()
             cell_line = (row.get("tested_cell_line") or "").strip() or None
             tissue = (row.get("tissue") or "").strip() or None
             treatment = (row.get("treatment") or "").strip() or None
+            method = (row.get("method") or "").strip()
 
             perturbation = map_experiment_type((row.get("experiment_type") or "").strip())
             gse_url = (row.get("gse_url") or "").strip()
             geo_accession = extract_geo_accession(gse_url)
             de_table_path = (row.get("de_table_path") or "").strip()
 
-            if not mirna_name or not mirna_seq or not pubmed_id or not gse_url or not de_table_path:
-                raise ValueError(f"Row {i} missing required values (check TSV): {info_tsv}")
+            required_columns = [
+                "mirna_name",
+                "mirna_sequence",
+                "article_pubmed_id",
+                "organism",
+                "method",
+                "gse_url",
+                "de_table_path",
+            ]
+
+            missing_fields = [field for field in required_columns if not row.get(field)]
+
+            if missing_fields:
+                raise ValueError(
+                    f"Row {i} missing required values {missing_fields} (check TSV): {info_tsv}"
+                )
 
             # Build a repo-relative data_path string
             data_path = (processed_dir_rel / de_table_path).as_posix()
@@ -178,8 +196,8 @@ def main() -> None:
                 "cell_line": cell_line,
                 "tissue": tissue,
                 "perturbation": perturbation,
-                "organism": "Homo sapiens",
-                "method": "RNA-Seq",
+                "organism": organism,
+                "method": method,
                 "treatment": treatment,
                 "pubmed_id": pubmed_id,
                 "gse_url": gse_url,

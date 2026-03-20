@@ -150,6 +150,20 @@ python -m funmirbench.cli.import_experiments --token "<TOKEN>"
 - Alternatively, set `ZENODO_TOKEN` as an environment variable  
 - This step only downloads data; nothing in metadata is modified
 
+If you already have processed DE tables locally, import them instead of using Zenodo:
+
+```bash
+python -m funmirbench.cli.import_experiments --from-dir /path/to/processed_tables
+```
+
+- Copies top-level `.tsv` files into `data/experiments/processed/` (or `--out-dir`)
+- Validates that each TSV is readable and that gene identifiers can be detected
+- Use `--overwrite` to replace existing files
+
+To combine Zenodo and local tables, run Zenodo import first, then run `--from-dir`
+to add your extra local tables. Use `--overwrite` only when you explicitly want local
+files to replace same-named files already present in the output folder.
+
 ---
 
 ### 2. Build the experiment index
