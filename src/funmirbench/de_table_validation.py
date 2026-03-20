@@ -1,25 +1,14 @@
 """
 Shared DE-table parsing and lightweight validation helpers.
-
-These helpers are intentionally small and reusable by multiple CLIs
-(`validate_experiments`, `import_experiments`) so DE-table validation rules
-can evolve in one place.
 """
 
 from __future__ import annotations
 
 import logging
 import pathlib
+import pandas as pd
 
 logger = logging.getLogger(__name__)
-
-
-def import_pandas_or_error(*, context: str = "DE-table validation"):
-    try:
-        import pandas as pd  # type: ignore
-    except ImportError as exc:
-        raise ImportError(f"{context} requires pandas.") from exc
-    return pd
 
 
 def _assert_tsv_header(path: pathlib.Path) -> None:

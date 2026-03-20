@@ -13,9 +13,9 @@ import argparse
 import logging
 import pathlib
 from typing import List, Tuple
+import pandas as pd
 
 from funmirbench.de_table_validation import (  # type: ignore
-    import_pandas_or_error,
     read_de_table_columns,
     read_de_table,
 )
@@ -45,8 +45,6 @@ def main() -> None:
     datasets_json = args.datasets_json
     if not datasets_json.is_absolute():
         datasets_json = root / datasets_json
-
-    pd = import_pandas_or_error(context="validate_experiments")
 
     metas = load_metadata(datasets_json=datasets_json, root=root)
 
