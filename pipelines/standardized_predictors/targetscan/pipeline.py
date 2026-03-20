@@ -19,8 +19,7 @@ What this script does
 
 5) Downloads miRBase mature.fa pinned to release 22.1 (from archive URL) and parses accession->name mapping.
 
-6) Builds three standardized prediction sets from Summary_Counts.all_predictions.txt:
-   - targetscanCNN      (score: Predicted occupancy - transfected miRNA)
+6) Builds two standardized prediction sets from Summary_Counts.all_predictions.txt:
    - targetscanCons     (filter: Total num conserved sites > 0; score: Cumulative weighted context++ score)
    - targetscanNonCons  (filter: Total num nonconserved sites > 0; score: Cumulative weighted context++ score)
 
@@ -32,9 +31,8 @@ Score handling
     Score      : raw direction-corrected score
     Score_norm : percentile rank in [0,1] used for benchmarking
 - Score direction is standardized so that higher underlying score always means a stronger/more confident predicted interaction:
-    - targetscanCNN     : use Predicted occupancy - transfected miRNA as is
-    - targetscanCons    : use -1 * (Cumulative weighted context++ score)
-    - targetscanNonCons : use -1 * (Cumulative weighted context++ score)
+    - targetscanCons    : -1 * (Cumulative weighted context++ score)
+    - targetscanNonCons : -1 * (Cumulative weighted context++ score)
 - After direction correction and NULL imputation, scores are converted to within-predictor percentile ranks.
 - Ranking is computed at the base-row level before family expansion, so miRNA family size does not affect ranks.
 
@@ -686,7 +684,7 @@ def step_mirfamily_to_human_matures(
 
 
 # =============================================================================
-# Write standardized predictor files (3 splits) with direction-corrected percentile rank score
+# Write standardized predictor file with direction-corrected percentile rank score
 # =============================================================================
 def step_write_standardized_predictions(
     summary_counts_path: pathlib.Path,
@@ -713,10 +711,6 @@ def step_write_standardized_predictions(
     out_predictions_dir.mkdir(parents=True, exist_ok=True)
 
     SCORE_SPECS = {
-        "targetscanCNN": {
-            "score_col": "Predicted occupancy - transfected miRNA",
-            "reverse": False,
-        },
         "targetscanCons": {
             "score_col": "Cumulative weighted context++ score",
             "reverse": True,
@@ -969,7 +963,7 @@ def step_write_standardized_predictions(
 def compute_final_statistics(predictions_root: pathlib.Path) -> None:
     logger.info("\n=== FINAL STATISTICS ===")
 
-    sets = ["targetscanCNN", "targetscanCons", "targetscanNonCons"]
+    sets = ["targetscanCons", "targetscanNonCons"]
     genes_by_set = {}
     mirs_by_set = {}
 
@@ -990,7 +984,7 @@ def compute_final_statistics(predictions_root: pathlib.Path) -> None:
     common_genes = set.intersection(*genes_by_set.values())
     common_mirs = set.intersection(*mirs_by_set.values())
 
-    logger.info("Overlap (all three sets): %d genes | %d miRNAs", len(common_genes), len(common_mirs))
+    logger.info("Overlap (both sets): %d genes | %d miRNAs", len(common_genes), len(common_mirs))
 
 
 def main() -> None:
