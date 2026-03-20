@@ -101,34 +101,6 @@ def _to_float_or_none(x: str) -> Optional[float]:
         return None
 
 
-def _utr_len(seq: str) -> int:
-    """Count UTR length ignoring gaps and non-ACGTU chars."""
-    s = (seq or "").strip().upper()
-    return sum(1 for ch in s if ch in ("A", "C", "G", "U", "T"))
-
-
-def _parse_gtf_attributes(attr_field: str) -> Dict[str, str]:
-    """
-    Parse a GTF attributes column into a dict.
-    Example: gene_id "ENSG..."; transcript_id "ENST..."; gene_name "TP53";
-    """
-    out: Dict[str, str] = {}
-    parts = [p.strip() for p in attr_field.strip().split(";") if p.strip()]
-    for p in parts:
-        if " " not in p:
-            continue
-        k, v = p.split(" ", 1)
-        out[k] = v.strip().strip('"')
-    return out
-
-
-def _safe_unlink(p: pathlib.Path) -> None:
-    try:
-        p.unlink()
-    except FileNotFoundError:
-        return
-
-
 def _download_url(url: str, dest: pathlib.Path) -> None:
     """Download URL to dest atomically via .part file."""
     tmp = dest.with_suffix(dest.suffix + ".part")
@@ -137,7 +109,10 @@ def _download_url(url: str, dest: pathlib.Path) -> None:
             shutil.copyfileobj(r, out)
         tmp.replace(dest)
     finally:
-        _safe_unlink(tmp)
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _assert_fasta(path: pathlib.Path) -> None:
@@ -151,11 +126,6 @@ def _assert_fasta(path: pathlib.Path) -> None:
                 raise RuntimeError(f"Not FASTA (first line: {s[:120]})")
             return
     raise RuntimeError("FASTA check failed: file appears empty.")
-
-
-def _directional_score(value: float, *, reverse: bool) -> float:
-    """Return score with standardized direction: higher = stronger."""
-    return -float(value) if reverse else float(value)
 
 
 def _percentile_ranks(values: List[float]) -> List[float]:
@@ -309,7 +279,8 @@ def step2_build_longest_utr_index(
             tx = row[tx_key].strip()
             gene_id = row[gene_id_key].strip()
             gene_sym = row[gene_sym_key].strip()
-            L = _utr_len(row[seq_key])
+            seq = (row[seq_key] or "").strip().upper()
+            L = sum(1 for ch in seq if ch in ("A", "C", "G", "U", "T"))
 
             gene_id_by_tx[tx] = gene_id
             gene_symbol_by_gene_id[gene_id] = gene_sym
@@ -456,7 +427,13 @@ def step4_build_and_cache_ensembl115_tables(
                 continue
             n_transcript_rows += 1
 
-            attrs = _parse_gtf_attributes(fields[8])
+            attrs: Dict[str, str] = {}
+            for part in [p.strip() for p in fields[8].strip().split(";") if p.strip()]:
+                if " " not in part:
+                    continue
+                k, v = part.split(" ", 1)
+                attrs[k] = v.strip().strip('"')
+
             gene_id = attrs.get("gene_id")
             tx_id = attrs.get("transcript_id")
             gene_name = attrs.get("gene_name")
@@ -764,7 +741,7 @@ def step_write_standardized_predictions(
                 stats["rows_null_score"] += 1
                 continue
 
-            score = _directional_score(v, reverse=True)
+            score = -float(v)
             stats["rows_nonnull_score"] += 1
 
             if score < weakest_nonnull:
@@ -824,7 +801,7 @@ def step_write_standardized_predictions(
                 continue
 
             v = _to_float_or_none(row[TARGETSCAN_SCORE_COL])
-            score = null_fill if v is None else _directional_score(v, reverse=True)
+            score = null_fill if v is None else -float(v)
 
             rows.append(
                 {
