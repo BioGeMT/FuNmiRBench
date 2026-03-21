@@ -18,11 +18,11 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
-import re
 import sys
 from typing import Dict, Optional
 
 from funmirbench.datasets import get_dataset  # type: ignore
+from funmirbench.utils import project_root, resolve_path, read_de_table, find_gene_id_column
 import logging
 
 logging.basicConfig(
@@ -31,10 +31,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
+DEFAULT_ROOT = project_root()
 DEFAULT_PREDICTIONS_JSON = pathlib.Path("metadata/predictions.json")
-
-GENE_ID_RE = re.compile(r"^ENS[A-Z]*G\d+", re.IGNORECASE)
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,56 +59,6 @@ def parse_args() -> argparse.Namespace:
         help="Optional: filter out predictions with score < min-score.",
     )
     return p.parse_args()
-
-
-def _read_de_table(pd, path: pathlib.Path):
-    df = pd.read_csv(path, sep="\t")
-    df.columns = [str(c).strip() for c in df.columns]
-    # If headers were whitespace-glued, try whitespace parsing
-    if "gene_name" not in df.columns and "gene_id" not in df.columns and len(df.columns) == 1:
-        df2 = pd.read_csv(path, sep=r"\s+", engine="python")
-        df2.columns = [str(c).strip() for c in df2.columns]
-        df = df2
-    return df
-
-
-def _choose_gene_source(df) -> str:
-    """
-    Decide where gene IDs live.
-
-    Priority:
-    1) gene_id / gene_name columns
-    2) a column with many ENS*G* IDs
-    3) index with many ENS*G* IDs
-    """
-    for c in ("gene_id", "gene_name"):
-        if c in df.columns:
-            return c
-
-    best_col = None
-    best_frac = 0.0
-    for col in df.columns:
-        s = df[col].dropna().astype(str)
-        if len(s) == 0:
-            continue
-        frac = float(s.str.match(GENE_ID_RE).mean())
-        if frac > best_frac:
-            best_frac = frac
-            best_col = str(col)
-    if best_col is not None and best_frac >= 0.5:
-        return best_col
-
-    # index heuristic
-    idx = df.index.astype(str)
-    if len(idx) > 0:
-        frac_idx = float(idx.str.match(GENE_ID_RE).mean())
-        if frac_idx >= 0.5:
-            return "__index__"
-
-    raise ValueError(
-        "Could not identify gene IDs in DE table. "
-        "Expected a column named gene_id/gene_name, or Ensembl-like IDs (ENSG...) in a column or the index."
-    )
 
 
 def _load_predictions_registry(path: pathlib.Path) -> Dict[str, str]:
@@ -141,9 +89,7 @@ def main() -> None:
     args = parse_args()
     root = args.root.expanduser().resolve()
 
-    predictions_json = args.predictions_json
-    if not predictions_json.is_absolute():
-        predictions_json = root / predictions_json
+    predictions_json = resolve_path(root, args.predictions_json)
     if not predictions_json.exists():
         raise FileNotFoundError(f"predictions.json not found: {predictions_json}")
 
@@ -159,7 +105,7 @@ def main() -> None:
         raise ValueError(f"Unknown tool {args.tool!r}. Known: {sorted(registry)}")
 
     canonical_rel = pathlib.Path(registry[args.tool])
-    canonical_path = canonical_rel if canonical_rel.is_absolute() else (root / canonical_rel)
+    canonical_path = resolve_path(root, canonical_rel)
     if not canonical_path.exists():
         raise FileNotFoundError(f"Canonical TSV not found for {args.tool}: {canonical_path}")
 
@@ -168,8 +114,8 @@ def main() -> None:
     except ImportError as exc:
         raise ImportError("This command requires pandas.") from exc
 
-    de = _read_de_table(pd, de_path)
-    gene_src = _choose_gene_source(de)
+    de = read_de_table(pd, de_path)
+    gene_src = find_gene_id_column(de)
     if gene_src == "__index__":
         de = de.copy()
         de.insert(0, "gene_id", de.index.astype(str))
@@ -193,9 +139,7 @@ def main() -> None:
     if str(args.out) == "-":
         joined.to_csv(sys.stdout, sep="\t", index=False)
     else:
-        out_path = args.out
-        if not out_path.is_absolute():
-            out_path = root / out_path
+        out_path = resolve_path(root, args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         joined.to_csv(out_path, sep="\t", index=False)
         logger.info("Wrote %d rows to %s", len(joined), out_path)

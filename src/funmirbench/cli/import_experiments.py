@@ -19,9 +19,11 @@ import zipfile
 from typing import List, Optional, Tuple
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-from funmirbench.de_table_validation import (  # type: ignore
+from funmirbench.utils import (
     import_pandas_or_error,
     read_de_table_columns,
+    project_root,
+    resolve_path,
 )
 
 logging.basicConfig(
@@ -31,7 +33,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DEFAULT_RECORD_URL = "https://zenodo.org/records/17585186"
-DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
+DEFAULT_ROOT = project_root()
 DEFAULT_OUT_DIR = pathlib.Path("data/experiments/processed")
 
 
@@ -114,10 +116,6 @@ def _download_bytes(url: str) -> bytes:
     r = requests.get(url, stream=True, timeout=120)
     r.raise_for_status()
     return r.content
-
-
-def _resolve_under_root(root: pathlib.Path, p: pathlib.Path) -> pathlib.Path:
-    return (root / p).resolve() if not p.is_absolute() else p.resolve()
 
 
 def _list_local_tsvs(from_dir: pathlib.Path) -> List[pathlib.Path]:
@@ -237,7 +235,7 @@ def main() -> None:
         out_dir = root / out_dir
 
     if args.from_dir is not None:
-        from_dir = _resolve_under_root(root, args.from_dir)
+        from_dir = resolve_path(root, args.from_dir)
         copied, skipped = _import_from_dir(from_dir, out_dir, overwrite=args.overwrite)
         logger.info(
             "Imported %d TSV files from %s to %s (skipped %d existing)",

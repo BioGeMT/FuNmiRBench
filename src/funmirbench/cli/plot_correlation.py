@@ -20,13 +20,15 @@ import pathlib
 from typing import Optional
 import logging
 
+from funmirbench.utils import project_root, resolve_path
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s: %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
+DEFAULT_ROOT = project_root()
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,15 +46,11 @@ def main() -> None:
     args = parse_args()
     root = args.root.expanduser().resolve()
 
-    joined = args.joined_tsv
-    if not joined.is_absolute():
-        joined = root / joined
+    joined = resolve_path(root, args.joined_tsv)
     if not joined.exists():
         raise FileNotFoundError(f"Joined TSV not found: {joined}")
 
-    out_dir = args.out_dir
-    if not out_dir.is_absolute():
-        out_dir = root / out_dir
+    out_dir = resolve_path(root, args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     try:

@@ -6,13 +6,15 @@ import urllib.parse
 from typing import List, Dict, Optional
 import logging
 
+from funmirbench.utils import project_root, resolve_path, root_relative_path
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s: %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
+DEFAULT_ROOT = project_root()
 
 # Defaults are repo-relative (like datasets.json "data_path")
 DEFAULT_INFO_TSV = pathlib.Path("metadata/mirna_experiment_info.tsv")
@@ -109,39 +111,18 @@ def _validate_header(fieldnames: Optional[List[str]], tsv_path: pathlib.Path) ->
         raise ValueError(f"TSV missing required columns {missing}: {tsv_path}")
 
 
-def _resolve_under_root(root: pathlib.Path, p: pathlib.Path) -> pathlib.Path:
-    """Resolve p to an absolute path, treating relative paths as root-relative."""
-    return (root / p).resolve() if not p.is_absolute() else p.resolve()
-
-
-def _root_relative_or_error(root: pathlib.Path, p: pathlib.Path, *, arg_name: str) -> pathlib.Path:
-    """
-    Ensure p is repo-relative (like datasets.json data_path semantics).
-
-    If caller passes an absolute path, require that it is under root and convert to a root-relative path.
-    """
-    if not p.is_absolute():
-        return p
-    try:
-        rel = p.resolve().relative_to(root.resolve())
-    except Exception as exc:
-        raise ValueError(
-            f"{arg_name} must be repo-relative, or an absolute path under --root. "
-            f"Got: {p} (root: {root})"
-        ) from exc
-    return rel
-
-
 def main() -> None:
     args = parse_args()
     root = args.root.expanduser().resolve()
 
-    info_tsv = _resolve_under_root(root, args.info_tsv)
-    out_json = _resolve_under_root(root, args.out_json)
+    info_tsv = resolve_path(root, args.info_tsv)
+    out_json = resolve_path(root, args.out_json)
 
     # Keep processed_dir written into JSON as repo-relative by default (like data_path),
     # but allow absolute paths IF they are under root (then convert to relative).
-    processed_dir_rel = _root_relative_or_error(root, _resolve_under_root(root, args.processed_dir), arg_name="--processed-dir")
+    processed_dir_rel = root_relative_path(
+        root, resolve_path(root, args.processed_dir), label="--processed-dir"
+    )
 
     if not info_tsv.exists():
         raise FileNotFoundError(f"Input TSV not found: {info_tsv}")

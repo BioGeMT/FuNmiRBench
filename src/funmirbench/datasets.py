@@ -15,21 +15,16 @@ import pathlib
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
 
+from funmirbench.utils.paths import project_root
 
-# Project root (FuNmiRBench/)
-# Defaults (can be overridden via function args or env vars)
-DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+DEFAULT_ROOT = project_root()
 DEFAULT_DATASETS_JSON = DEFAULT_ROOT / "metadata" / "datasets.json"
 
 
 def get_root(root: Optional[pathlib.Path] = None) -> pathlib.Path:
     """Resolve project root, allowing override via arg or FUNMIRBENCH_ROOT."""
-    if root is not None:
-        return root
-    env_root = os.getenv("FUNMIRBENCH_ROOT")
-    if env_root:
-        return pathlib.Path(env_root).expanduser().resolve()
-    return DEFAULT_ROOT
+    return project_root(root)
 
 
 def get_datasets_json(

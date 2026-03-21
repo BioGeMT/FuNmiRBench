@@ -1,9 +1,10 @@
 import argparse
 import hashlib
 import pathlib
-import re
 from typing import Dict, Tuple, Set, List
 import logging
+
+from funmirbench.utils import project_root, resolve_path, read_de_table, extract_gene_ids
 
 logging.basicConfig(
     level=logging.INFO,
@@ -12,11 +13,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
+DEFAULT_ROOT = project_root()
 DEFAULT_OUT = pathlib.Path("data/predictions/mock/mock_canonical.tsv")
 DEFAULT_DATASETS_JSON = pathlib.Path("metadata/datasets.json")
-
-GENE_ID_RE = re.compile(r"^ENS[A-Z]*G\d+", re.IGNORECASE)
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,49 +33,6 @@ def stable_hash_float(s: str) -> float:
     h = hashlib.sha256(s.encode("utf-8")).digest()
     v = int.from_bytes(h[:8], "big")  # 64-bit integer
     return v / 2**64
-
-
-def _read_de_table(pd, path: pathlib.Path):
-    df = pd.read_csv(path, sep="\t")
-    df.columns = [str(c).strip() for c in df.columns]
-    if "gene_name" not in df.columns and "gene_id" not in df.columns and len(df.columns) == 1:
-        df2 = pd.read_csv(path, sep=r"\s+", engine="python")
-        df2.columns = [str(c).strip() for c in df2.columns]
-        df = df2
-    return df
-
-
-def _extract_gene_ids(df) -> List[str]:
-    # 1) Explicit columns
-    for c in ("gene_id", "gene_name"):
-        if c in df.columns:
-            return df[c].dropna().astype(str).tolist()
-
-    # 2) Heuristic: column with many ENS*G* IDs
-    best_col = None
-    best_frac = 0.0
-    for col in df.columns:
-        s = df[col].dropna().astype(str)
-        if len(s) == 0:
-            continue
-        frac = float(s.str.match(GENE_ID_RE).mean())
-        if frac > best_frac:
-            best_frac = frac
-            best_col = str(col)
-    if best_col is not None and best_frac >= 0.5:
-        return df[best_col].dropna().astype(str).tolist()
-
-    # 3) Index heuristic
-    idx = df.index.astype(str)
-    if len(idx) > 0:
-        frac_idx = float(idx.str.match(GENE_ID_RE).mean())
-        if frac_idx >= 0.5:
-            return list(idx)
-
-    raise ValueError(
-        "Could not identify gene IDs in DE table. "
-        "Expected gene_id/gene_name column or Ensembl-like IDs (ENSG...) in a column or index."
-    )
 
 
 def _rank_scores_0_1(keys: List[str]) -> Dict[str, float]:
@@ -111,8 +67,8 @@ def build_mock_scores(
         if not path.exists():
             continue
 
-        df = _read_de_table(pd, path)
-        gene_ids = set(_extract_gene_ids(df))
+        df = read_de_table(pd, path)
+        gene_ids = set(extract_gene_ids(df))
         genes_by_mirna.setdefault(m.miRNA, set()).update(gene_ids)
 
     scores: Dict[Tuple[str, str], float] = {}
@@ -147,13 +103,8 @@ def main() -> None:
     args = parse_args()
     root = args.root.expanduser().resolve()
 
-    datasets_json = args.datasets_json
-    out_path = args.out
-
-    if not datasets_json.is_absolute():
-        datasets_json = root / datasets_json
-    if not out_path.is_absolute():
-        out_path = root / out_path
+    datasets_json = resolve_path(root, args.datasets_json)
+    out_path = resolve_path(root, args.out)
 
     if args.tool == "mock":
         scores = build_mock_scores(datasets_json, max_genes_per_mirna=args.max_genes_per_mirna)

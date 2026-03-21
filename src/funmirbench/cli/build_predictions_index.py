@@ -6,13 +6,15 @@ import re
 from typing import Dict, List
 import logging
 
+from funmirbench.utils import project_root, resolve_path
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s: %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
+DEFAULT_ROOT = project_root()
 DEFAULT_INFO_TSV = pathlib.Path("metadata/predictions_info.tsv")
 DEFAULT_OUT_JSON = pathlib.Path("metadata/predictions.json")
 
@@ -95,13 +97,8 @@ def main() -> None:
     args = parse_args()
 
     root = args.root.expanduser().resolve()
-    info_tsv = args.info_tsv
-    out_json = args.out_json
-
-    if not info_tsv.is_absolute():
-        info_tsv = root / info_tsv
-    if not out_json.is_absolute():
-        out_json = root / out_json
+    info_tsv = resolve_path(root, args.info_tsv)
+    out_json = resolve_path(root, args.out_json)
 
     if not info_tsv.exists():
         raise FileNotFoundError(f"Input TSV not found: {info_tsv}")

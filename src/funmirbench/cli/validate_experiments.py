@@ -15,17 +15,14 @@ import pathlib
 from typing import List, Tuple
 import pandas as pd
 
-from funmirbench.de_table_validation import (  # type: ignore
-    read_de_table_columns,
-    read_de_table,
-)
+from funmirbench.utils import read_de_table, read_de_table_columns, project_root, resolve_path
 from funmirbench.datasets import load_metadata  # type: ignore
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-DEFAULT_ROOT = pathlib.Path(__file__).resolve().parents[3]
+DEFAULT_ROOT = project_root()
 DEFAULT_DATASETS_JSON = pathlib.Path("metadata/datasets.json")
 
 
@@ -42,9 +39,7 @@ def main() -> None:
     args = parse_args()
     root = args.root.expanduser().resolve()
 
-    datasets_json = args.datasets_json
-    if not datasets_json.is_absolute():
-        datasets_json = root / datasets_json
+    datasets_json = resolve_path(root, args.datasets_json)
 
     metas = load_metadata(datasets_json=datasets_json, root=root)
 
