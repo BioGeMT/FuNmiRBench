@@ -259,16 +259,37 @@ def download_from_ncbi(srr, output_dir, threads, layout):
     return compressed_files
 
 
+def expected_fastq_filenames(srr, layout):
+    """Return the exact compressed FASTQ filenames expected for this run."""
+    if layout == "PAIRED":
+        return [f"{srr}_1.fastq.gz", f"{srr}_2.fastq.gz"]
+    return [f"{srr}.fastq.gz"]
+
+
 # Download FASTQ files for a single SRR accession (with ENA fallback)
 def download_srr(srr, output_dir, threads, layout="PAIRED"):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Check if already downloaded (skip if .fastq.gz files exist)
-    existing_gz = list(output_dir.glob(f"{srr}*.fastq.gz"))
+    expected_names = expected_fastq_filenames(srr, layout)
+    expected_paths = [output_dir / name for name in expected_names]
+    existing_gz = sorted(output_dir.glob(f"{srr}*.fastq.gz"))
+
+    # Skip only when the full expected file set is present.
+    if all(path.exists() for path in expected_paths):
+        logger.info(f"Skipping {srr} - already downloaded: {expected_names}")
+        return expected_paths
+
+    # If we find only a partial set, remove it and retry the download cleanly.
     if existing_gz:
-        logger.info(f"Skipping {srr} - already downloaded: {[f.name for f in existing_gz]}")
-        return existing_gz
+        logger.warning(
+            "Partial FASTQ set for %s in %s; removing incomplete files before retry: %s",
+            srr,
+            output_dir,
+            [path.name for path in existing_gz],
+        )
+        for path in existing_gz:
+            path.unlink()
     
     logger.info(f"Downloading {srr} to {output_dir}")
     
