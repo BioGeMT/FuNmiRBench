@@ -33,11 +33,6 @@ logger = logging.getLogger(__name__)
 Entrez.email = "zacharopoulou.eli@gmail.com"
 
 
-def log_step(current, total, message, prefix="STEP"):
-    """Consistent numbered progress logging."""
-    logger.info("[%s %d/%d] %s", prefix, current, total, message)
-
-
 @dataclass
 class SRRInfo:
     """Holds information about an SRA run."""
@@ -324,27 +319,16 @@ def download_experiment(gse, control_samples, condition_samples, output_dir, thr
     
     all_samples = control_samples + condition_samples
     
-    step_total = 3
-    log_step(1, step_total, f"{gse}: resolving GSM accessions to SRR runs", prefix="EXP")
+    # Resolve all GSMs to SRRs
+    logger.info("Resolving GSM accessions to SRR runs...")
     srr_infos = resolve_gse_samples(all_samples)
-    logger.info("[%s] Resolved %d SRR run(s)", gse, len(srr_infos))
     
     # Create manifest to track what was downloaded
     manifest = {"gse": gse, "samples": {}}
     
-    log_step(2, step_total, f"{gse}: downloading SRR FASTQ files", prefix="EXP")
-
     # Download each sample
-    for idx, srr_info in enumerate(srr_infos, start=1):
+    for srr_info in srr_infos:
         try:
-            logger.info(
-                "[RUN %d/%d] %s -> %s (%s)",
-                idx,
-                len(srr_infos),
-                srr_info.gsm,
-                srr_info.srr,
-                srr_info.layout,
-            )
             gsm_dir = output_dir / srr_info.gsm
             files = download_srr(srr_info.srr, gsm_dir, threads=threads, layout=srr_info.layout)
             
@@ -359,7 +343,6 @@ def download_experiment(gse, control_samples, condition_samples, output_dir, thr
             logger.error(f"Failed to download {srr_info.srr}: {e}")
     
     # Save manifest
-    log_step(3, step_total, f"{gse}: writing manifest", prefix="EXP")
     manifest_path = output_dir / "manifest.json"
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
@@ -377,28 +360,13 @@ def main():
     
     args = parser.parse_args()
     
-    total_steps = 4
-    log_step(1, total_steps, f"loading experiments metadata from {args.tsv}")
+    # Parse experiments from TSV
     experiments = parse_experiment_metadata(args.tsv)
-    log_step(2, total_steps, f"parsed {len(experiments)} experiment(s)")
-
     output_dir = Path(args.output)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    log_step(3, total_steps, f"output directory ready: {output_dir}")
-    log_step(4, total_steps, "starting experiment downloads")
     
     # Download each experiment
-    total_experiments = len(experiments)
-    for exp_idx, exp in enumerate(experiments, start=1):
+    for exp in experiments:
         try:
-            logger.info(
-                "[EXPERIMENT %d/%d] %s | %s | %s",
-                exp_idx,
-                total_experiments,
-                exp["gse"],
-                exp["mirna"],
-                exp["experiment_type"],
-            )
             download_experiment(
                 gse=exp["gse"],
                 control_samples=exp["control_samples"],
