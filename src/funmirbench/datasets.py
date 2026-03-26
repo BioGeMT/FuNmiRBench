@@ -96,6 +96,7 @@ class DatasetMeta:
 
 
 FieldExtractor = Callable[[DatasetMeta], Optional[str]]
+StringListFilter = Optional[str | List[str]]
 
 
 def _resolve_dataset_id_arg(
@@ -197,10 +198,20 @@ def _matches(field_value: Optional[str], target: Optional[str]) -> bool:
     return field_value.lower() == target.lower()
 
 
+def _normalize_text_filter(target: StringListFilter) -> Optional[set[str]]:
+    """Normalize a string-or-list filter into lowercase match values."""
+    if target is None:
+        return None
+
+    values = [target] if isinstance(target, str) else target
+    normalized = {value.lower() for value in values if value}
+    return normalized or None
+
+
 def list_datasets(
     *,
-    miRNA: Optional[str] = None,
-    cell_line: Optional[str] = None,
+    miRNA: StringListFilter = None,
+    cell_line: StringListFilter = None,
     perturbation: Optional[str] = None,
     tissue: Optional[str] = None,
     geo_accession: Optional[str] = None,
@@ -214,15 +225,20 @@ def list_datasets(
     --------
     - list_datasets(perturbation="overexpression")
     - list_datasets(miRNA="hsa-miR-124-3p", cell_line="HeLa")
+    - list_datasets(miRNA=["hsa-miR-124-3p", "hsa-miR-1"], cell_line=["HeLa", "HEK293"])
     """
     metas = load_metadata(root=root, datasets_json=datasets_json)
     results: List[DatasetMeta] = []
+    miRNA_filters = _normalize_text_filter(miRNA)
+    cell_line_filters = _normalize_text_filter(cell_line)
 
     for m in metas:
-        if not _matches(m.miRNA, miRNA):
-            continue
-        if not _matches(m.cell_line, cell_line):
-            continue
+        if miRNA_filters is not None:
+            if m.miRNA is None or m.miRNA.lower() not in miRNA_filters:
+                continue
+        if cell_line_filters is not None:
+            if m.cell_line is None or m.cell_line.lower() not in cell_line_filters:
+                continue
         if not _matches(m.perturbation, perturbation):
             continue
         if not _matches(m.tissue, tissue):
@@ -301,8 +317,8 @@ def load_dataset(
 
 def load_all_datasets(
     *,
-    miRNA: Optional[str] = None,
-    cell_line: Optional[str] = None,
+    miRNA: StringListFilter = None,
+    cell_line: StringListFilter = None,
     perturbation: Optional[str] = None,
     tissue: Optional[str] = None,
     geo_accession: Optional[str] = None,

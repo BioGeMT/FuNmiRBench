@@ -170,6 +170,33 @@ def test_list_and_summarize_helpers_return_sorted_values(dataset_registry):
     ) == {"knockdown": 1, "overexpression": 1}
 
 
+def test_list_datasets_accepts_list_filters(dataset_registry):
+    root, datasets_json = dataset_registry
+
+    results = datasets.list_datasets(
+        miRNA=["HSA-MIR-1", "hsa-miR-2"],
+        cell_line=["hela", "missing"],
+        root=root,
+        datasets_json=datasets_json,
+    )
+
+    assert [meta.id for meta in results] == ["001", "002"]
+
+
+def test_load_all_datasets_accepts_list_filters(dataset_registry):
+    root, datasets_json = dataset_registry
+
+    df = datasets.load_all_datasets(
+        miRNA=["hsa-miR-1", "hsa-miR-2"],
+        cell_line=["HeLa"],
+        root=root,
+        datasets_json=datasets_json,
+    )
+
+    assert sorted(df["dataset_id"].unique().tolist()) == ["001", "002"]
+    assert sorted(df["miRNA"].unique().tolist()) == ["hsa-miR-1", "hsa-miR-2"]
+
+
 def test_list_datasets_by_cell_line_is_deprecated(dataset_registry):
     root, datasets_json = dataset_registry
 
