@@ -1,0 +1,24 @@
+# Downstream benchmark config.
+# Consumes the final upstream artifacts:
+# - metadata/datasets.json
+# - data/experiments/processed/*.tsv
+# - metadata/predictions.json
+# - data/predictions/<tool>/*_canonical.tsv
+
+out_dir: results/run_example
+
+experiments:
+  miRNA:
+    - hsa-miR-375-3p
+  cell_line:
+    - HUV-EC-C
+  perturbation: overexpression
+
+predictors:
+  tool_ids:
+    - mock
+
+evaluation:
+  fdr_threshold: 0.05
+  abs_logfc_threshold: 1.0
+  predictor_top_fraction: 0.10

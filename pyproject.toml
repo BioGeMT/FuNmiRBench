@@ -18,6 +18,7 @@ dependencies = [
   "scikit-learn>=1.5,<2",
   "rich>=13.7,<14",
   "pyfiglet>=1.0,<2",
+  "PyYAML>=6,<7",
 ]
 
 [project.optional-dependencies]
