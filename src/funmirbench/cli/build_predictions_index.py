@@ -144,7 +144,7 @@ def main() -> None:
     with out_json.open("w", encoding="utf-8") as f:
         json.dump(entries, f, indent=2)
 
-    logger.info("Wrote %d entries to %s", len(datasets), out_json)
+    logger.info("Wrote %d entries to %s", len(entries), out_json)
 
 
 if __name__ == "__main__":

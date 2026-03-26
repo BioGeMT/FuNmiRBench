@@ -1,0 +1,71 @@
+2026-03-26 15:14:23,252 | INFO | Logging to file: /home/steph/projects/testing_funmirbench/FuNmiRBench/pipelines/standardized_predictors/targetscan/targetscan_pipeline.log
+2026-03-26 15:14:23,252 | INFO | 
+=== STEP 1/7: Download + unzip TargetScan inputs ===
+2026-03-26 15:14:23,252 | INFO | Downloading https://www.targetscan.org/vert_80/vert_80_data_download/Summary_Counts.all_predictions.txt.zip
+2026-03-26 15:15:39,197 | INFO | Downloaded Summary_Counts.all_predictions.txt.zip
+2026-03-26 15:15:44,157 | INFO | Unzipped Summary_Counts.all_predictions.txt.zip
+2026-03-26 15:15:44,157 | INFO | Downloading https://www.targetscan.org/vert_80/vert_80_data_download/miR_Family_Info.txt.zip
+2026-03-26 15:15:44,971 | INFO | Downloaded miR_Family_Info.txt.zip
+2026-03-26 15:15:44,978 | INFO | Unzipped miR_Family_Info.txt.zip
+2026-03-26 15:15:44,978 | INFO | Downloading https://www.targetscan.org/vert_80/vert_80_data_download/Gene_info.txt.zip
+2026-03-26 15:15:46,124 | INFO | Downloaded Gene_info.txt.zip
+2026-03-26 15:15:46,139 | INFO | Unzipped Gene_info.txt.zip
+2026-03-26 15:15:46,139 | INFO | ✔ TargetScan inputs ready in /home/steph/projects/testing_funmirbench/FuNmiRBench/pipelines/standardized_predictors/targetscan/data
+2026-03-26 15:15:46,139 | INFO | 
+=== STEP 2/7: Build representative-transcript index from Gene_info.txt ===
+2026-03-26 15:15:46,204 | INFO | Gene_Info stats: rows_total=28352 | rows_species(9606)=28352 | representative_rows=19441 | genes_with_representative_tx=19441
+2026-03-26 15:15:46,205 | INFO | Gene_Info transcripts-per-gene (top 6 bins): 1tx:13267 | 2tx:4378 | 3tx:1268 | 4tx:381 | 5tx:117 | 6tx:39
+2026-03-26 15:15:46,205 | INFO | Representative-transcript QC: genes_with_multiple_representative_rows=0
+2026-03-26 15:15:46,205 | INFO | Representative transcript 3P-seq tag counts (top 6 bins): 5:5468 | 7:279 | 10:201 | 8:182 | 9:178 | 11:171
+2026-03-26 15:15:46,207 | INFO |   sample representative transcript: ENSG00000121410.7 -> ENST00000263100.3 (3P-seq tags=74, symbol=A1BG)
+2026-03-26 15:15:46,207 | INFO |   sample representative transcript: ENSG00000148584.10 -> ENST00000374001.2 (3P-seq tags=80, symbol=A1CF)
+2026-03-26 15:15:46,207 | INFO |   sample representative transcript: ENSG00000175899.10 -> ENST00000318602.7 (3P-seq tags=3121, symbol=A2M)
+2026-03-26 15:15:46,207 | INFO | 
+=== STEP 3/7: Download Ensembl v115 GTF (GRCh38) ===
+2026-03-26 15:15:46,208 | INFO | Downloading https://ftp.ensembl.org/pub/release-115/gtf/homo_sapiens/Homo_sapiens.GRCh38.115.gtf.gz
+2026-03-26 15:16:03,494 | INFO | Downloaded Homo_sapiens.GRCh38.115.gtf.gz
+2026-03-26 15:16:03,494 | INFO | 
+=== STEP 4/7: Build Ensembl v115 mapping tables + cache to TSVs ===
+2026-03-26 15:16:11,875 | INFO | Ensembl GTF parsed: lines=7758731 | transcript_features=509650 | tx_mapped=509650 | genes_named=43048
+2026-03-26 15:16:14,128 | INFO | Wrote cached Ensembl tables:
+2026-03-26 15:16:14,128 | INFO |   - /home/steph/projects/testing_funmirbench/FuNmiRBench/pipelines/standardized_predictors/targetscan/data/ensembl115_tx2gene.tsv.gz
+2026-03-26 15:16:14,128 | INFO |   - /home/steph/projects/testing_funmirbench/FuNmiRBench/pipelines/standardized_predictors/targetscan/data/ensembl115_gene2name.tsv.gz
+2026-03-26 15:16:14,128 | INFO | 
+=== STEP 5/7: QC TargetScan representative transcript overlap with Ensembl v115 ===
+2026-03-26 15:16:14,142 | INFO | TargetScan Gene_Info transcripts total: 28352
+2026-03-26 15:16:14,142 | INFO | Ensembl v115 transcripts indexed: 509650
+2026-03-26 15:16:14,142 | INFO | Overlap (stable transcript ID): 25246
+2026-03-26 15:16:14,155 | INFO | TargetScan representative transcripts: 19441
+2026-03-26 15:16:14,155 | INFO | Representative-transcript overlap with Ensembl (stable transcript ID): 17638
+2026-03-26 15:16:14,155 | INFO | Sample representative-transcript misses (raw -> stripped):
+2026-03-26 15:16:14,155 | INFO |   ENST00000261686.6 -> ENST00000261686
+2026-03-26 15:16:14,155 | INFO |   ENST00000332530.3 -> ENST00000332530
+2026-03-26 15:16:14,155 | INFO |   ENST00000225402.5 -> ENST00000225402
+2026-03-26 15:16:14,155 | INFO |   ENST00000416101.2 -> ENST00000416101
+2026-03-26 15:16:14,155 | INFO |   ENST00000370732.2 -> ENST00000370732
+2026-03-26 15:16:14,155 | INFO |   ENST00000263817.6 -> ENST00000263817
+2026-03-26 15:16:14,155 | INFO |   ENST00000356058.4 -> ENST00000356058
+2026-03-26 15:16:14,155 | INFO |   ENST00000416054.1 -> ENST00000416054
+2026-03-26 15:16:14,155 | INFO |   ENST00000370449.4 -> ENST00000370449
+2026-03-26 15:16:14,155 | INFO |   ENST00000412704.1 -> ENST00000412704
+2026-03-26 15:16:14,156 | INFO | Representative transcripts not ENST*: 1
+2026-03-26 15:16:14,156 | INFO |   non-ENST example: CDR1as
+2026-03-26 15:16:14,157 | INFO | 
+=== STEP 6/7: Download miRBase mature.fa (pinned release 22.1) ===
+2026-03-26 15:16:14,157 | INFO | Downloading https://mirbase.org/download_version_files/22.1/mature.fa
+2026-03-26 15:16:15,949 | INFO | Downloaded miRBase mature.fa -> /home/steph/projects/testing_funmirbench/FuNmiRBench/pipelines/standardized_predictors/targetscan/data/mirbase_mature_v22.1.fa
+2026-03-26 15:16:15,949 | INFO | Parsing miRBase mature.fa
+2026-03-26 15:16:15,972 | INFO | Parsed 48885 mature miRNAs from miRBase
+2026-03-26 15:16:15,972 | INFO | 
+=== STEP 7/7 Build miRNA family -> human mature miRNAs mapping (validated against miRBase v22.1) ===
+2026-03-26 15:16:15,986 | INFO | miR_Family_Info stats: rows_total=9994 | rows_species(9606)=2606 | kept=2554 | unique_families=2021
+2026-03-26 15:16:15,986 | INFO | miRNA annotation QC vs miRBase v22.1: name_match=2524 | name_replaced=30 | dropped_missing_accession=26 | dropped_missing_fields=26
+2026-03-26 15:16:15,986 | INFO |   sample family: GAGGUAG -> 11 human miRNAs after miRBase validation (e.g., hsa-let-7a-5p)
+2026-03-26 15:16:15,986 | INFO | 
+=== Write standardized predictions (targetscan) ===
+2026-03-26 15:16:59,547 | INFO | targetscan score column 'Cumulative weighted context++ score': weakest raw(non-NULL)=0 | NULL rows=0 (imputed as 0)
+2026-03-26 15:18:14,193 | INFO | targetscan rank normalization: base_rows=6922047 | min_rank=0.0367882 | max_rank=1
+2026-03-26 15:18:14,193 | INFO | targetscan -> wrote 9088436 rows (family-expanded) from 6922047 base rows. output=/home/steph/projects/testing_funmirbench/FuNmiRBench/data/predictions/targetscan/targetscan_standardized.tsv
+2026-03-26 15:18:14,518 | INFO | 
+=== FINAL STATISTICS ===
+2026-03-26 15:18:25,547 | INFO | targetscan: 9088436 rows | 17489 unique genes | 2554 unique miRNAs
