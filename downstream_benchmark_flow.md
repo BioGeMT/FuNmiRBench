@@ -27,6 +27,7 @@ experiments:
   # miRNA: ["hsa-miR-375-3p"]
   # cell_line: ["HUV-EC-C"]
   # perturbation: overexpression
+  # or leave the section empty to run all datasets
 
 predictors:
   tool_ids:
@@ -46,6 +47,7 @@ What each section means:
 - `experiments`
   - either exact `dataset_ids`
   - or filters: `miRNA`, `cell_line`, `perturbation`, `tissue`, `geo_accession`
+  - if neither `dataset_ids` nor filters are provided, all datasets are selected
 - `predictors`
   - which `tool_ids` to load from `metadata/predictions.json`
   - optional `min_score` before joining
@@ -160,6 +162,7 @@ FLOW
        ├── select datasets
        │     - from dataset_ids
        │     - or from filters
+       │     - or all datasets if neither is provided
        │
        ├── select tools
        │     - from tool_ids
@@ -244,7 +247,7 @@ OUTPUTS
 ## What Is Working Now
 
 - YAML config drives the run
-- dataset selection supports exact IDs or filters
+- dataset selection supports exact IDs, filters, or all datasets by default
 - one joined file is produced per dataset
 - each tool becomes a `score_<tool_id>` column
 - missing tool predictions remain `NA` in the joined table

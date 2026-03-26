@@ -8,6 +8,10 @@
 out_dir: results/run_example
 
 experiments:
+  # Choose one of:
+  # 1. dataset_ids: [...]
+  # 2. filters like miRNA / cell_line / perturbation / tissue / geo_accession
+  # 3. leave this section empty to run all datasets
   miRNA:
     - hsa-miR-375-3p
   cell_line:
