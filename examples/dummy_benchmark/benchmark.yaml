@@ -1,0 +1,15 @@
+out_dir: results/run_demo
+
+experiments:
+  dataset_ids:
+    - DEMO001
+
+predictors:
+  tool_ids:
+    - alpha
+    - beta
+
+evaluation:
+  fdr_threshold: 0.05
+  abs_logfc_threshold: 1.0
+  predictor_top_fraction: 0.10

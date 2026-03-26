@@ -1,0 +1,17 @@
+[
+  {
+    "id": "DEMO001",
+    "geo_accession": "GSEDEMO001",
+    "miRNA": "hsa-miR-demo-1",
+    "miRNA_sequence": "AUGCUAACGUGA",
+    "cell_line": "HeLa",
+    "tissue": "cervix",
+    "perturbation": "overexpression",
+    "organism": "Homo sapiens",
+    "method": "RNA-Seq",
+    "treatment": "demo overexpression",
+    "pubmed_id": "PMID-DEMO-001",
+    "gse_url": "https://example.org/GSEDEMO001",
+    "data_path": "data/experiments/processed/DEMO001.tsv"
+  }
+]
