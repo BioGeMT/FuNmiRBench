@@ -9,17 +9,46 @@ This module:
 """
 
 from __future__ import annotations
-import os
+
 import json
+import os
 import pathlib
+import warnings
+from collections import Counter
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from funmirbench.utils.paths import project_root
 
 
 DEFAULT_ROOT = project_root()
 DEFAULT_DATASETS_JSON = DEFAULT_ROOT / "metadata" / "datasets.json"
+_DATASET_ID_MISSING = object()
+
+__all__ = [
+    "DatasetMeta",
+    "get_root",
+    "get_datasets_json",
+    "load_metadata",
+    "list_datasets",
+    "get_dataset",
+    "load_dataset",
+    "load_all_datasets",
+    "list_cell_lines",
+    "list_mirnas",
+    "list_tissues",
+    "list_geo_accessions",
+    "list_perturbations",
+    "list_ids",
+    "summarize_cell_lines",
+    "summarize_mirnas",
+    "summarize_tissues",
+    "summarize_perturbations",
+    "summarize_datasets",
+    "group_by_mirna",
+    "group_by_geo",
+    "list_datasets_by_cell_line",
+]
 
 
 def get_root(root: Optional[pathlib.Path] = None) -> pathlib.Path:
@@ -64,6 +93,44 @@ class DatasetMeta:
     def full_path(self) -> pathlib.Path:
         """Absolute path to the TSV file on disk."""
         return self.root / self.data_path
+
+
+FieldExtractor = Callable[[DatasetMeta], Optional[str]]
+
+
+def _resolve_dataset_id_arg(
+    func_name: str,
+    dataset_id: object,
+    kwargs: Dict[str, Any],
+) -> str:
+    legacy_id = kwargs.pop("id", _DATASET_ID_MISSING)
+
+    if kwargs:
+        unexpected = next(iter(kwargs))
+        raise TypeError(
+            f"{func_name}() got an unexpected keyword argument {unexpected!r}"
+        )
+
+    if dataset_id is _DATASET_ID_MISSING:
+        if legacy_id is _DATASET_ID_MISSING:
+            raise TypeError(
+                f"{func_name}() missing 1 required positional argument: "
+                "'dataset_id'"
+            )
+        warnings.warn(
+            f"{func_name}(id=...) is deprecated; use dataset_id=... instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return cast(str, legacy_id)
+
+    if legacy_id is not _DATASET_ID_MISSING:
+        raise TypeError(
+            f"{func_name}() got multiple values for argument 'dataset_id'"
+        )
+
+    return cast(str, dataset_id)
+
 
 def _load_raw_metadata(
     *,
@@ -168,31 +235,36 @@ def list_datasets(
 
 
 def get_dataset(
-    id: str,
+    dataset_id: object = _DATASET_ID_MISSING,
     *,
     root: Optional[pathlib.Path] = None,
     datasets_json: Optional[pathlib.Path] = None,
+    **kwargs: Any,
 ) -> Optional[DatasetMeta]:
     """Return the DatasetMeta with the given ID, or None if not found."""
+    resolved_dataset_id = _resolve_dataset_id_arg(
+        "get_dataset", dataset_id, kwargs
+    )
     for m in load_metadata(root=root, datasets_json=datasets_json):
-        if m.id == id:
+        if m.id == resolved_dataset_id:
             return m
     return None
 
 
 def load_dataset(
-    id: str,
+    dataset_id: object = _DATASET_ID_MISSING,
     *,
     sep: str = "\t",
     root: Optional[pathlib.Path] = None,
     datasets_json: Optional[pathlib.Path] = None,
+    **kwargs: Any,
 ):
     """
     Load a single dataset's TSV as a pandas DataFrame.
 
     Parameters
     ----------
-    id : str
+    dataset_id : str
         The dataset ID (e.g. "001", "017", ...).
     sep : str
         Column separator (default: tab).
@@ -201,9 +273,16 @@ def load_dataset(
     -------
     pandas.DataFrame
     """
-    meta = get_dataset(id, root=root, datasets_json=datasets_json)
+    resolved_dataset_id = _resolve_dataset_id_arg(
+        "load_dataset", dataset_id, kwargs
+    )
+    meta = get_dataset(
+        resolved_dataset_id,
+        root=root,
+        datasets_json=datasets_json,
+    )
     if meta is None:
-        raise ValueError(f"No dataset with id {id!r}")
+        raise ValueError(f"No dataset with id {resolved_dataset_id!r}")
 
     try:
         import pandas as pd  # type: ignore[import]
@@ -276,81 +355,144 @@ def load_all_datasets(
 # Convenience listing / summarizing helpers
 # ---------------------------------------------------------------------------
 
-def list_cell_lines(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> List[str]:
+def _list_unique_field(
+    extractor: FieldExtractor,
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> List[str]:
+    metas = load_metadata(root=root, datasets_json=datasets_json)
+    values = {extractor(m) for m in metas}
+    return sorted(v for v in values if v is not None)
+
+
+def _summarize_field(
+    extractor: FieldExtractor,
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> Dict[str, int]:
+    metas = load_metadata(root=root, datasets_json=datasets_json)
+    counts = Counter(extractor(m) for m in metas)
+    counts.pop(None, None)
+    return dict(sorted(counts.items()))
+
+
+def list_cell_lines(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> List[str]:
     """Return a sorted list of all unique cell lines."""
-    metas = load_metadata(root=root, datasets_json=datasets_json)
-    cell_lines = {m.cell_line for m in metas if m.cell_line is not None}
-    return sorted(cell_lines)
+    return _list_unique_field(
+        lambda m: m.cell_line,
+        root=root,
+        datasets_json=datasets_json,
+    )
 
 
-def list_mirnas(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> List[str]:
+def list_mirnas(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> List[str]:
     """Return a sorted list of all unique miRNAs."""
-    metas = load_metadata(root=root, datasets_json=datasets_json)
-    mirnas = {m.miRNA for m in metas if m.miRNA is not None}
-    return sorted(mirnas)
+    return _list_unique_field(
+        lambda m: m.miRNA,
+        root=root,
+        datasets_json=datasets_json,
+    )
 
 
-def list_tissues(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> List[str]:
+def list_tissues(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> List[str]:
     """Return a sorted list of all unique tissues."""
-    metas = load_metadata(root=root, datasets_json=datasets_json)
-    tissues = {m.tissue for m in metas if m.tissue is not None}
-    return sorted(tissues)
+    return _list_unique_field(
+        lambda m: m.tissue,
+        root=root,
+        datasets_json=datasets_json,
+    )
 
 
-def list_geo_accessions(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> List[str]:
+def list_geo_accessions(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> List[str]:
     """Return a sorted list of all unique GEO accessions."""
-    metas = load_metadata(root=root, datasets_json=datasets_json)
-    geos = {m.geo_accession for m in metas if m.geo_accession is not None}
-    return sorted(geos)
+    return _list_unique_field(
+        lambda m: m.geo_accession,
+        root=root,
+        datasets_json=datasets_json,
+    )
 
 
-def list_perturbations(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> List[str]:
+def list_perturbations(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> List[str]:
     """Return a sorted list of all unique perturbation types."""
-    metas = load_metadata(root=root, datasets_json=datasets_json)
-    kinds = {m.perturbation for m in metas if m.perturbation is not None}
-    return sorted(kinds)
+    return _list_unique_field(
+        lambda m: m.perturbation,
+        root=root,
+        datasets_json=datasets_json,
+    )
 
 
-def summarize_cell_lines(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> Dict[str, int]:
+def summarize_cell_lines(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> Dict[str, int]:
     """Return a dict: cell_line -> number of datasets."""
-    metas = load_metadata(root=root, datasets_json=datasets_json)
-    counts: Dict[str, int] = {}
-    for m in metas:
-        if m.cell_line is None:
-            continue
-        counts[m.cell_line] = counts.get(m.cell_line, 0) + 1
-    return dict(sorted(counts.items()))
+    return _summarize_field(
+        lambda m: m.cell_line,
+        root=root,
+        datasets_json=datasets_json,
+    )
 
 
-def summarize_mirnas(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> Dict[str, int]:
+def summarize_mirnas(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> Dict[str, int]:
     """Return a dict: miRNA -> number of datasets."""
-    metas = load_metadata(root=root, datasets_json=datasets_json)
-    counts: Dict[str, int] = {}
-    for m in metas:
-        counts[m.miRNA] = counts.get(m.miRNA, 0) + 1
-    return dict(sorted(counts.items()))
+    return _summarize_field(
+        lambda m: m.miRNA,
+        root=root,
+        datasets_json=datasets_json,
+    )
 
 
-def summarize_tissues(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> Dict[str, int]:
+def summarize_tissues(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> Dict[str, int]:
     """Return a dict: tissue -> number of datasets."""
-    metas = load_metadata(root=root, datasets_json=datasets_json)
-    counts: Dict[str, int] = {}
-    for m in metas:
-        if m.tissue is None:
-            continue
-        counts[m.tissue] = counts.get(m.tissue, 0) + 1
-    return dict(sorted(counts.items()))
+    return _summarize_field(
+        lambda m: m.tissue,
+        root=root,
+        datasets_json=datasets_json,
+    )
 
 
-def summarize_perturbations(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> Dict[str, int]:
+def summarize_perturbations(
+    *,
+    root: Optional[pathlib.Path] = None,
+    datasets_json: Optional[pathlib.Path] = None,
+) -> Dict[str, int]:
     """Return a dict: perturbation -> number of datasets."""
-    metas = load_metadata(root=root, datasets_json=datasets_json)
-    counts: Dict[str, int] = {}
-    for m in metas:
-        if m.perturbation is None:
-            continue
-        counts[m.perturbation] = counts.get(m.perturbation, 0) + 1
-    return dict(sorted(counts.items()))
+    return _summarize_field(
+        lambda m: m.perturbation,
+        root=root,
+        datasets_json=datasets_json,
+    )
 
 
 def group_by_mirna(*, root: Optional[pathlib.Path] = None, datasets_json: Optional[pathlib.Path] = None) -> Dict[str, List[DatasetMeta]]:
@@ -389,8 +531,15 @@ def list_datasets_by_cell_line(
     root: Optional[pathlib.Path] = None,
     datasets_json: Optional[pathlib.Path] = None,
 ) -> List[DatasetMeta]:
-    """Return all datasets associated with a specific cell line."""
+    """Deprecated wrapper for list_datasets(cell_line=...)."""
+    warnings.warn(
+        "list_datasets_by_cell_line is deprecated; "
+        "use list_datasets(cell_line=...) instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return list_datasets(cell_line=cell_line, root=root, datasets_json=datasets_json)
+
 
 def summarize_datasets(
     *,
