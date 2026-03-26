@@ -1,16 +1,23 @@
-"""Run the downstream FuNmiRBench benchmark from a single TOML config."""
+"""Run the downstream benchmark from a single YAML config."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import pathlib
-import shutil
-import sys
-import tomllib
+from typing import Any
+
+import yaml
 
 from funmirbench import datasets
-from funmirbench.cli import join_experiment_predictions, plot_correlation
+from funmirbench.cli.join_experiment_predictions import (
+    build_combined_joined_dataset,
+    load_predictions_registry,
+)
+from funmirbench.cli.plot_correlation import (
+    evaluate_joined_dataset,
+    write_metric_tables,
+)
 from funmirbench.utils import resolve_path
 
 
@@ -22,154 +29,178 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _run_cli(module, argv: list[str]) -> None:
-    old_argv = sys.argv[:]
-    try:
-        sys.argv = argv
-        module.main()
-    finally:
-        sys.argv = old_argv
-
-
-def _load_config(path: pathlib.Path) -> dict:
-    with path.open("rb") as f:
-        return tomllib.load(f)
-
-
-def _load_predictions_registry(path: pathlib.Path) -> dict[str, dict]:
+def _load_config(path: pathlib.Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
-        entries = json.load(f)
-    return {entry["tool_id"]: entry for entry in entries}
+        return yaml.safe_load(f)
+
+
+def _select_datasets(
+    experiments_cfg: dict[str, Any],
+    *,
+    root: pathlib.Path,
+    datasets_json: pathlib.Path,
+) -> list[datasets.DatasetMeta]:
+    dataset_ids = experiments_cfg.get("dataset_ids")
+    filter_keys = ["miRNA", "cell_line", "perturbation", "tissue", "geo_accession"]
+    has_filters = any(experiments_cfg.get(key) is not None for key in filter_keys)
+
+    if dataset_ids is not None and has_filters:
+        raise ValueError("Use either experiments.dataset_ids or experiment filters, not both.")
+
+    if dataset_ids is not None:
+        selected = [
+            datasets.get_dataset(
+                dataset_id,
+                root=root,
+                datasets_json=datasets_json,
+            )
+            for dataset_id in dataset_ids
+        ]
+        missing_ids = [
+            dataset_id
+            for dataset_id, meta in zip(dataset_ids, selected)
+            if meta is None
+        ]
+        if missing_ids:
+            raise ValueError(f"Unknown dataset ids: {missing_ids}")
+        return [meta for meta in selected if meta is not None]
+
+    selected = datasets.list_datasets(
+        miRNA=experiments_cfg.get("miRNA"),
+        cell_line=experiments_cfg.get("cell_line"),
+        perturbation=experiments_cfg.get("perturbation"),
+        tissue=experiments_cfg.get("tissue"),
+        geo_accession=experiments_cfg.get("geo_accession"),
+        root=root,
+        datasets_json=datasets_json,
+    )
+    if not selected:
+        raise ValueError("Experiment selection resolved to no datasets.")
+    return selected
 
 
 def run_benchmark(config_path: pathlib.Path) -> pathlib.Path:
     config_path = config_path.expanduser().resolve()
     config = _load_config(config_path)
-    config_dir = config_path.parent
-
-    paths_cfg = config["paths"]
+    root = config_path.parent
     experiments_cfg = config["experiments"]
     predictors_cfg = config["predictors"]
     evaluation_cfg = config["evaluation"]
-
-    root = resolve_path(config_dir, pathlib.Path(paths_cfg["root"]))
-    datasets_json = resolve_path(root, pathlib.Path(paths_cfg["datasets_json"]))
-    predictions_json = resolve_path(root, pathlib.Path(paths_cfg["predictions_json"]))
-    out_dir = resolve_path(root, pathlib.Path(paths_cfg["out_dir"]))
+    datasets_json = root / "metadata" / "datasets.json"
+    predictions_json = root / "metadata" / "predictions.json"
+    out_dir = resolve_path(root, pathlib.Path(config.get("out_dir", "results/run_benchmark")))
 
     joined_dir = out_dir / "joined"
     plots_dir = out_dir / "plots"
     reports_dir = out_dir / "reports"
+    tables_dir = out_dir / "tables"
     joined_dir.mkdir(parents=True, exist_ok=True)
     plots_dir.mkdir(parents=True, exist_ok=True)
     reports_dir.mkdir(parents=True, exist_ok=True)
+    tables_dir.mkdir(parents=True, exist_ok=True)
 
-    prediction_registry = _load_predictions_registry(predictions_json)
-
-    selected_datasets = [
-        datasets.get_dataset(
-            dataset_id,
-            root=root,
-            datasets_json=datasets_json,
-        )
-        for dataset_id in experiments_cfg["dataset_ids"]
-    ]
-    selected_tools = predictors_cfg["tool_ids"]
-
+    prediction_registry = load_predictions_registry(predictions_json)
+    selected_datasets = _select_datasets(
+        experiments_cfg,
+        root=root,
+        datasets_json=datasets_json,
+    )
+    tool_ids = predictors_cfg["tool_ids"]
     min_score = predictors_cfg.get("min_score")
-    score_col = evaluation_cfg.get("score_col")
 
-    pairs = []
+    dataset_outputs: list[dict[str, Any]] = []
+    metric_rows: list[dict[str, Any]] = []
 
     for meta in selected_datasets:
-        dataset_id = meta.id
-        for tool_id in selected_tools:
-            tool_meta = prediction_registry[tool_id]
-            joined_out = joined_dir / f"{dataset_id}_{tool_id}.tsv"
+        joined, canonical_paths = build_combined_joined_dataset(
+            meta,
+            tool_ids=tool_ids,
+            prediction_registry=prediction_registry,
+            root=root,
+            min_score=min_score,
+        )
+        joined_path = joined_dir / f"{meta.id}.tsv"
+        joined.to_csv(joined_path, sep="\t", index=False)
 
-            join_argv = [
-                "join_experiment_predictions",
-                "--dataset-id", dataset_id,
-                "--tool", tool_id,
-                "--predictions-json", str(predictions_json),
-                "--root", str(root),
-                "--out", str(joined_out),
-            ]
-            if min_score is not None:
-                join_argv.extend(["--min-score", str(min_score)])
-            _run_cli(join_experiment_predictions, join_argv)
+        evaluation = evaluate_joined_dataset(
+            joined_path,
+            plots_dir=plots_dir,
+            reports_dir=reports_dir,
+            fdr_threshold=float(evaluation_cfg["fdr_threshold"]),
+            abs_logfc_threshold=float(evaluation_cfg["abs_logfc_threshold"]),
+            predictor_top_fraction=float(evaluation_cfg.get("predictor_top_fraction", 0.10)),
+            dataset_id=meta.id,
+            mirna=meta.miRNA,
+            cell_line=meta.cell_line,
+            perturbation=meta.perturbation,
+            geo_accession=meta.geo_accession,
+            de_table_path=str(meta.full_path),
+            canonical_paths=canonical_paths,
+        )
+        metric_rows.extend(evaluation["metric_rows"])
+        dataset_outputs.append(
+            {
+                "dataset_id": meta.id,
+                "mirna": meta.miRNA,
+                "cell_line": meta.cell_line,
+                "perturbation": meta.perturbation,
+                "geo_accession": meta.geo_accession,
+                "de_table_path": str(meta.full_path),
+                "joined_tsv": str(joined_path),
+                "canonical_tsv_paths": canonical_paths,
+                "plots": evaluation["plots"],
+                "predictor_correlation_tsv": evaluation["predictor_correlation_tsv"],
+            }
+        )
 
-            plot_argv = [
-                "plot_correlation",
-                "--joined-tsv", str(joined_out),
-                "--out-dir", str(plots_dir),
-                "--dataset-id", dataset_id,
-                "--mirna", meta.miRNA,
-                "--cell-line", meta.cell_line or "",
-                "--perturbation", meta.perturbation or "",
-                "--geo-accession", meta.geo_accession or "",
-                "--top-n", str(evaluation_cfg["top_n"]),
-                "--fdr-threshold", str(evaluation_cfg["fdr_threshold"]),
-                "--abs-logfc-threshold", str(evaluation_cfg["abs_logfc_threshold"]),
-            ]
-            if score_col:
-                plot_argv.extend(["--score-col", str(score_col)])
-            _run_cli(plot_correlation, plot_argv)
-
-            report_name = f"{joined_out.stem}_evaluation_report.txt"
-            report_src = plots_dir / report_name
-            report_dst = reports_dir / report_name
-            shutil.move(str(report_src), str(report_dst))
-
-            pairs.append(
-                {
-                    "dataset_id": dataset_id,
-                    "tool_id": tool_id,
-                    "mirna": meta.miRNA,
-                    "cell_line": meta.cell_line,
-                    "perturbation": meta.perturbation,
-                    "geo_accession": meta.geo_accession,
-                    "de_table_path": str(meta.full_path),
-                    "canonical_tsv_path": tool_meta["canonical_tsv_path"],
-                    "joined_tsv": str(joined_out),
-                    "report_txt": str(report_dst),
-                }
-            )
+    metric_tables = write_metric_tables(metric_rows, tables_dir)
 
     summary = {
         "root": str(root),
         "datasets_json": str(datasets_json),
         "predictions_json": str(predictions_json),
         "out_dir": str(out_dir),
-        "dataset_ids": experiments_cfg["dataset_ids"],
-        "tool_ids": selected_tools,
-        "pairs": pairs,
+        "dataset_ids": [meta.id for meta in selected_datasets],
+        "experiment_selection": experiments_cfg,
+        "tool_ids": tool_ids,
+        "metric_tables": metric_tables,
+        "datasets": dataset_outputs,
     }
 
     summary_json = out_dir / "summary.json"
     summary_json.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 
-    summary_txt = out_dir / "summary.txt"
-    lines = [
+    summary_lines = [
         f"run_dir: {out_dir}",
         f"datasets_json: {datasets_json}",
         f"predictions_json: {predictions_json}",
-        f"dataset_ids: {', '.join(experiments_cfg['dataset_ids'])}",
-        f"tool_ids: {', '.join(selected_tools)}",
+        f"dataset_ids: {', '.join(meta.id for meta in selected_datasets)}",
+        f"tool_ids: {', '.join(tool_ids)}",
+        f"aps_table: {metric_tables['aps']}",
+        f"spearman_table: {metric_tables['spearman']}",
+        f"auroc_table: {metric_tables['auroc']}",
         "",
-        "pairs:",
+        "datasets:",
     ]
-    for pair in pairs:
-        lines.extend(
+    for dataset_output in dataset_outputs:
+        summary_lines.extend(
             [
-                f"  - dataset_id: {pair['dataset_id']}",
-                f"    tool_id: {pair['tool_id']}",
-                f"    joined_tsv: {pair['joined_tsv']}",
-                f"    report_txt: {pair['report_txt']}",
+                f"  - dataset_id: {dataset_output['dataset_id']}",
+                f"    joined_tsv: {dataset_output['joined_tsv']}",
             ]
         )
-    summary_txt.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        for tool_id in tool_ids:
+            summary_lines.append(
+                f"    report_{tool_id}: "
+                f"{reports_dir / f'{dataset_output['dataset_id']}__{tool_id}_evaluation_report.txt'}"
+            )
+        if dataset_output["predictor_correlation_tsv"] is not None:
+            summary_lines.append(
+                f"    predictor_correlation_tsv: {dataset_output['predictor_correlation_tsv']}"
+            )
 
+    summary_txt = out_dir / "summary.txt"
+    summary_txt.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
     return out_dir
 
 
