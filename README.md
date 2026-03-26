@@ -15,9 +15,7 @@ FuNmiRBench provides:
 
 ## 🔧 Installation
 
-FuNmiRBench supports two installation modes:
-
-### Option 1 (recommended): reproducible conda environment (pinned versions)
+Use the pinned conda environment:
 
 Clone the repo:
 
@@ -29,18 +27,15 @@ Create and activate the pinned conda environment:
 ```bash
 conda env create -f environment.yml
 conda activate funmirbench
+export PYTHONPATH="$PWD/src"
 ```
-This installs core dependencies via conda (with fixed versions) and installs the
-package in editable mode (pip install -e .).
+This installs the pinned dependencies and makes the source tree importable in the current shell.
 
-### Option 2: manual development setup (pip-managed deps)
-```bash
-eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
-conda create -n funmirbench python=3.12
-conda activate funmirbench
+This is the supported setup path for the repo.
 
-pip install -e .
-```
+All commands below assume you run them from the repo root with `PYTHONPATH=src`
+available in your shell.
+
 ## Current Scope
 
 FuNmiRBench currently does three practical things:

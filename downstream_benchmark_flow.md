@@ -6,13 +6,13 @@ It assumes the upstream artifacts already exist.
 Run entrypoint:
 
 ```bash
-python -m funmirbench.cli.run_benchmark --config benchmark.example.yaml
+PYTHONPATH=src python -m funmirbench.cli.run_benchmark --config benchmark.example.yaml
 ```
 
 Minimal runnable demo:
 
 ```bash
-python -m funmirbench.cli.run_benchmark --config examples/dummy_benchmark/benchmark.yaml
+PYTHONPATH=src python -m funmirbench.cli.run_benchmark --config examples/dummy_benchmark/benchmark.yaml
 ```
 
 ## YAML Structure

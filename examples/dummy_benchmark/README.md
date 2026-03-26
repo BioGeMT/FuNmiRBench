@@ -14,7 +14,7 @@ automatically looks for `metadata/` and `data/` next to `benchmark.yaml`.
 Run:
 
 ```bash
-python -m funmirbench.cli.run_benchmark --config examples/dummy_benchmark/benchmark.yaml
+PYTHONPATH=src python -m funmirbench.cli.run_benchmark --config examples/dummy_benchmark/benchmark.yaml
 ```
 
 Outputs land in:
