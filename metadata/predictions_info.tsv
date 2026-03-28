@@ -1,2 +1,3 @@
 tool_id	official_name	organism	score_type	score_direction	score_range	input_id_gene_type	canonical_id_gene_type	input_id_mirna_type	canonical_id_mirna_type	canonical_tsv_path
-mock	Mock predictor	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/mock/mock_canonical.tsv
+predictor_1	Predictor 1	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/mock/mock_canonical.tsv
+predictor_2	Predictor 2	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/cheating/cheating_canonical.tsv
