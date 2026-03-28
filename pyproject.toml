@@ -1,34 +1,28 @@
-[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "funmirbench"
-version = "0.0.0"
-description = "Benchmarking framework for functional microRNA target prediction."
-readme = "README.md"
+version = "0.1.0"
 requires-python = ">=3.10"
-authors = [
-  { name = "BioGeMT Project Team" }
-]
 dependencies = [
-  "pandas>=2.2,<3",
-  "matplotlib>=3.9,<4",
-  "requests>=2.32,<3",
-  "scikit-learn>=1.5,<2",
-  "rich>=13.7,<14",
-  "pyfiglet>=1.0,<2",
-  "PyYAML>=6,<7",
+    "pandas>=2.2",
+    "matplotlib>=3.9",
+    "scikit-learn>=1.5",
+    "pyyaml>=6",
+    "requests>=2.32",
 ]
 
-[project.optional-dependencies]
-test = ["pytest>=8"]
+[project.scripts]
+funmirbench = "funmirbench.benchmark:main"
+funmirbench-build-predictions = "funmirbench.build_predictions:main"
+funmirbench-build-cheating-predictions = "funmirbench.build_cheating_predictions:main"
+funmirbench-import-experiments = "funmirbench.import_experiments:main"
+funmirbench-validate-experiments = "funmirbench.validate_experiments:main"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[dependency-groups]
+dev = ["pytest>=8"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

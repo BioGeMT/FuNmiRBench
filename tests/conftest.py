@@ -6,11 +6,9 @@ import textwrap
 
 import pytest
 
-
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 @pytest.fixture()
@@ -23,14 +21,3 @@ def tmp_tsv_factory(tmp_path):
         return p
 
     return _make
-
-
-@pytest.fixture()
-def fake_project_root(tmp_path):
-    """Create a minimal fake project root with a pyproject.toml."""
-    toml = tmp_path / "pyproject.toml"
-    toml.write_text(
-        '[project]\nname = "funmirbench"\nversion = "0.0.0"\n',
-        encoding="utf-8",
-    )
-    return tmp_path
