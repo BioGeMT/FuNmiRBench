@@ -1,104 +1,47 @@
-# Data layout for FuNmiRBench
+# Data Layout
 
-FuNmiRBench does **not** store large experiment tables or prediction outputs in git.
+`data/` holds benchmark inputs, not benchmark outputs.
 
-All local data lives under the `data/` folder, which is ignored by default.
+Current policy:
 
----
+- `data/experiments/processed/`: tracked experiment DE tables used by the benchmark
+- `data/predictions/`: local generated predictor TSVs, not tracked by git
+- benchmark outputs go to `results/`, not `data/`
 
-## 📁 Expected folder structure
+The benchmark reads paths from:
 
-```
+- `metadata/mirna_experiment_info.tsv` via `de_table_path`
+- `metadata/predictions_info.tsv` via `canonical_tsv_path`
+
+Expected layout:
+
+```text
 data/
-├── experiments/
-│   ├── processed/     # processed DE tables (TSV)
-│   └── raw/           # optional raw / intermediate files
-│
-├── predictions/       # canonical tool outputs (TSV)
-├── joined/            # joined experiment + prediction tables (TSV)
-└── plots/             # output plots (PNG + TXT summaries)
+  experiments/processed/
+  predictions/
 ```
 
----
+DE tables must contain gene identifiers plus `logFC` and `FDR`. `PValue` is optional.
 
-## Processed experiment tables
+Canonical prediction tables must contain:
 
-Each file in:
-
-```
-data/experiments/processed/
-```
-
-- is a tab-separated `.tsv`
-- contains differential expression results for one experiment
-- is typically an edgeR output table
-
-### Gene identifiers
-
-edgeR outputs do not always include a gene column named `gene_name`.
-
-FuNmiRBench supports both of the following formats:
-
-#### Format A (explicit gene column)
 ```text
-gene_name    logFC    logCPM    F    PValue    FDR
-ENSG00000123456   ...
+mirna    gene_id    score
 ```
 
-#### Format B (gene IDs stored as row names / first column)
-```text
-logFC    logCPM    F    PValue    FDR
-ENSG00000123456   ...
-```
-
-FuNmiRBench detects gene IDs robustly (preferring Ensembl-like IDs such as `ENSG...`).
-
----
-
-## Linking data to metadata
-
-The file paths are referenced in `metadata/datasets.json` via the `data_path` field, e.g.:
-
-```json
-{
-  "id": "001",
-  "data_path": "data/experiments/processed/GSE210778_edger_out_oe_hsa_miR_375_3p_oe.tsv",
-  "miRNA": "hsa-miR-375-3p",
-  "perturbation": "overexpression"
-}
-```
-
----
-
-## Downloading benchmark experiments
-
-To download the published benchmark experiment corpus from Zenodo:
+Demo predictor files are generated locally with:
 
 ```bash
-python -m funmirbench.cli.import_experiments --token "<TOKEN>"
+uv run pipelines/standardized_predictors/mock/pipeline.py
+uv run pipelines/standardized_predictors/cheating/pipeline.py
 ```
 
-If you already have local processed DE tables, import them directly:
+This writes:
 
-```bash
-python -m funmirbench.cli.import_experiments --from-dir /path/to/processed_tables
+```text
+data/predictions/mock/mock_canonical.tsv
+data/predictions/cheating/cheating_canonical.tsv
 ```
 
-Use `--overwrite` if files already exist in `data/experiments/processed/`.
-
-To combine Zenodo and local tables, run Zenodo import first, then run `--from-dir`
-to copy additional local tables. Use `--overwrite` only if you want local files to
-replace same-named files already imported.
-
-This will populate:
-
-```
-data/experiments/processed/
-```
-
----
-
-## Notes
-
-- `data/` is intended for **local reproducibility**, not version control.
-- `metadata/` contains the versioned curated registry of what datasets exist.
+Older paths like `data/joined/` and `data/plots/` are obsolete. Current runs write joined tables,
+plots, reports, and summaries under `results/`.

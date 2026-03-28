@@ -1,32 +1,33 @@
-# -------------------------
-# Python
-# -------------------------
+# Python cache
 __pycache__/
 *.py[cod]
 *.egg-info/
 
-# -------------------------
-# Virtual environments
-# -------------------------
+# Virtual envs / env configs
 .venv/
 .env/
 miniconda3/
 
-# -------------------------
-# Editors
-# -------------------------
+# VS Code / editor settings
 .vscode/
 
-# -------------------------
-# Local / Generated Data (NOT tracked)
-# -------------------------
-
-# Top-level benchmark data
+# Local data outputs (NOT tracked)
 data/experiments/raw/
-data/experiments/processed/
-data/predictions/
+data/predictions/*
+!data/predictions/mock/
+data/predictions/mock/*
+!data/predictions/cheating/
+data/predictions/cheating/*
 data/joined/
 data/plots/
+
+# Benchmark results
+results/
+
+# GEO pipeline outputs
+pipelines/geo/configs/*
+!pipelines/geo/configs/*.example.yaml
+pipelines/geo/runs/*
 
 # Predictor pipeline generated data (downloads + intermediate tables)
 pipelines/standardized_predictors/*/data/*
