@@ -265,9 +265,9 @@ def run_logged_command(
     error_label: str,
 ) -> None:
     env = os.environ.copy()
-    env.setdefault("LC_ALL", "C.UTF-8")
-    env.setdefault("LANG", "C.UTF-8")
-    env.setdefault("LANGUAGE", "C.UTF-8")
+    env["LC_ALL"] = "C.UTF-8"
+    env["LANG"] = "C.UTF-8"
+    env["LANGUAGE"] = "C.UTF-8"
     completed = subprocess.run(
         command,
         cwd=str(cwd),

@@ -1,4 +1,4 @@
-dataset_id: GSE93717_OE_miR_941
+dataset_id: GSE93717_OE_miR_941_deseq2
 mirna_name: hsa-miR-941
 experiment_type: OE
 gse: GSE93717

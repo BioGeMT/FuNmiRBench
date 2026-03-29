@@ -116,6 +116,9 @@ The shipped reads example now points at the downloaded Ensembl v109 reference so
 `tx2gene.tsv` automatically. You only need to edit it if you want to use a different reference or
 your own prebuilt files.
 
+The reads example uses a reproduced dataset id, `GSE93717_OE_miR_941_deseq2`, so syncing it creates
+a separate variant instead of overwriting the curated `GSE93717_OE_miR_941` registry row.
+
 Each run writes:
 
 - `data/experiments/processed/<dataset_id>.tsv`
