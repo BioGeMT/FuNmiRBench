@@ -54,10 +54,11 @@ def test_run_count_matrix_mode_writes_benchmark_ready_table(tmp_path):
     config_path = tmp_path / "count_matrix.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
-    def fake_subprocess_run(command, cwd, capture_output, text, check):
+    def fake_subprocess_run(command, cwd, capture_output, text, check, env=None):
         assert capture_output is True
         assert text is True
         assert check is False
+        assert env is not None
         assert "Rscript" in command
         assert any(str(value).endswith("run_deseq2_counts.R") for value in command)
 
@@ -163,7 +164,8 @@ def test_run_count_matrix_mode_accepts_repo_root_relative_paths(tmp_path):
     config_path = config_dir / "repo_relative.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
-    def fake_subprocess_run(command, cwd, capture_output, text, check):
+    def fake_subprocess_run(command, cwd, capture_output, text, check, env=None):
+        assert env is not None
         output_path = pathlib.Path(command[command.index("--output") + 1])
         pd.DataFrame(
             {
@@ -205,10 +207,11 @@ def test_run_reads_mode_builds_counts_and_writes_de_table(tmp_path):
         }
     ).to_csv(tx2gene_path, sep="\t", index=False)
 
-    def fake_subprocess_run(command, cwd, capture_output, text, check):
+    def fake_subprocess_run(command, cwd, capture_output, text, check, env=None):
         assert capture_output is True
         assert text is True
         assert check is False
+        assert env is not None
 
         if "salmon" in command and "quant" in command:
             out_dir = pathlib.Path(command[command.index("-o") + 1])
@@ -318,10 +321,11 @@ def test_run_reads_mode_can_download_sra_and_prepare_references(tmp_path):
         encoding="utf-8",
     )
 
-    def fake_subprocess_run(command, cwd, capture_output, text, check):
+    def fake_subprocess_run(command, cwd, capture_output, text, check, env=None):
         assert capture_output is True
         assert text is True
         assert check is False
+        assert env is not None
 
         joined = " ".join(str(part) for part in command)
         if "salmon index" in joined:

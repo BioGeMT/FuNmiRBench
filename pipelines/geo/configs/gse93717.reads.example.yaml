@@ -18,8 +18,8 @@ source:
   # gtf_url: https://ftp.ensembl.org/pub/release-109/gtf/homo_sapiens/Homo_sapiens.GRCh38.109.gtf.gz
 
   library_type: A
-  salmon_threads: 4
-  sra_threads: 4
+  salmon_threads: 32
+  sra_threads: 16
   salmon_extra_args: [--validateMappings]
 
 comparison:

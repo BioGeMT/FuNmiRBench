@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -50,6 +51,11 @@ def write_json(obj, path: pathlib.Path) -> None:
 
 def log(message: str) -> None:
     print(message, flush=True)
+
+
+def default_thread_count(*, cap: int, floor: int = 4) -> int:
+    cpus = os.cpu_count() or 1
+    return max(1, min(cap, max(floor, cpus // 2)))
 
 
 def load_yaml(path: pathlib.Path) -> dict:
@@ -258,9 +264,14 @@ def run_logged_command(
     stderr_path: pathlib.Path,
     error_label: str,
 ) -> None:
+    env = os.environ.copy()
+    env.setdefault("LC_ALL", "C.UTF-8")
+    env.setdefault("LANG", "C.UTF-8")
+    env.setdefault("LANGUAGE", "C.UTF-8")
     completed = subprocess.run(
         command,
         cwd=str(cwd),
+        env=env,
         capture_output=True,
         text=True,
         check=False,
@@ -502,10 +513,10 @@ def build_salmon_index(
     transcript_fasta: pathlib.Path,
 ) -> tuple[pathlib.Path, list[str], pathlib.Path, pathlib.Path]:
     require_local_binary("salmon")
-    log("Building Salmon index...")
+    threads = int(source_cfg.get("salmon_threads", default_thread_count(cap=32)))
+    log(f"Building Salmon index with {threads} threads...")
     out_dir = run_dir / "reference" / "salmon_index"
     out_dir.parent.mkdir(parents=True, exist_ok=True)
-    threads = int(source_cfg.get("salmon_threads", 1))
     extra_args = [str(arg) for arg in source_cfg.get("salmon_index_extra_args", [])]
     command = [
         "salmon",
@@ -657,12 +668,12 @@ def run_salmon_quant(
     salmon_index: pathlib.Path,
 ) -> pathlib.Path:
     require_local_binary("salmon")
-    log(f"Running Salmon for sample {sample['sample_id']}...")
+    threads = int(source_cfg.get("salmon_threads", default_thread_count(cap=32)))
+    log(f"Running Salmon for sample {sample['sample_id']} with {threads} threads...")
     out_dir = run_dir / "salmon" / sample["sample_id"]
     out_dir.mkdir(parents=True, exist_ok=True)
     extra_args = [str(arg) for arg in source_cfg.get("salmon_extra_args", ["--validateMappings"])]
     library_type = normalize_space(source_cfg.get("library_type", "")) or "A"
-    threads = int(source_cfg.get("salmon_threads", 1))
     command = salmon_quant_command(
         sample=sample,
         salmon_index=salmon_index,
@@ -710,12 +721,12 @@ def run_sra_download(
     require_local_binary("prefetch")
     require_local_binary("fasterq-dump")
     accession = sample["sra_accession"]
-    log(f"Downloading reads for sample {sample['sample_id']} from {accession}...")
+    threads = int(source_cfg.get("sra_threads", default_thread_count(cap=16)))
+    log(f"Downloading reads for sample {sample['sample_id']} from {accession} with {threads} threads...")
     sample_reads_dir = run_dir / "reads" / sample["sample_id"]
     sample_reads_dir.mkdir(parents=True, exist_ok=True)
     sra_cache_dir = run_dir / "sra"
     sra_cache_dir.mkdir(parents=True, exist_ok=True)
-    threads = int(source_cfg.get("sra_threads", 4))
     shell_command = (
         "set -euo pipefail; "
         f"prefetch --output-directory {shlex.quote(str(sra_cache_dir))} {shlex.quote(accession)}; "
