@@ -1,0 +1,12 @@
+name: funmirbench-geo
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - pip
+  - salmon
+  - sra-tools
+  - r-base
+  - bioconductor-deseq2
+  - bioconductor-tximport

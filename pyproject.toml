@@ -12,6 +12,7 @@ dependencies = [
 
 [project.scripts]
 funmirbench = "funmirbench.benchmark:main"
+funmirbench-geo = "funmirbench.geo_pipeline:main"
 funmirbench-build-predictions = "funmirbench.build_predictions:main"
 funmirbench-build-cheating-predictions = "funmirbench.build_cheating_predictions:main"
 funmirbench-import-experiments = "funmirbench.import_experiments:main"
