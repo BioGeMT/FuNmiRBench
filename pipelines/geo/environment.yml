@@ -6,7 +6,7 @@ dependencies:
   - python=3.12
   - pip
   - uv
-  - salmon>=1.10
+  - salmon=1.10.3
   - sra-tools
   - r-base
   - bioconductor-deseq2

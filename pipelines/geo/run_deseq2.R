@@ -41,7 +41,13 @@ if (ncol(tx2gene) < 2) {
 tx2gene <- tx2gene[, 1:2]
 colnames(tx2gene) <- c("transcript_id", "gene_id")
 
-txi <- tximport(files, type = "salmon", tx2gene = tx2gene, ignoreTxVersion = TRUE)
+txi <- tximport(
+  files,
+  type = "salmon",
+  tx2gene = tx2gene,
+  ignoreTxVersion = TRUE,
+  dropInfReps = TRUE
+)
 
 col_data <- data.frame(
   row.names = samples$sample_id,

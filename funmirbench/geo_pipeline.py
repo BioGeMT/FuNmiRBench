@@ -265,9 +265,10 @@ def run_logged_command(
     error_label: str,
 ) -> None:
     env = os.environ.copy()
-    env["LC_ALL"] = "C.UTF-8"
-    env["LANG"] = "C.UTF-8"
-    env["LANGUAGE"] = "C.UTF-8"
+    env["LC_ALL"] = "C"
+    env["LANG"] = "C"
+    env["LANGUAGE"] = "C"
+    env["LC_CTYPE"] = "C"
     completed = subprocess.run(
         command,
         cwd=str(cwd),
@@ -474,6 +475,38 @@ def write_reads_sample_sheet(run_dir: pathlib.Path, control_samples: list[dict],
     return sample_sheet_path
 
 
+def previous_run_dirs_for_dataset(
+    *, repo: pathlib.Path, dataset_id: str, current_run_dir: pathlib.Path
+) -> list[pathlib.Path]:
+    runs_root = repo / "pipelines" / "geo" / "runs"
+    if not runs_root.exists():
+        return []
+    pattern = f"*_{dataset_id}"
+    candidates = [path for path in runs_root.glob(pattern) if path.is_dir() and path.resolve() != current_run_dir.resolve()]
+    return sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True)
+
+
+def find_reusable_reference_assets(
+    *, repo: pathlib.Path, dataset_id: str, current_run_dir: pathlib.Path
+) -> tuple[pathlib.Path | None, pathlib.Path | None]:
+    for run_dir in previous_run_dirs_for_dataset(repo=repo, dataset_id=dataset_id, current_run_dir=current_run_dir):
+        salmon_index = run_dir / "reference" / "salmon_index"
+        tx2gene_tsv = run_dir / "reference" / "tx2gene.tsv"
+        if salmon_index.exists() and any(salmon_index.iterdir()) and tx2gene_tsv.exists():
+            return salmon_index, tx2gene_tsv
+    return None, None
+
+
+def find_reusable_quant_path(
+    *, repo: pathlib.Path, dataset_id: str, current_run_dir: pathlib.Path, sample_id: str
+) -> pathlib.Path | None:
+    for run_dir in previous_run_dirs_for_dataset(repo=repo, dataset_id=dataset_id, current_run_dir=current_run_dir):
+        quant_path = run_dir / "salmon" / sample_id / "quant.sf"
+        if quant_path.exists():
+            return quant_path
+    return None
+
+
 def salmon_quant_command(
     *,
     sample: dict,
@@ -585,6 +618,7 @@ def generate_tx2gene_from_gtf(gtf_path: pathlib.Path, out_path: pathlib.Path) ->
 
 def prepare_reference_assets(
     *,
+    dataset_id: str,
     source_cfg: dict,
     config_path: pathlib.Path,
     repo: pathlib.Path,
@@ -598,36 +632,51 @@ def prepare_reference_assets(
     generated = {
         "generated_salmon_index": False,
         "generated_tx2gene_tsv": False,
+        "reused_salmon_index": False,
+        "reused_tx2gene_tsv": False,
     }
     command_paths = {}
 
     transcript_fasta = None
     if salmon_index is None:
-        transcript_fasta, transcript_fasta_url = resolve_or_download_source_artifact(
-            source_cfg,
-            path_key="transcript_fasta_path",
-            url_key="transcript_fasta_url",
-            config_path=config_path,
+        reused_salmon_index, reused_tx2gene_tsv = (None, None) if force else find_reusable_reference_assets(
             repo=repo,
-            run_dir=run_dir,
-            force=force,
-            required=True,
+            dataset_id=dataset_id,
+            current_run_dir=run_dir,
         )
-        assert transcript_fasta is not None
-        salmon_index, index_command, index_stdout, index_stderr = build_salmon_index(
-            source_cfg=source_cfg,
-            repo=repo,
-            run_dir=run_dir,
-            transcript_fasta=transcript_fasta,
-        )
-        generated["generated_salmon_index"] = True
-        command_paths.update(
-            {
-                "salmon_index_command": index_command,
-                "salmon_index_stdout": str(index_stdout),
-                "salmon_index_stderr": str(index_stderr),
-            }
-        )
+        if reused_salmon_index is not None:
+            log(f"Reusing Salmon index from {reused_salmon_index.parent.parent.name}...")
+            salmon_index = reused_salmon_index
+            generated["reused_salmon_index"] = True
+            if reused_tx2gene_tsv is not None:
+                tx2gene_tsv = reused_tx2gene_tsv
+                generated["reused_tx2gene_tsv"] = True
+        else:
+            transcript_fasta, transcript_fasta_url = resolve_or_download_source_artifact(
+                source_cfg,
+                path_key="transcript_fasta_path",
+                url_key="transcript_fasta_url",
+                config_path=config_path,
+                repo=repo,
+                run_dir=run_dir,
+                force=force,
+                required=True,
+            )
+            assert transcript_fasta is not None
+            salmon_index, index_command, index_stdout, index_stderr = build_salmon_index(
+                source_cfg=source_cfg,
+                repo=repo,
+                run_dir=run_dir,
+                transcript_fasta=transcript_fasta,
+            )
+            generated["generated_salmon_index"] = True
+            command_paths.update(
+                {
+                    "salmon_index_command": index_command,
+                    "salmon_index_stdout": str(index_stdout),
+                    "salmon_index_stderr": str(index_stderr),
+                }
+            )
 
     gtf_path = None
     if tx2gene_tsv is None:
@@ -912,6 +961,7 @@ def run_reads_mode(
     sample_sheet = write_reads_sample_sheet(run_dir, control_samples, treated_samples)
     log("Preparing references...")
     reference_assets = prepare_reference_assets(
+        dataset_id=config["dataset_id"],
         source_cfg=source_cfg,
         config_path=config_path,
         repo=repo,
@@ -922,14 +972,26 @@ def run_reads_mode(
     tx2gene_tsv = pathlib.Path(reference_assets["tx2gene_tsv"])
 
     quant_paths = {}
+    reused_quant_samples = []
     for sample in control_samples + treated_samples:
-        quant_paths[sample["sample_id"]] = run_salmon_quant(
-            source_cfg=source_cfg,
+        reusable_quant = None if force else find_reusable_quant_path(
             repo=repo,
-            run_dir=run_dir,
-            sample=sample,
-            salmon_index=salmon_index,
+            dataset_id=config["dataset_id"],
+            current_run_dir=run_dir,
+            sample_id=sample["sample_id"],
         )
+        if reusable_quant is not None:
+            log(f"Reusing Salmon quant for sample {sample['sample_id']}...")
+            quant_paths[sample["sample_id"]] = reusable_quant
+            reused_quant_samples.append(sample["sample_id"])
+        else:
+            quant_paths[sample["sample_id"]] = run_salmon_quant(
+                source_cfg=source_cfg,
+                repo=repo,
+                run_dir=run_dir,
+                sample=sample,
+                salmon_index=salmon_index,
+            )
 
     salmon_manifest = write_salmon_manifest(run_dir, control_samples, treated_samples, quant_paths)
     de_results_path = run_dir / "de_results.tsv"
@@ -968,12 +1030,15 @@ def run_reads_mode(
             "deseq2_stdout": str(stdout_path),
             "deseq2_stderr": str(stderr_path),
             "sample_quant_dirs": {sample_id: str(path.parent) for sample_id, path in quant_paths.items()},
+            "reused_quant_samples": reused_quant_samples,
             "downloaded_samples": download_manifest["downloaded_samples"],
             "sra_download_commands": download_manifest["sra_download_commands"],
             "sra_download_stdout": download_manifest["sra_download_stdout"],
             "sra_download_stderr": download_manifest["sra_download_stderr"],
             "generated_salmon_index": reference_assets["generated_salmon_index"],
             "generated_tx2gene_tsv": reference_assets["generated_tx2gene_tsv"],
+            "reused_salmon_index": reference_assets["reused_salmon_index"],
+            "reused_tx2gene_tsv": reference_assets["reused_tx2gene_tsv"],
             "transcript_fasta": reference_assets["transcript_fasta"],
             "transcript_fasta_url": reference_assets["transcript_fasta_url"],
             "gtf_path": reference_assets["gtf_path"],
