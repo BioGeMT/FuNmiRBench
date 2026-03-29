@@ -1,0 +1,50 @@
+dataset_id: GSE93717_OE_miR_941
+mirna_name: hsa-miR-941
+experiment_type: OE
+gse: GSE93717
+
+source:
+  mode: reads
+
+  # Use either prebuilt references:
+  salmon_index: refs/salmon/hg38
+  tx2gene_tsv: refs/tx2gene.tsv
+
+  # Or let the pipeline build them:
+  # transcript_fasta_path: refs/transcripts.fa.gz
+  # gtf_path: refs/genes.gtf.gz
+
+  library_type: A
+  salmon_threads: 4
+  sra_threads: 4
+  salmon_extra_args: [--validateMappings]
+
+comparison:
+  control_samples:
+    - sample_id: mock_control1
+      reads_1: data/experiments/raw/GSE93717/SRR5181708.fastq.gz
+      # sra_accession: SRR5181708
+    - sample_id: mock_control2
+      reads_1: data/experiments/raw/GSE93717/SRR5181709.fastq.gz
+      # sra_accession: SRR5181709
+    - sample_id: mock_control3
+      reads_1: data/experiments/raw/GSE93717/SRR5181710.fastq.gz
+      # sra_accession: SRR5181710
+  treated_samples:
+    - sample_id: miR941_mimics1
+      reads_1: data/experiments/raw/GSE93717/SRR5181705.fastq.gz
+      # sra_accession: SRR5181705
+    - sample_id: miR941_mimics2
+      reads_1: data/experiments/raw/GSE93717/SRR5181706.fastq.gz
+      # sra_accession: SRR5181706
+    - sample_id: miR941_mimics3
+      reads_1: data/experiments/raw/GSE93717/SRR5181707.fastq.gz
+      # sra_accession: SRR5181707
+
+metadata:
+  organism: Homo sapiens
+  tested_cell_line: 293T
+  treatment: Overexpression of miR-941
+  tissue: Kidney
+  method: RNA-seq
+  article_pubmed_id: https://pubmed.ncbi.nlm.nih.gov/29474580
