@@ -2,10 +2,35 @@
 
 import argparse
 import pathlib
+from typing import Iterable
 
 import pandas as pd
 
 from funmirbench.de_table import read_de_table
+
+
+def resolve_de_table_path(
+    de_table_path: str | pathlib.Path,
+    *,
+    experiments_tsv: pathlib.Path,
+    root: pathlib.Path | None = None,
+) -> pathlib.Path:
+    path = pathlib.Path(de_table_path)
+    if path.is_absolute():
+        return path
+
+    if root is not None:
+        return (root / path).resolve()
+
+    candidates: Iterable[pathlib.Path] = (
+        pathlib.Path.cwd(),
+        experiments_tsv.parent,
+    )
+    for candidate_root in candidates:
+        candidate = (candidate_root / path).resolve()
+        if candidate.exists():
+            return candidate
+    return (pathlib.Path.cwd() / path).resolve()
 
 
 def main():
@@ -14,8 +39,9 @@ def main():
     parser.add_argument("--root", type=pathlib.Path, default=None)
     args = parser.parse_args()
 
-    root = (args.root or args.experiments_tsv.parent).resolve()
-    df = pd.read_csv(args.experiments_tsv, sep="\t")
+    experiments_tsv = args.experiments_tsv.resolve()
+    root = args.root.resolve() if args.root is not None else None
+    df = pd.read_csv(experiments_tsv, sep="\t")
 
     total = len(df)
     present = 0
@@ -24,7 +50,11 @@ def main():
     unreadable = []
 
     for _, row in df.iterrows():
-        path = root / row["de_table_path"]
+        path = resolve_de_table_path(
+            row["de_table_path"],
+            experiments_tsv=experiments_tsv,
+            root=root,
+        )
         if not path.exists():
             missing.append((row["id"], str(path)))
             continue

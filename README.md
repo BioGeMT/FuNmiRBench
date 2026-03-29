@@ -10,19 +10,28 @@ Requirements:
 - `uv`
 - `conda` for the GEO ingestion environment
 
+Install `uv` on your machine first:
+
 ```bash
 python -m pip install uv
+```
+
+Then clone the repo and install the Python package environment:
+
+```bash
 git clone git@github.com:BioGeMT/FuNmiRBench.git
 cd FuNmiRBench
 uv sync
 ```
 
-For the GEO ingestion pipeline, create and activate the supported environment:
+If you want to use the GEO ingestion pipeline, create and activate the extra local environment after entering the repo:
 
 ```bash
 conda env create -f pipelines/geo/environment.yml
 conda activate funmirbench-geo
 ```
+
+That environment also includes `uv`, so `uv run ...` keeps working after activation.
 
 ## Repo Layout
 
@@ -63,10 +72,22 @@ Download the shipped real example inputs:
 uv run funmirbench-geo-download-examples
 ```
 
+That downloader fetches:
+
+- the real `GSE253003` count matrix
+- the real `GSE93717` FASTQ files
+- the shared Homo sapiens Ensembl v109 transcript FASTA and GTF used by the reads example
+
 Run the real count-matrix example:
 
 ```bash
 uv run funmirbench-geo --config pipelines/geo/configs/gse253003.count_matrix.example.yaml
+```
+
+Run the reads example the same way:
+
+```bash
+uv run funmirbench-geo --config pipelines/geo/configs/gse93717.reads.example.yaml
 ```
 
 Tracked example configs:
@@ -83,6 +104,17 @@ Reads configs can also either:
 
 - use prebuilt `salmon_index` and `tx2gene_tsv`
 - or build them from `transcript_fasta_path` and `gtf_path`
+
+So the practical reads flow is:
+
+1. activate `funmirbench-geo`
+2. run `uv run funmirbench-geo-download-examples`
+3. run `uv run funmirbench-geo --config pipelines/geo/configs/gse93717.reads.example.yaml`
+
+The shipped reads example now points at the downloaded Ensembl v109 reference source files under
+`data/experiments/raw/refs/ensembl_v109/`, so it can build the derived Salmon index and
+`tx2gene.tsv` automatically. You only need to edit it if you want to use a different reference or
+your own prebuilt files.
 
 Each run writes:
 
@@ -135,7 +167,11 @@ Run it with:
 uv run funmirbench --config benchmark.yaml
 ```
 
-All YAML paths are relative to the YAML file itself.
+YAML paths can be:
+
+- absolute paths
+- relative to the YAML file
+- repo-root-relative paths such as `data/...` and `metadata/...`
 
 The default config shape is:
 
@@ -187,7 +223,6 @@ When 2 or more predictors are selected, each dataset gets:
 
 ```bash
 uv run funmirbench --config benchmark.yaml
-uv run funmirbench-import-experiments --from-dir /path/to/tables
 uv run funmirbench-validate-experiments --experiments-tsv metadata/mirna_experiment_info.tsv
 uv run funmirbench-geo-download-examples
 uv run funmirbench-geo --config config.yaml
