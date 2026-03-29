@@ -132,6 +132,60 @@ def test_run_count_matrix_mode_requires_gene_id_column(tmp_path):
         geo_pipeline.run_ingestion_config(config_path, repo=tmp_path)
 
 
+def test_run_count_matrix_mode_accepts_repo_root_relative_paths(tmp_path):
+    counts_dir = tmp_path / "data" / "experiments" / "raw" / "GSE253003"
+    counts_dir.mkdir(parents=True, exist_ok=True)
+    counts_path = counts_dir / "counts.tsv"
+    pd.DataFrame(
+        {
+            "gene_id": ["ENSG1", "ENSG2"],
+            "ctrl_1": [10, 20],
+            "trt_1": [30, 10],
+        }
+    ).to_csv(counts_path, sep="\t", index=False)
+
+    config_dir = tmp_path / "pipelines" / "geo" / "configs"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config = {
+        "dataset_id": "repo_relative_demo",
+        "mirna_name": "hsa-miR-323a-3p",
+        "experiment_type": "OE",
+        "source": {
+            "mode": "count_matrix",
+            "count_matrix_path": "data/experiments/raw/GSE253003/counts.tsv",
+            "gene_id_column": "gene_id",
+        },
+        "comparison": {
+            "control_columns": ["ctrl_1"],
+            "treated_columns": ["trt_1"],
+        },
+    }
+    config_path = config_dir / "repo_relative.yaml"
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    def fake_subprocess_run(command, cwd, capture_output, text, check):
+        output_path = pathlib.Path(command[command.index("--output") + 1])
+        pd.DataFrame(
+            {
+                "gene_id": ["ENSG1", "ENSG2"],
+                "logFC": [1.0, -1.0],
+                "PValue": [0.01, 0.02],
+                "FDR": [0.02, 0.03],
+            }
+        ).to_csv(output_path, sep="\t", index=False)
+        return subprocess.CompletedProcess(command, 0, stdout="deseq2 ok\n", stderr="")
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(geo_pipeline.subprocess, "run", fake_subprocess_run)
+    monkeypatch.setattr(geo_pipeline.shutil, "which", lambda name: f"/usr/bin/{name}")
+    try:
+        result = geo_pipeline.run_ingestion_config(config_path, repo=tmp_path)
+    finally:
+        monkeypatch.undo()
+
+    assert pathlib.Path(result["de_table_path"]).is_file()
+
+
 def test_run_reads_mode_builds_counts_and_writes_de_table(tmp_path):
     reads_files = {}
     for name in ["ctrl_a", "ctrl_b", "trt_a", "trt_b"]:

@@ -5,7 +5,8 @@ channels:
 dependencies:
   - python=3.12
   - pip
-  - salmon
+  - uv
+  - salmon>=1.10
   - sra-tools
   - r-base
   - bioconductor-deseq2

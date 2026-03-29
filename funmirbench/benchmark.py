@@ -14,6 +14,10 @@ from funmirbench.evaluate import evaluate_joined_dataframe, write_metric_tables
 from funmirbench.join import build_joined
 
 
+def log(message):
+    print(message, flush=True)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Run the FuNmiRBench benchmark.")
     parser.add_argument("--config", type=pathlib.Path, required=True)
@@ -75,10 +79,13 @@ def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
 
 def run_benchmark(config_path):
     config_path = config_path.expanduser().resolve()
+    log(f"Config: {config_path}")
+    log("Loading benchmark config...")
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
     root = config_path.parent
 
+    log("Loading experiments...")
     experiments = load_experiments(
         root / config["experiments_tsv"],
         root,
@@ -87,6 +94,7 @@ def run_benchmark(config_path):
     if not experiments:
         raise ValueError("Experiment selection resolved to no datasets.")
 
+    log("Loading predictors...")
     predictions = load_predictions(
         root / config["predictions_tsv"],
         config.get("predictors"),
@@ -108,16 +116,19 @@ def run_benchmark(config_path):
     metric_rows = []
     dataset_outputs = []
 
-    print(f"Experiments: {len(experiments)}")
-    print(f"Predictors:  {tool_ids}")
+    log(f"Experiments: {len(experiments)}")
+    log(f"Predictors:  {tool_ids}")
 
     for meta in experiments:
-        print(f"  {meta.id}: {meta.miRNA} ({meta.cell_line})")
+        log(f"Dataset: {meta.id} | {meta.miRNA} | {meta.cell_line}")
         clear_dataset_outputs(meta.id, plots_dir, reports_dir)
+        log(f"  Joining predictions for {meta.id}...")
         joined, canonical_paths = build_joined(meta, tool_ids, predictions, root)
         joined_path = joined_dir / f"{meta.id}.tsv"
         joined.to_csv(joined_path, sep="\t", index=False)
+        log(f"  Wrote joined table: {joined_path}")
 
+        log(f"  Evaluating metrics and plots for {meta.id}...")
         evaluation = evaluate_joined_dataframe(
             joined,
             plots_dir=plots_dir,
@@ -149,7 +160,9 @@ def run_benchmark(config_path):
                 "predictor_correlation_tsv": evaluation["predictor_correlation_tsv"],
             }
         )
+        log(f"  Finished {meta.id}")
 
+    log("Writing metric tables...")
     metric_tables = write_metric_tables(metric_rows, tables_dir)
 
     summary = {
@@ -162,13 +175,14 @@ def run_benchmark(config_path):
     }
     summary_path = out_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    log(f"Wrote summary: {summary_path}")
     return out_dir
 
 
 def main():
     args = parse_args()
     out_dir = run_benchmark(args.config)
-    print(f"Done. Results in {out_dir}")
+    log(f"Done. Results in {out_dir}")
 
 
 if __name__ == "__main__":

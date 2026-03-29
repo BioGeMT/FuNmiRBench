@@ -9,6 +9,23 @@ import requests
 
 
 EXAMPLES = {
+    "ensembl-v109-refs": {
+        "description": "Shared Homo sapiens Ensembl v109 transcript FASTA and GTF for reads examples.",
+        "targets": [
+            {
+                "url": "https://ftp.ensembl.org/pub/release-109/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz",
+                "dest": pathlib.Path(
+                    "data/experiments/raw/refs/ensembl_v109/Homo_sapiens.GRCh38.cdna.all.fa.gz"
+                ),
+            },
+            {
+                "url": "https://ftp.ensembl.org/pub/release-109/gtf/homo_sapiens/Homo_sapiens.GRCh38.109.gtf.gz",
+                "dest": pathlib.Path(
+                    "data/experiments/raw/refs/ensembl_v109/Homo_sapiens.GRCh38.109.gtf.gz"
+                ),
+            },
+        ],
+    },
     "gse253003-counts": {
         "description": "Real count matrix for GSE253003 miR-323a-3p vs miRCTRL.",
         "targets": [
@@ -49,7 +66,7 @@ EXAMPLES = {
     },
 }
 
-DEFAULT_SELECTION = ["gse253003-counts", "gse93717-reads"]
+DEFAULT_SELECTION = ["ensembl-v109-refs", "gse253003-counts", "gse93717-reads"]
 
 
 def repo_root() -> pathlib.Path:

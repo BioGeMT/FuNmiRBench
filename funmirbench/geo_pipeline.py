@@ -48,16 +48,26 @@ def write_json(obj, path: pathlib.Path) -> None:
     path.write_text(json.dumps(obj, indent=2) + "\n", encoding="utf-8")
 
 
+def log(message: str) -> None:
+    print(message, flush=True)
+
+
 def load_yaml(path: pathlib.Path) -> dict:
     with path.open("r", encoding="utf-8") as handle:
         return yaml.safe_load(handle)
 
 
-def resolve_path(value: str, *, root: pathlib.Path) -> pathlib.Path:
+def resolve_path(value: str, *, root: pathlib.Path, repo: pathlib.Path | None = None) -> pathlib.Path:
     path = pathlib.Path(value)
     if path.is_absolute():
         return path
-    return (root / path).resolve()
+    relative_to_config = (root / path).resolve()
+    if repo is None:
+        return relative_to_config
+    relative_to_repo = (repo / path).resolve()
+    if relative_to_config.exists() or not relative_to_repo.exists():
+        return relative_to_config
+    return relative_to_repo
 
 
 def download_bytes(url: str) -> bytes:
@@ -94,11 +104,13 @@ def open_text_auto(path: pathlib.Path):
     return path.open("r", encoding="utf-8")
 
 
-def resolve_existing_source_path(source_cfg: dict, key: str, *, config_path: pathlib.Path) -> pathlib.Path | None:
+def resolve_existing_source_path(
+    source_cfg: dict, key: str, *, config_path: pathlib.Path, repo: pathlib.Path
+) -> pathlib.Path | None:
     value = normalize_space(source_cfg.get(key, ""))
     if not value:
         return None
-    path = resolve_path(value, root=config_path.parent)
+    path = resolve_path(value, root=config_path.parent, repo=repo)
     if not path.exists():
         raise ValueError(f"Config source.{key} does not exist: {path}")
     return path
@@ -110,6 +122,7 @@ def resolve_or_download_source_artifact(
     path_key: str,
     url_key: str,
     config_path: pathlib.Path,
+    repo: pathlib.Path,
     run_dir: pathlib.Path,
     force: bool,
     required: bool,
@@ -117,7 +130,7 @@ def resolve_or_download_source_artifact(
     path_value = normalize_space(source_cfg.get(path_key, ""))
     url_value = normalize_space(source_cfg.get(url_key, ""))
     if path_value:
-        path = resolve_path(path_value, root=config_path.parent)
+        path = resolve_path(path_value, root=config_path.parent, repo=repo)
         if not path.exists():
             raise ValueError(f"Config source.{path_key} does not exist: {path}")
         return path, ""
@@ -138,6 +151,7 @@ def load_source_table(
     url_key: str,
     run_dir: pathlib.Path,
     config_path: pathlib.Path,
+    repo: pathlib.Path,
     force: bool,
 ) -> tuple[pd.DataFrame, pathlib.Path, str]:
     source_path, source_url = resolve_or_download_source_artifact(
@@ -146,6 +160,7 @@ def load_source_table(
         url_key=url_key,
         run_dir=run_dir,
         config_path=config_path,
+        repo=repo,
         force=force,
         required=True,
     )
@@ -270,6 +285,7 @@ def run_deseq2_from_counts(
     output_path: pathlib.Path,
 ) -> tuple[list[str], pathlib.Path, pathlib.Path]:
     require_local_binary("Rscript")
+    log("Running DESeq2 from count matrix...")
     r_script = repo / "pipelines" / "geo" / "run_deseq2_counts.R"
     command = [
         "Rscript",
@@ -377,7 +393,7 @@ def run_de_from_counts(
     return {"run_dir": str(run_dir), "de_table_path": str(out_path)}
 
 
-def normalize_sample_entry(sample: dict, *, group_name: str, root: pathlib.Path) -> dict:
+def normalize_sample_entry(sample: dict, *, group_name: str, root: pathlib.Path, repo: pathlib.Path) -> dict:
     sample_id = normalize_space(
         sample.get("sample_id") or sample.get("id") or sample.get("accession") or sample.get("sra_accession", "")
     )
@@ -391,13 +407,13 @@ def normalize_sample_entry(sample: dict, *, group_name: str, root: pathlib.Path)
     sra_accession = normalize_space(sample.get("sra_accession", ""))
 
     if reads_1_value:
-        resolved_reads_1 = resolve_path(reads_1_value, root=root)
+        resolved_reads_1 = resolve_path(reads_1_value, root=root, repo=repo)
         if not resolved_reads_1.exists():
             raise ValueError(f"reads_1 for sample {sample_id!r} does not exist: {resolved_reads_1}")
         reads_1 = str(resolved_reads_1)
 
         if reads_2_value:
-            resolved_reads_2 = resolve_path(reads_2_value, root=root)
+            resolved_reads_2 = resolve_path(reads_2_value, root=root, repo=repo)
             if not resolved_reads_2.exists():
                 raise ValueError(f"reads_2 for sample {sample_id!r} does not exist: {resolved_reads_2}")
             reads_2 = str(resolved_reads_2)
@@ -418,7 +434,7 @@ def normalize_sample_entry(sample: dict, *, group_name: str, root: pathlib.Path)
     }
 
 
-def load_reads_samples(config: dict, *, config_path: pathlib.Path) -> tuple[list[dict], list[dict]]:
+def load_reads_samples(config: dict, *, config_path: pathlib.Path, repo: pathlib.Path) -> tuple[list[dict], list[dict]]:
     comparison_cfg = config.get("comparison", {})
     control_raw = comparison_cfg.get("control_samples", [])
     treated_raw = comparison_cfg.get("treated_samples", [])
@@ -428,10 +444,12 @@ def load_reads_samples(config: dict, *, config_path: pathlib.Path) -> tuple[list
         raise ValueError("Config comparison.treated_samples is empty.")
 
     control_samples = [
-        normalize_sample_entry(sample, group_name="control", root=config_path.parent) for sample in control_raw
+        normalize_sample_entry(sample, group_name="control", root=config_path.parent, repo=repo)
+        for sample in control_raw
     ]
     treated_samples = [
-        normalize_sample_entry(sample, group_name="treated", root=config_path.parent) for sample in treated_raw
+        normalize_sample_entry(sample, group_name="treated", root=config_path.parent, repo=repo)
+        for sample in treated_raw
     ]
     sample_ids = [sample["sample_id"] for sample in control_samples + treated_samples]
     if len(set(sample_ids)) != len(sample_ids):
@@ -484,6 +502,7 @@ def build_salmon_index(
     transcript_fasta: pathlib.Path,
 ) -> tuple[pathlib.Path, list[str], pathlib.Path, pathlib.Path]:
     require_local_binary("salmon")
+    log("Building Salmon index...")
     out_dir = run_dir / "reference" / "salmon_index"
     out_dir.parent.mkdir(parents=True, exist_ok=True)
     threads = int(source_cfg.get("salmon_threads", 1))
@@ -561,8 +580,8 @@ def prepare_reference_assets(
     run_dir: pathlib.Path,
     force: bool,
 ) -> dict:
-    salmon_index = resolve_existing_source_path(source_cfg, "salmon_index", config_path=config_path)
-    tx2gene_tsv = resolve_existing_source_path(source_cfg, "tx2gene_tsv", config_path=config_path)
+    salmon_index = resolve_existing_source_path(source_cfg, "salmon_index", config_path=config_path, repo=repo)
+    tx2gene_tsv = resolve_existing_source_path(source_cfg, "tx2gene_tsv", config_path=config_path, repo=repo)
     transcript_fasta_url = ""
     gtf_url = ""
     generated = {
@@ -578,6 +597,7 @@ def prepare_reference_assets(
             path_key="transcript_fasta_path",
             url_key="transcript_fasta_url",
             config_path=config_path,
+            repo=repo,
             run_dir=run_dir,
             force=force,
             required=True,
@@ -605,6 +625,7 @@ def prepare_reference_assets(
             path_key="gtf_path",
             url_key="gtf_url",
             config_path=config_path,
+            repo=repo,
             run_dir=run_dir,
             force=force,
             required=True,
@@ -636,6 +657,7 @@ def run_salmon_quant(
     salmon_index: pathlib.Path,
 ) -> pathlib.Path:
     require_local_binary("salmon")
+    log(f"Running Salmon for sample {sample['sample_id']}...")
     out_dir = run_dir / "salmon" / sample["sample_id"]
     out_dir.mkdir(parents=True, exist_ok=True)
     extra_args = [str(arg) for arg in source_cfg.get("salmon_extra_args", ["--validateMappings"])]
@@ -688,6 +710,7 @@ def run_sra_download(
     require_local_binary("prefetch")
     require_local_binary("fasterq-dump")
     accession = sample["sra_accession"]
+    log(f"Downloading reads for sample {sample['sample_id']} from {accession}...")
     sample_reads_dir = run_dir / "reads" / sample["sample_id"]
     sample_reads_dir.mkdir(parents=True, exist_ok=True)
     sra_cache_dir = run_dir / "sra"
@@ -780,6 +803,7 @@ def run_deseq2(
     output_path: pathlib.Path,
 ) -> tuple[list[str], pathlib.Path, pathlib.Path]:
     require_local_binary("Rscript")
+    log("Running tximport + DESeq2...")
     r_script = repo / "pipelines" / "geo" / "run_deseq2.R"
     command = [
         "Rscript",
@@ -813,13 +837,16 @@ def run_count_matrix_mode(
     run_dir: pathlib.Path,
     force: bool,
 ) -> dict:
+    log(f"Mode: count_matrix ({config['dataset_id']})")
     source_cfg = config.get("source", {})
+    log("Loading count matrix...")
     counts_df, counts_source, count_matrix_url = load_source_table(
         source_cfg,
         path_key="count_matrix_path",
         url_key="count_matrix_url",
         run_dir=run_dir,
         config_path=config_path,
+        repo=repo,
         force=force,
     )
 
@@ -860,8 +887,10 @@ def run_reads_mode(
     run_dir: pathlib.Path,
     force: bool,
 ) -> dict:
+    log(f"Mode: reads ({config['dataset_id']})")
     source_cfg = config.get("source", {})
-    control_samples, treated_samples = load_reads_samples(config, config_path=config_path)
+    log("Loading reads config...")
+    control_samples, treated_samples = load_reads_samples(config, config_path=config_path, repo=repo)
     control_samples, treated_samples, download_manifest = materialize_reads_samples(
         source_cfg=source_cfg,
         repo=repo,
@@ -870,6 +899,7 @@ def run_reads_mode(
         treated_samples=treated_samples,
     )
     sample_sheet = write_reads_sample_sheet(run_dir, control_samples, treated_samples)
+    log("Preparing references...")
     reference_assets = prepare_reference_assets(
         source_cfg=source_cfg,
         config_path=config_path,
@@ -958,6 +988,7 @@ def run_ingestion_config(config_path: pathlib.Path, repo: pathlib.Path | None = 
     run_dir = repo / "pipelines" / "geo" / "runs" / f"{utc_now_stamp()}_{dataset_id}"
     ensure_clean_dir(run_dir, force=force)
     shutil.copy2(config_path, run_dir / "config.yaml")
+    log(f"Run dir: {run_dir}")
 
     source_cfg = config.get("source", {})
     mode = normalize_space(source_cfg.get("mode", ""))
