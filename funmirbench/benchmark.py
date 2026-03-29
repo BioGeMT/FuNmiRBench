@@ -123,7 +123,7 @@ def run_benchmark(config_path):
         log(f"Dataset: {meta.id} | {meta.miRNA} | {meta.cell_line}")
         clear_dataset_outputs(meta.id, plots_dir, reports_dir)
         log(f"  Joining predictions for {meta.id}...")
-        joined, canonical_paths = build_joined(meta, tool_ids, predictions, root)
+        joined, predictor_output_paths = build_joined(meta, tool_ids, predictions, root)
         joined_path = joined_dir / f"{meta.id}.tsv"
         joined.to_csv(joined_path, sep="\t", index=False)
         log(f"  Wrote joined table: {joined_path}")
@@ -143,7 +143,7 @@ def run_benchmark(config_path):
             geo_accession=meta.geo_accession,
             de_table_path=str(meta.full_path),
             joined_tsv=joined_path,
-            canonical_paths=canonical_paths,
+            predictor_output_paths=predictor_output_paths,
         )
         metric_rows.extend(evaluation["metric_rows"])
         dataset_outputs.append(
@@ -155,7 +155,7 @@ def run_benchmark(config_path):
                 "geo_accession": meta.geo_accession,
                 "de_table_path": str(meta.full_path),
                 "joined_tsv": str(joined_path),
-                "canonical_tsv_paths": canonical_paths,
+                "predictor_output_paths": predictor_output_paths,
                 "plots": evaluation["plots"],
                 "predictor_correlation_tsv": evaluation["predictor_correlation_tsv"],
             }

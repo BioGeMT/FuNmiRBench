@@ -73,7 +73,7 @@ def test_sync_predictor_metadata_updates_existing_rows(tmp_path):
                 "canonical_id_gene_type": "ensembl_v109",
                 "input_id_mirna_type": "mirbase_v22",
                 "canonical_id_mirna_type": "mirbase_v22",
-                "canonical_tsv_path": "data/predictions/old.tsv",
+                "predictor_output_path": "data/predictions/old.tsv",
             }
         ]
     ).to_csv(registry, sep="\t", index=False)
@@ -92,7 +92,7 @@ def test_sync_predictor_metadata_updates_existing_rows(tmp_path):
                 "canonical_id_gene_type": "ensembl_v109",
                 "input_id_mirna_type": "mirbase_v22",
                 "canonical_id_mirna_type": "mirbase_v22",
-                "canonical_tsv_path": "data/predictions/new.tsv",
+                "predictor_output_path": "data/predictions/new.tsv",
             }
         ]
     ).to_csv(candidate, sep="\t", index=False)
@@ -104,4 +104,4 @@ def test_sync_predictor_metadata_updates_existing_rows(tmp_path):
     assert result["rows_added_or_updated"] == 1
     assert result["rows_after"] == 1
     assert merged.loc[0, "official_name"] == "New Name"
-    assert merged.loc[0, "canonical_tsv_path"] == "data/predictions/new.tsv"
+    assert merged.loc[0, "predictor_output_path"] == "data/predictions/new.tsv"

@@ -35,8 +35,8 @@ def test_example_end_to_end(tmp_path):
     predictions = pd.read_csv(repo_root / "metadata" / "predictions_info.tsv", sep="\t")
     predictions = predictions[predictions["tool_id"].isin(["predictor_1", "predictor_2"])].copy()
 
-    mock_path = tmp_dir / "mock_canonical.tsv"
-    cheating_path = tmp_dir / "cheating_canonical.tsv"
+    mock_path = tmp_dir / "mock_predictor_output.tsv"
+    cheating_path = tmp_dir / "cheating_predictor_output.tsv"
     write_tsv(build_mock_scores(experiments_tsv, tmp_dir), mock_path)
     write_tsv(
         build_cheating_scores(
@@ -51,7 +51,7 @@ def test_example_end_to_end(tmp_path):
         cheating_path,
     )
 
-    predictions["canonical_tsv_path"] = predictions["tool_id"].map(
+    predictions["predictor_output_path"] = predictions["tool_id"].map(
         {
             "predictor_1": str(mock_path.resolve()),
             "predictor_2": str(cheating_path.resolve()),

@@ -148,8 +148,8 @@ uv run pipelines/standardized_predictors/cheating/pipeline.py
 
 This creates:
 
-- `data/predictions/mock/mock_canonical.tsv`
-- `data/predictions/cheating/cheating_canonical.tsv`
+- `data/predictions/mock/mock_predictor_output.tsv`
+- `data/predictions/cheating/cheating_predictor_output.tsv`
 
 The demo predictors already have registry rows in `metadata/predictions_info.tsv`.
 

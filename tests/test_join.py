@@ -94,7 +94,7 @@ class TestBuildJoined:
             tissue="cervix", perturbation="OE", organism="Homo sapiens",
             geo_accession="GSE002", data_path="de.tsv", root=tmp_path,
         )
-        predictions = {"mock": {"canonical_tsv_path": "scores.tsv"}}
+        predictions = {"mock": {"predictor_output_path": "scores.tsv"}}
         joined, paths = build_joined(meta, ["mock"], predictions, tmp_path)
         assert len(joined) == 3
         assert "score_mock" in joined.columns
@@ -116,6 +116,6 @@ class TestBuildJoined:
             tissue="cervix", perturbation="OE", organism="Homo sapiens",
             geo_accession="GSE006", data_path="de.tsv", root=tmp_path,
         )
-        predictions = {"mock": {"canonical_tsv_path": "scores.tsv"}}
+        predictions = {"mock": {"predictor_output_path": "scores.tsv"}}
         with pytest.raises(ValueError, match="Duplicate mirna\\+gene scores"):
             build_joined(meta, ["mock"], predictions, tmp_path)

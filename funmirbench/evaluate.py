@@ -245,7 +245,7 @@ def _plot_predictor_correlation_heatmap(
 def _write_tool_report(
     *, dataset_id, mirna, cell_line, perturbation, geo_accession,
     de_table_path, joined_tsv,
-    tool_id, canonical_tsv_path, metrics, out_path, filled_zero_count, scatter_png,
+    tool_id, predictor_output_path, metrics, out_path, filled_zero_count, scatter_png,
 ):
     lines = [
         f"dataset_id: {dataset_id}",
@@ -256,7 +256,7 @@ def _write_tool_report(
         f"de_table_path: {de_table_path or 'NA'}",
         f"joined_tsv: {joined_tsv or 'NA'}",
         f"tool_id: {tool_id}",
-        f"canonical_tsv_path: {canonical_tsv_path or 'NA'}",
+        f"predictor_output_path: {predictor_output_path or 'NA'}",
         f"filled_missing_scores_with_zero: {filled_zero_count}",
         "",
         "metrics:",
@@ -281,7 +281,7 @@ def evaluate_joined_dataframe(
     dataset_id=None, mirna=None, cell_line=None,
     perturbation=None, geo_accession=None,
     de_table_path=None, joined_tsv=None,
-    canonical_paths=None,
+    predictor_output_paths=None,
 ):
     plots_dir.mkdir(parents=True, exist_ok=True)
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -334,7 +334,7 @@ def evaluate_joined_dataframe(
             perturbation=perturbation, geo_accession=geo_accession,
             de_table_path=de_table_path, joined_tsv=joined_tsv,
             tool_id=tool_id,
-            canonical_tsv_path=(canonical_paths or {}).get(tool_id),
+            predictor_output_path=(predictor_output_paths or {}).get(tool_id),
             metrics=metrics, out_path=report_txt,
             filled_zero_count=filled_zero_count, scatter_png=scatter_png,
         )

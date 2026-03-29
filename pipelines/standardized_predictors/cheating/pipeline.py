@@ -14,7 +14,7 @@ def log(message):
 def main():
     repo_root = Path(__file__).resolve().parents[3]
     experiments_tsv = repo_root / "metadata" / "mirna_experiment_info.tsv"
-    out_path = repo_root / "data" / "predictions" / "cheating" / "cheating_canonical.tsv"
+    out_path = repo_root / "data" / "predictions" / "cheating" / "cheating_predictor_output.tsv"
     log("Loading experiment registry for demo strong predictor...")
     scores = build_cheating_scores(
         experiments_tsv,

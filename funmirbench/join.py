@@ -39,7 +39,7 @@ def load_tool_scores(
     col_name: str,
     min_score: float | None = None,
 ) -> tuple[pd.DataFrame, Path]:
-    path = Path(tool_meta["canonical_tsv_path"])
+    path = Path(tool_meta["predictor_output_path"])
     if not path.is_absolute():
         path = root / path
     df = pd.read_csv(path, sep="\t")
@@ -64,7 +64,7 @@ def build_joined(meta, tool_ids, predictions, root, min_score: float | None = No
     for tool_id in tool_ids:
         if tool_id not in predictions:
             raise ValueError(f"Unknown tool {tool_id!r}. Known: {sorted(predictions)}")
-        scores, canonical_path = load_tool_scores(
+        scores, predictor_output_path = load_tool_scores(
             tool_id,
             predictions[tool_id],
             root,
@@ -73,5 +73,5 @@ def build_joined(meta, tool_ids, predictions, root, min_score: float | None = No
             min_score=min_score,
         )
         joined = joined.merge(scores, on="gene_id", how="left")
-        paths[tool_id] = str(canonical_path)
+        paths[tool_id] = str(predictor_output_path)
     return joined, paths

@@ -13,7 +13,7 @@ def log(message):
 def main():
     repo_root = Path(__file__).resolve().parents[3]
     experiments_tsv = repo_root / "metadata" / "mirna_experiment_info.tsv"
-    out_path = repo_root / "data" / "predictions" / "mock" / "mock_canonical.tsv"
+    out_path = repo_root / "data" / "predictions" / "mock" / "mock_predictor_output.tsv"
     log("Loading experiment registry for mock predictor...")
     scores = build_mock_scores(experiments_tsv, repo_root)
     log(f"Writing mock predictor TSV to {out_path}...")
