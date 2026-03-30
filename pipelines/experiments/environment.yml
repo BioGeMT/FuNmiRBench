@@ -1,0 +1,13 @@
+name: funmirbench-experiments
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - pip
+  - uv
+  - salmon=1.10.3
+  - sra-tools
+  - r-base
+  - bioconductor-deseq2
+  - bioconductor-tximport

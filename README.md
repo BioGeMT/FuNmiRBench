@@ -1,261 +1,274 @@
 # FuNmiRBench
 
-Benchmarking framework for **functional microRNA target prediction**.
+Benchmark functional miRNA target predictors against differential-expression tables.
 
-FuNmiRBench provides:
+## Install
 
-- Standardized metadata for >50 functional miRNA perturbation RNA-seq datasets (currently sourced from GEO)
-- A unified Python API to:
-  - list and filter datasets by miRNA, cell line, perturbation type, tissue, and GEO accession
-  - load differential expression tables (edgeR outputs) into pandas
-  - summarize the available datasets
-- A foundation for baseline models and future dashboards (visualization & evaluation)
+Requirements:
 
----
+- Python 3.10+
+- `uv`
+- `conda` for the experiments pipeline environment
 
-## 🔧 Installation
+Install `uv` on your machine first:
 
-FuNmiRBench supports two installation modes:
+```bash
+python -m pip install uv
+```
 
-### Option 1 (recommended): reproducible conda environment (pinned versions)
-
-Clone the repo:
+Then clone the repo and install the Python package environment:
 
 ```bash
 git clone git@github.com:BioGeMT/FuNmiRBench.git
 cd FuNmiRBench
-```
-Create and activate the pinned conda environment:
-```bash
-conda env create -f environment.yml
-conda activate funmirbench
-```
-This installs core dependencies via conda (with fixed versions) and installs the
-package in editable mode (pip install -e .).
-
-### Option 2: manual development setup (pip-managed deps)
-```bash
-eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
-conda create -n funmirbench python=3.12
-conda activate funmirbench
-
-pip install -e .
-```
-## 📂 Project structure
-
-```
-FuNmiRBench/
-├── data/
-│   ├── README.md                 # explains expected local data layout (not tracked)
-│   └── predictions/              # placeholder (not tracked)
-│   └── experiments/              # placeholder (not tracked)
-│
-├── metadata/
-│   ├── README.md                 # explains metadata inputs/outputs
-│   ├── mirna_experiment_info.tsv # curated input table (one row per dataset)
-│   ├── datasets.json             # generated dataset index (built from TSV)
-│   ├── predictions_info.tsv      # curated input table (one row per prediction tool)
-│   └── predictions.json          # generated prediction tool registry (built from TSV)
-│
-├── pipelines/
-│   └── geo/
-│       ├── README.md             # how the GEO -> DE pipeline works
-│       ├── env.yml               # environment spec
-│       ├── run_pipeline.sh       # entry point script
-│
-├── src/
-│   └── funmirbench/
-│       ├── __init__.py
-│       ├── datasets.py           # everything about DE tables & metadata
-│       ├── predictions.py        # everything about prediction tool scores
-│       ├── cli/                  # command-line entrypoints (python -m ...)
-│       ├── models/               # baseline models (seed, alignment, etc.)
-│       └── evaluation/           # correlation, PR curves, plots
-│
-└── tests/
-    └── test_datasets.py, test_predictions.py, ...
+uv sync
 ```
 
-## Regenerating indexes
-
-To regenerate `metadata/datasets.json` from the curated TSV:
+If you want to use the experiments pipeline, create and activate the extra local environment after entering the repo:
 
 ```bash
-python -m funmirbench.cli.build_experiments_index
+conda env create -f pipelines/experiments/environment.yml
+conda activate funmirbench-experiments
 ```
 
-To regenerate `metadata/predictions.json` from the curated TSV:
+That environment also includes `uv`, so `uv run ...` keeps working after activation.
+
+## Repo Layout
+
+Main directories:
+
+- `data/experiments/processed/`: experiment DE tables used by the benchmark
+- `data/experiments/raw/`: local raw GEO inputs such as count matrices and FASTQs
+- `data/predictions/`: local generated predictor TSVs
+- `metadata/mirna_experiment_info.tsv`: experiment registry
+- `metadata/predictions_info.tsv`: predictor registry
+- `pipelines/experiments/`: experiment-ingestion backend files and example configs
+- `pipelines/standardized_predictors/`: predictor pipelines
+- `results/`: benchmark outputs
+
+The benchmark reads file paths from the two metadata TSVs. `data/` holds the real files. `results/`
+is only for benchmark output.
+
+## Quick Start
+
+If you just want to run the benchmark, you do not need the experiments pipeline first. The repo
+already ships:
+
+- processed experiment DE tables in `data/experiments/processed/`
+- experiment metadata in `metadata/mirna_experiment_info.tsv`
+- predictor metadata in `metadata/predictions_info.tsv`
+
+Generate the two demo predictor outputs:
 
 ```bash
-python -m funmirbench.cli.build_predictions_index
+uv run pipelines/standardized_predictors/mock/pipeline.py
+uv run pipelines/standardized_predictors/cheating/pipeline.py
 ```
 
-To regenerate the canonical TSV scores for the mock predictor:
+Then run the default benchmark:
 
 ```bash
-python -m funmirbench.cli.build_predictions --tool mock
+uv run funmirbench --config benchmark.yaml
 ```
 
-Planned additions: user-registered datasets, prediction indices, and additional ingestion pipelines.
+The default config already points at:
 
----
+- `metadata/mirna_experiment_info.tsv`
+- `metadata/predictions_info.tsv`
 
-## 📊 Using the dataset API
+and selects 3 real experiment datasets plus 2 demo predictors.
 
-Basic loading:
+## Workflow
 
-```python
-from funmirbench import load_dataset, load_all_datasets
+### 1. Add Experiment Data
 
-# Load a single dataset by ID (e.g. "001")
-df = load_dataset("001")
+The experiment-ingestion pipeline creates the same DE tables that the benchmark consumes from
+`data/experiments/processed/`.
 
-# Load all datasets
-df_all = load_all_datasets()
+Experiment config summary:
 
-# Filter by perturbation
-df_oe = load_all_datasets(perturbation="overexpression")
-df_kd = load_all_datasets(perturbation="knockdown")
-```
+- top-level:
+  `dataset_id`, `mirna_name`, `experiment_type`, optional `gse`
+- `source`:
+  `mode: count_matrix` or `mode: reads`
+- `comparison`:
+  control vs treated columns or explicit control vs treated samples
+- `metadata`:
+  fields that will later be synced into `metadata/mirna_experiment_info.tsv`
 
-Metadata exploration:
+Supported inputs:
 
-```python
-from funmirbench import datasets
+- count matrix: counts matrix + control columns + treated columns -> DESeq2
+- reads: local FASTQs or SRA accessions + explicit sample groups -> `salmon + tximport + DESeq2`
 
-datasets.list_mirnas()
-datasets.list_cell_lines()
-datasets.list_perturbations()
-datasets.summarize_cell_lines()
-datasets.summarize_mirnas()
+This path expects the `funmirbench-experiments` environment from `pipelines/experiments/environment.yml` to be
+active so `salmon`, `prefetch`, `fasterq-dump`, and `Rscript` are available on `PATH`.
 
-summaries = datasets.summarize_datasets()
-```
-
-## 🚀 End-to-end workflow (experiments → predictions → plots)
-
-FuNmiRBench follows a simple, explicit workflow.  
-Each step produces a concrete artifact that can be inspected, versioned, or reused.
-
-### 1. Import experiment tables
-
-Download the published benchmark experiments (processed DE tables) from Zenodo
-into `data/experiments/processed/`:
+Download the shipped real example inputs:
 
 ```bash
-python -m funmirbench.cli.import_experiments --token "<TOKEN>"
+uv run funmirbench-experiments-download-examples
 ```
 
-- The token is provided by Zenodo for restricted records  
-- Alternatively, set `ZENODO_TOKEN` as an environment variable  
-- This step only downloads data; nothing in metadata is modified
+That downloader fetches:
 
-If you already have processed DE tables locally, import them instead of using Zenodo:
+- the real `GSE253003` count matrix
+- the real `GSE93717` FASTQ files
+- the shared Homo sapiens Ensembl v109 transcript FASTA and GTF used by the reads example
+
+Run the real count-matrix example:
 
 ```bash
-python -m funmirbench.cli.import_experiments --from-dir /path/to/processed_tables
+uv run funmirbench-experiments --config pipelines/experiments/configs/gse253003.count_matrix.example.yaml
 ```
 
-- Copies top-level `.tsv` files into `data/experiments/processed/` (or `--out-dir`)
-- Validates that each TSV is readable and that gene identifiers can be detected
-- Use `--overwrite` to replace existing files
-
-To combine Zenodo and local tables, run Zenodo import first, then run `--from-dir`
-to add your extra local tables. Use `--overwrite` only when you explicitly want local
-files to replace same-named files already present in the output folder.
-
----
-
-### 2. Build the experiment index
-
-Generate the machine-readable dataset registry from curated metadata:
+Run the reads example the same way:
 
 ```bash
-python -m funmirbench.cli.build_experiments_index
+uv run funmirbench-experiments --config pipelines/experiments/configs/gse93717.reads.example.yaml
 ```
 
-This produces:
+Tracked example configs:
 
-- `metadata/datasets.json`
+- `pipelines/experiments/configs/gse253003.count_matrix.example.yaml`
+- `pipelines/experiments/configs/gse93717.reads.example.yaml`
 
-which links experiment metadata to local DE table paths.
+Reads configs can either:
 
----
+- use local `reads_1` and `reads_2`
+- use `sra_accession` and let the pipeline download reads
 
-### 3. Validate local experiments (recommended)
+Reads configs can also either:
 
-Before running predictions, verify that all datasets are present and readable:
+- use prebuilt `salmon_index` and `tx2gene_tsv`
+- or build them from `transcript_fasta_path` and `gtf_path`
+
+So the practical reads flow is:
+
+1. activate `funmirbench-experiments`
+2. run `uv run funmirbench-experiments-download-examples`
+3. run `uv run funmirbench-experiments --config pipelines/experiments/configs/gse93717.reads.example.yaml`
+
+The shipped reads example now points at the downloaded Ensembl v109 reference source files under
+`data/experiments/raw/refs/ensembl_v109/`, so it can build the derived Salmon index and
+`tx2gene.tsv` automatically. You only need to edit it if you want to use a different reference or
+your own prebuilt files.
+
+Each run writes:
+
+- `data/experiments/processed/<dataset_id>.tsv`
+- `pipelines/experiments/runs/<timestamp>_<dataset_id>/candidate_metadata.tsv`
+- `pipelines/experiments/runs/<timestamp>_<dataset_id>/run_manifest.json`
+
+The reads example uses a reproduced dataset id, `GSE93717_OE_miR_941_deseq2`, so syncing it creates
+a separate variant instead of overwriting the curated `GSE93717_OE_miR_941` registry row.
+
+### 2. Sync Experiment Metadata
+
+The ingestion pipeline does not edit `metadata/mirna_experiment_info.tsv` by itself. It writes a
+candidate row first. Then sync it into the registry with:
 
 ```bash
-python -m funmirbench.cli.validate_experiments
+uv run funmirbench-sync-metadata --kind experiments
 ```
 
-This checks that:
-- all `data_path` entries exist locally
-- DE tables are readable
-- gene identifiers can be detected robustly
+### 3. Add Predictor Data
 
----
+Predictor score files live under `data/predictions/` and are discovered through
+`metadata/predictions_info.tsv`.
 
-### 4. Generate prediction scores
-
-Run a prediction tool (currently a deterministic mock predictor) to produce
-canonical miRNA–gene scores:
+The repo ships two demo predictor pipelines:
 
 ```bash
-python -m funmirbench.cli.build_predictions --tool mock
+uv run pipelines/standardized_predictors/mock/pipeline.py
+uv run pipelines/standardized_predictors/cheating/pipeline.py
 ```
 
-This writes a canonical TSV under:
+This creates:
 
-```
-data/predictions/mock/
-```
+- `data/predictions/mock/mock_predictor_output.tsv`
+- `data/predictions/cheating/cheating_predictor_output.tsv`
 
----
+The demo predictors already have registry rows in `metadata/predictions_info.tsv`.
 
-### 5. Register prediction tools
+### 4. Run The Benchmark
 
-Index the prediction tool metadata:
+The default benchmark config is `benchmark.yaml`.
+
+Benchmark config summary:
+
+- `experiments_tsv`: experiment metadata table
+- `predictions_tsv`: predictor metadata table
+- `experiments`: which experiment rows to include
+- `predictors`: which predictor rows to include
+- `evaluation`: thresholds and ranking settings
+- `out_dir`: results directory
+
+Run it with:
 
 ```bash
-python -m funmirbench.cli.build_predictions_index
+uv run funmirbench --config benchmark.yaml
 ```
 
-This produces:
+YAML paths can be:
 
-- `metadata/predictions.json`
+- absolute paths
+- relative to the YAML file
+- repo-root-relative paths such as `data/...` and `metadata/...`
 
----
+The default config shape is:
 
-### 6. Join experiments with predictions
+```yaml
+experiments_tsv: metadata/mirna_experiment_info.tsv
+predictions_tsv: metadata/predictions_info.tsv
 
-Combine one experiment’s DE table with one tool’s predictions:
+experiments:
+  id: [GSE109725_OE_miR_204_5p, GSE118315_KO_miR_124_3p, GSE210778_OE_miR_375_3p]
+
+predictors:
+  tool_id: [predictor_1, predictor_2]
+
+evaluation:
+  fdr_threshold: 0.05
+  abs_logfc_threshold: 1.0
+  predictor_top_fraction: 0.10
+
+out_dir: results/
+```
+
+Filter behavior:
+
+- different keys are combined with AND
+- values inside one list are combined with OR
+
+`benchmark.yaml` already includes other experiment and predictor columns as commented rows, so the
+normal workflow is just to edit or uncomment filters.
+
+## Outputs
+
+After a benchmark run, `results/` contains:
+
+- `joined/`: joined DE + predictor score tables
+- `tables/`: APS, PR-AUC, AUROC, and Spearman summary tables
+- `plots/<dataset_id>/`: per-dataset plots
+- `reports/`: per-predictor text reports and predictor-correlation TSVs
+- `summary.json`: run summary
+
+When 2 or more predictors are selected, each dataset gets:
+
+- one score-vs-logFC scatter per predictor
+- one combined PR curve
+- one combined ROC curve
+- one algorithms-vs-genes heatmap
+- one predictor-correlation heatmap
+
+## Commands
 
 ```bash
-python -m funmirbench.cli.join_experiment_predictions \
-  --dataset-id 001 \
-  --tool mock \
-  --out data/joined/001_mock.tsv
+uv run funmirbench --config benchmark.yaml
+uv run funmirbench-validate-experiments --experiments-tsv metadata/mirna_experiment_info.tsv
+uv run funmirbench-experiments-download-examples
+uv run funmirbench-experiments --config config.yaml
+uv run funmirbench-sync-metadata --kind experiments
+uv run pytest
 ```
-
-This produces a joined TSV containing:
-- gene identifiers
-- prediction scores
-- DE statistics (e.g. logFC, FDR)
-
----
-
-### 7. Plot score-DE correlation
-
-Generate a simple correlation scatter plot and summary statistics:
-
-```bash
-python -m funmirbench.cli.plot_correlation \
-  --joined-tsv data/joined/001_mock.tsv \
-  --out-dir data/plots
-```
-
-This produces:
-- a PNG scatter plot
-- a TXT summary with Pearson and Spearman correlations

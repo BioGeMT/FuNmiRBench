@@ -1,0 +1,47 @@
+# FuNmiRBench benchmark configuration.
+#
+# All file paths are relative to this YAML file's directory.
+# Run: uv run funmirbench --config benchmark.yaml
+
+experiments_tsv: metadata/mirna_experiment_info.tsv
+predictions_tsv: metadata/predictions_info.tsv
+
+# Filter experiments by ANY column in the experiments TSV.
+# AND across columns, OR within each column's value list.
+# The default repo config ships with a small 3-dataset demo selection.
+# Edit or comment these active rows to benchmark other subsets.
+experiments:
+  id: [GSE109725_OE_miR_204_5p, GSE118315_KO_miR_124_3p, GSE210778_OE_miR_375_3p]
+  # mirna_name: [hsa-miR-375-3p]
+  # mirna_sequence: [UUUGUUCGUUCGGCUCGCGUGA]
+  # article_pubmed_id: [https://pubmed.ncbi.nlm.nih.gov/36074222]
+  # organism: [Homo sapiens]
+  # experiment_type: [OE, KD]
+  # tested_cell_line: [HeLa]
+  # treatment: [Overexpression of hsa-miR-10a-5p]
+  # tissue: [Cervix]
+  # method: [RNA-seq]
+  # gse_url: [https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE124530]
+  # de_table_path: [data/experiments/processed/GSE124530_edger_out_oe_hsa_miR_10a_5p_oe_10a5p.tsv]
+
+# Filter predictors by ANY column in the predictions TSV.
+# The default repo config compares the built-in weak and strong demo predictors.
+predictors:
+  tool_id: [predictor_1, predictor_2]
+  # official_name: [Predictor 1, Predictor 2]
+  # organism: [Homo sapiens]
+  # score_type: [probability]
+  # score_direction: [higher_is_stronger]
+  # score_range: [0-1]
+  # input_id_gene_type: [ensembl_v109]
+  # canonical_id_gene_type: [ensembl_v109]
+  # input_id_mirna_type: [mirbase_v22]
+  # canonical_id_mirna_type: [mirbase_v22]
+  # predictor_output_path: [data/predictions/mock/mock_predictor_output.tsv]
+
+evaluation:
+  fdr_threshold: 0.05
+  abs_logfc_threshold: 1.0
+  predictor_top_fraction: 0.10
+
+out_dir: results/
