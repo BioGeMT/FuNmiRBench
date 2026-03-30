@@ -49,19 +49,57 @@ Main directories:
 The benchmark reads file paths from the two metadata TSVs. `data/` holds the real files. `results/`
 is only for benchmark output.
 
+## Quick Start
+
+If you just want to run the benchmark, you do not need the experiments pipeline first. The repo
+already ships:
+
+- processed experiment DE tables in `data/experiments/processed/`
+- experiment metadata in `metadata/mirna_experiment_info.tsv`
+- predictor metadata in `metadata/predictions_info.tsv`
+
+Generate the two demo predictor outputs:
+
+```bash
+uv run pipelines/standardized_predictors/mock/pipeline.py
+uv run pipelines/standardized_predictors/cheating/pipeline.py
+```
+
+Then run the default benchmark:
+
+```bash
+uv run funmirbench --config benchmark.yaml
+```
+
+The default config already points at:
+
+- `metadata/mirna_experiment_info.tsv`
+- `metadata/predictions_info.tsv`
+
+and selects 3 real experiment datasets plus 2 demo predictors.
+
 ## Workflow
 
-### 1. Generate Experiment Data
+### 1. Add Experiment Data
 
 The experiment-ingestion pipeline creates the same DE tables that the benchmark consumes from
 `data/experiments/processed/`.
 
-Supported experiment inputs:
+Experiment config summary:
 
-- count matrix:
-  counts matrix + control columns + treated columns -> DESeq2
-- reads:
-  local FASTQs or SRA accessions + explicit sample groups -> `salmon + tximport + DESeq2`
+- top-level:
+  `dataset_id`, `mirna_name`, `experiment_type`, optional `gse`
+- `source`:
+  `mode: count_matrix` or `mode: reads`
+- `comparison`:
+  control vs treated columns or explicit control vs treated samples
+- `metadata`:
+  fields that will later be synced into `metadata/mirna_experiment_info.tsv`
+
+Supported inputs:
+
+- count matrix: counts matrix + control columns + treated columns -> DESeq2
+- reads: local FASTQs or SRA accessions + explicit sample groups -> `salmon + tximport + DESeq2`
 
 This path expects the `funmirbench-experiments` environment from `pipelines/experiments/environment.yml` to be
 active so `salmon`, `prefetch`, `fasterq-dump`, and `Rscript` are available on `PATH`.
@@ -116,14 +154,14 @@ The shipped reads example now points at the downloaded Ensembl v109 reference so
 `tx2gene.tsv` automatically. You only need to edit it if you want to use a different reference or
 your own prebuilt files.
 
-The reads example uses a reproduced dataset id, `GSE93717_OE_miR_941_deseq2`, so syncing it creates
-a separate variant instead of overwriting the curated `GSE93717_OE_miR_941` registry row.
-
 Each run writes:
 
 - `data/experiments/processed/<dataset_id>.tsv`
 - `pipelines/experiments/runs/<timestamp>_<dataset_id>/candidate_metadata.tsv`
 - `pipelines/experiments/runs/<timestamp>_<dataset_id>/run_manifest.json`
+
+The reads example uses a reproduced dataset id, `GSE93717_OE_miR_941_deseq2`, so syncing it creates
+a separate variant instead of overwriting the curated `GSE93717_OE_miR_941` registry row.
 
 ### 2. Sync Experiment Metadata
 
@@ -134,7 +172,7 @@ candidate row first. Then sync it into the registry with:
 uv run funmirbench-sync-metadata --kind experiments
 ```
 
-### 3. Generate Predictor Data
+### 3. Add Predictor Data
 
 Predictor score files live under `data/predictions/` and are discovered through
 `metadata/predictions_info.tsv`.
@@ -157,12 +195,14 @@ The demo predictors already have registry rows in `metadata/predictions_info.tsv
 
 The default benchmark config is `benchmark.yaml`.
 
-It already points at:
+Benchmark config summary:
 
-- `metadata/mirna_experiment_info.tsv`
-- `metadata/predictions_info.tsv`
-
-and ships with 3 real experiment datasets plus 2 demo predictors selected.
+- `experiments_tsv`: experiment metadata table
+- `predictions_tsv`: predictor metadata table
+- `experiments`: which experiment rows to include
+- `predictors`: which predictor rows to include
+- `evaluation`: thresholds and ranking settings
+- `out_dir`: results directory
 
 Run it with:
 
