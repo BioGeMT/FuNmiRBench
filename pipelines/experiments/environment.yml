@@ -1,4 +1,4 @@
-name: funmirbench-geo
+name: funmirbench-experiments
 channels:
   - conda-forge
   - bioconda

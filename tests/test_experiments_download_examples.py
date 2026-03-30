@@ -3,7 +3,7 @@
 import pathlib
 from urllib.parse import parse_qs, urlparse
 
-from funmirbench import geo_download_examples
+from funmirbench import experiments_download_examples
 
 
 class FakeResponse:
@@ -30,9 +30,9 @@ def test_download_examples_writes_selected_targets(tmp_path, monkeypatch):
         name = query.get("file", [pathlib.Path(parsed.path).name])[0]
         return FakeResponse([f"content:{name}".encode("utf-8")])
 
-    monkeypatch.setattr(geo_download_examples.requests, "get", fake_get)
+    monkeypatch.setattr(experiments_download_examples.requests, "get", fake_get)
 
-    geo_download_examples.download_examples(["gse253003-counts"], repo=tmp_path)
+    experiments_download_examples.download_examples(["gse253003-counts"], repo=tmp_path)
 
     out_path = tmp_path / "data/experiments/raw/GSE253003/GSE253003_Count.csv.gz"
     assert out_path.is_file()
@@ -52,9 +52,9 @@ def test_download_examples_can_fetch_reference_bundle(tmp_path, monkeypatch):
         name = pathlib.Path(urlparse(url).path).name
         return FakeResponse([f"content:{name}".encode("utf-8")])
 
-    monkeypatch.setattr(geo_download_examples.requests, "get", fake_get)
+    monkeypatch.setattr(experiments_download_examples.requests, "get", fake_get)
 
-    geo_download_examples.download_examples(["ensembl-v109-refs"], repo=tmp_path)
+    experiments_download_examples.download_examples(["ensembl-v109-refs"], repo=tmp_path)
 
     fasta_path = tmp_path / "data/experiments/raw/refs/ensembl_v109/Homo_sapiens.GRCh38.cdna.all.fa.gz"
     gtf_path = tmp_path / "data/experiments/raw/refs/ensembl_v109/Homo_sapiens.GRCh38.109.gtf.gz"

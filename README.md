@@ -8,7 +8,7 @@ Requirements:
 
 - Python 3.10+
 - `uv`
-- `conda` for the GEO ingestion environment
+- `conda` for the experiments pipeline environment
 
 Install `uv` on your machine first:
 
@@ -24,11 +24,11 @@ cd FuNmiRBench
 uv sync
 ```
 
-If you want to use the GEO ingestion pipeline, create and activate the extra local environment after entering the repo:
+If you want to use the experiments pipeline, create and activate the extra local environment after entering the repo:
 
 ```bash
-conda env create -f pipelines/geo/environment.yml
-conda activate funmirbench-geo
+conda env create -f pipelines/experiments/environment.yml
+conda activate funmirbench-experiments
 ```
 
 That environment also includes `uv`, so `uv run ...` keeps working after activation.
@@ -42,7 +42,7 @@ Main directories:
 - `data/predictions/`: local generated predictor TSVs
 - `metadata/mirna_experiment_info.tsv`: experiment registry
 - `metadata/predictions_info.tsv`: predictor registry
-- `pipelines/geo/`: experiment-ingestion backend files and example configs
+- `pipelines/experiments/`: experiment-ingestion backend files and example configs
 - `pipelines/standardized_predictors/`: predictor pipelines
 - `results/`: benchmark outputs
 
@@ -63,13 +63,13 @@ Supported experiment inputs:
 - reads:
   local FASTQs or SRA accessions + explicit sample groups -> `salmon + tximport + DESeq2`
 
-This path expects the `funmirbench-geo` environment from `pipelines/geo/environment.yml` to be
+This path expects the `funmirbench-experiments` environment from `pipelines/experiments/environment.yml` to be
 active so `salmon`, `prefetch`, `fasterq-dump`, and `Rscript` are available on `PATH`.
 
 Download the shipped real example inputs:
 
 ```bash
-uv run funmirbench-geo-download-examples
+uv run funmirbench-experiments-download-examples
 ```
 
 That downloader fetches:
@@ -81,19 +81,19 @@ That downloader fetches:
 Run the real count-matrix example:
 
 ```bash
-uv run funmirbench-geo --config pipelines/geo/configs/gse253003.count_matrix.example.yaml
+uv run funmirbench-experiments --config pipelines/experiments/configs/gse253003.count_matrix.example.yaml
 ```
 
 Run the reads example the same way:
 
 ```bash
-uv run funmirbench-geo --config pipelines/geo/configs/gse93717.reads.example.yaml
+uv run funmirbench-experiments --config pipelines/experiments/configs/gse93717.reads.example.yaml
 ```
 
 Tracked example configs:
 
-- `pipelines/geo/configs/gse253003.count_matrix.example.yaml`
-- `pipelines/geo/configs/gse93717.reads.example.yaml`
+- `pipelines/experiments/configs/gse253003.count_matrix.example.yaml`
+- `pipelines/experiments/configs/gse93717.reads.example.yaml`
 
 Reads configs can either:
 
@@ -107,9 +107,9 @@ Reads configs can also either:
 
 So the practical reads flow is:
 
-1. activate `funmirbench-geo`
-2. run `uv run funmirbench-geo-download-examples`
-3. run `uv run funmirbench-geo --config pipelines/geo/configs/gse93717.reads.example.yaml`
+1. activate `funmirbench-experiments`
+2. run `uv run funmirbench-experiments-download-examples`
+3. run `uv run funmirbench-experiments --config pipelines/experiments/configs/gse93717.reads.example.yaml`
 
 The shipped reads example now points at the downloaded Ensembl v109 reference source files under
 `data/experiments/raw/refs/ensembl_v109/`, so it can build the derived Salmon index and
@@ -122,8 +122,8 @@ a separate variant instead of overwriting the curated `GSE93717_OE_miR_941` regi
 Each run writes:
 
 - `data/experiments/processed/<dataset_id>.tsv`
-- `pipelines/geo/runs/<timestamp>_<dataset_id>/candidate_metadata.tsv`
-- `pipelines/geo/runs/<timestamp>_<dataset_id>/run_manifest.json`
+- `pipelines/experiments/runs/<timestamp>_<dataset_id>/candidate_metadata.tsv`
+- `pipelines/experiments/runs/<timestamp>_<dataset_id>/run_manifest.json`
 
 ### 2. Sync Experiment Metadata
 
@@ -227,8 +227,8 @@ When 2 or more predictors are selected, each dataset gets:
 ```bash
 uv run funmirbench --config benchmark.yaml
 uv run funmirbench-validate-experiments --experiments-tsv metadata/mirna_experiment_info.tsv
-uv run funmirbench-geo-download-examples
-uv run funmirbench-geo --config config.yaml
+uv run funmirbench-experiments-download-examples
+uv run funmirbench-experiments --config config.yaml
 uv run funmirbench-sync-metadata --kind experiments
 uv run pytest
 ```

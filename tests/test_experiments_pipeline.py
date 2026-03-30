@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from funmirbench import geo_pipeline
+from funmirbench import experiments_pipeline
 
 
 def test_run_count_matrix_mode_writes_benchmark_ready_table(tmp_path):
@@ -74,10 +74,10 @@ def test_run_count_matrix_mode_writes_benchmark_ready_table(tmp_path):
         return subprocess.CompletedProcess(command, 0, stdout="deseq2 ok\n", stderr="")
 
     monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(geo_pipeline.subprocess, "run", fake_subprocess_run)
-    monkeypatch.setattr(geo_pipeline.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(experiments_pipeline.subprocess, "run", fake_subprocess_run)
+    monkeypatch.setattr(experiments_pipeline.shutil, "which", lambda name: f"/usr/bin/{name}")
     try:
-        result = geo_pipeline.run_ingestion_config(config_path, repo=tmp_path)
+        result = experiments_pipeline.run_ingestion_config(config_path, repo=tmp_path)
     finally:
         monkeypatch.undo()
 
@@ -130,7 +130,7 @@ def test_run_count_matrix_mode_requires_gene_id_column(tmp_path):
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
     with pytest.raises(ValueError, match="source.gene_id_column"):
-        geo_pipeline.run_ingestion_config(config_path, repo=tmp_path)
+        experiments_pipeline.run_ingestion_config(config_path, repo=tmp_path)
 
 
 def test_run_count_matrix_mode_accepts_repo_root_relative_paths(tmp_path):
@@ -178,10 +178,10 @@ def test_run_count_matrix_mode_accepts_repo_root_relative_paths(tmp_path):
         return subprocess.CompletedProcess(command, 0, stdout="deseq2 ok\n", stderr="")
 
     monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(geo_pipeline.subprocess, "run", fake_subprocess_run)
-    monkeypatch.setattr(geo_pipeline.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(experiments_pipeline.subprocess, "run", fake_subprocess_run)
+    monkeypatch.setattr(experiments_pipeline.shutil, "which", lambda name: f"/usr/bin/{name}")
     try:
-        result = geo_pipeline.run_ingestion_config(config_path, repo=tmp_path)
+        result = experiments_pipeline.run_ingestion_config(config_path, repo=tmp_path)
     finally:
         monkeypatch.undo()
 
@@ -277,10 +277,10 @@ def test_run_reads_mode_builds_counts_and_writes_de_table(tmp_path):
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
     monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(geo_pipeline.subprocess, "run", fake_subprocess_run)
-    monkeypatch.setattr(geo_pipeline.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(experiments_pipeline.subprocess, "run", fake_subprocess_run)
+    monkeypatch.setattr(experiments_pipeline.shutil, "which", lambda name: f"/usr/bin/{name}")
     try:
-        result = geo_pipeline.run_ingestion_config(config_path, repo=tmp_path)
+        result = experiments_pipeline.run_ingestion_config(config_path, repo=tmp_path)
     finally:
         monkeypatch.undo()
 
@@ -398,10 +398,10 @@ def test_run_reads_mode_can_download_sra_and_prepare_references(tmp_path):
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
     monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(geo_pipeline.subprocess, "run", fake_subprocess_run)
-    monkeypatch.setattr(geo_pipeline.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(experiments_pipeline.subprocess, "run", fake_subprocess_run)
+    monkeypatch.setattr(experiments_pipeline.shutil, "which", lambda name: f"/usr/bin/{name}")
     try:
-        result = geo_pipeline.run_ingestion_config(config_path, repo=tmp_path)
+        result = experiments_pipeline.run_ingestion_config(config_path, repo=tmp_path)
     finally:
         monkeypatch.undo()
 
