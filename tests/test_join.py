@@ -100,6 +100,29 @@ class TestBuildJoined:
         assert "score_mock" in joined.columns
         assert pd.isna(joined[joined["gene_id"] == "ENSG003"]["score_mock"].iloc[0])
 
+    def test_left_join_targetscan_style_columns(self, tmp_path):
+        _write(tmp_path / "de.tsv", (
+            "gene_id\tlogFC\tFDR\n"
+            "ENSG001\t2.0\t0.001\n"
+            "ENSG002\t-1.0\t0.05\n"
+            "ENSG003\t0.5\t0.3\n"
+        ))
+        _write(tmp_path / "scores.tsv", (
+            "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+            "ENSG001\tGENE1\t\thsa-miR-1\t0.9\n"
+            "ENSG002\tGENE2\t\thsa-miR-1\t0.1\n"
+        ))
+        meta = DatasetMeta(
+            id="T003B", miRNA="hsa-miR-1", cell_line="HeLa",
+            tissue="cervix", perturbation="OE", organism="Homo sapiens",
+            geo_accession="GSE002", data_path="de.tsv", root=tmp_path,
+        )
+        predictions = {"mock": {"predictor_output_path": "scores.tsv"}}
+        joined, paths = build_joined(meta, ["mock"], predictions, tmp_path)
+        assert len(joined) == 3
+        assert "score_mock" in joined.columns
+        assert pd.isna(joined[joined["gene_id"] == "ENSG003"]["score_mock"].iloc[0])
+
     def test_duplicate_tool_scores_raise(self, tmp_path):
         _write(tmp_path / "de.tsv", (
             "gene_id\tlogFC\tFDR\n"

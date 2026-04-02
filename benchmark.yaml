@@ -37,7 +37,7 @@ predictors:
   # canonical_id_gene_type: [ensembl_v109]
   # input_id_mirna_type: [mirbase_v22]
   # canonical_id_mirna_type: [mirbase_v22]
-  # predictor_output_path: [data/predictions/mock/mock_predictor_output.tsv]
+  # predictor_output_path: [data/predictions/mock/mock_standardized.tsv]
 
 evaluation:
   fdr_threshold: 0.05
