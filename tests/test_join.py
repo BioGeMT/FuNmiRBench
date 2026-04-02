@@ -85,9 +85,9 @@ class TestBuildJoined:
             "ENSG003\t0.5\t0.3\n"
         ))
         _write(tmp_path / "scores.tsv", (
-            "mirna\tgene_id\tscore\n"
-            "hsa-miR-1\tENSG001\t0.9\n"
-            "hsa-miR-1\tENSG002\t0.1\n"
+            "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+            "ENSG001\tGENE1\t\thsa-miR-1\t0.9\n"
+            "ENSG002\tGENE2\t\thsa-miR-1\t0.1\n"
         ))
         meta = DatasetMeta(
             id="T003", miRNA="hsa-miR-1", cell_line="HeLa",
@@ -107,9 +107,9 @@ class TestBuildJoined:
             "ENSG002\t-1.0\t0.05\n"
         ))
         _write(tmp_path / "scores.tsv", (
-            "mirna\tgene_id\tscore\n"
-            "hsa-miR-1\tENSG001\t0.9\n"
-            "hsa-miR-1\tENSG001\t0.1\n"
+            "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+            "ENSG001\tGENE1\t\thsa-miR-1\t0.9\n"
+            "ENSG001\tGENE1\t\thsa-miR-1\t0.1\n"
         ))
         meta = DatasetMeta(
             id="T006", miRNA="hsa-miR-1", cell_line="HeLa",

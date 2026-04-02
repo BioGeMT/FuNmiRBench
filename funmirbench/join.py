@@ -44,18 +44,24 @@ def load_tool_scores(
         path = root / path
     df = pd.read_csv(path, sep="\t")
     df.columns = [str(c).strip() for c in df.columns]
-    missing = [col for col in ("mirna", "gene_id", "score") if col not in df.columns]
+    required = ("Ensembl_ID", "miRNA_Name", "Score")
+    missing = [col for col in required if col not in df.columns]
     if missing:
         raise ValueError(f"{path} missing required columns: {missing}")
-    df = df[df["mirna"].astype(str) == mirna].copy()
+
+    mirna_col = "miRNA_Name"
+    gene_id_col = "Ensembl_ID"
+    score_col = "Score"
+
+    df = df[df[mirna_col].astype(str) == mirna].copy()
     if min_score is not None:
-        df = df[df["score"].astype(float) >= float(min_score)].copy()
-    df["gene_id"] = df["gene_id"].astype(str)
+        df = df[df[score_col].astype(float) >= float(min_score)].copy()
+    df["gene_id"] = df[gene_id_col].astype(str)
     if df["gene_id"].duplicated().any():
         raise ValueError(
             f"Duplicate mirna+gene scores found for tool {tool_id} in {path}"
         )
-    return df[["gene_id", "score"]].rename(columns={"score": col_name}), path
+    return df[["gene_id", score_col]].rename(columns={score_col: col_name}), path
 
 
 def build_joined(meta, tool_ids, predictions, root, min_score: float | None = None):

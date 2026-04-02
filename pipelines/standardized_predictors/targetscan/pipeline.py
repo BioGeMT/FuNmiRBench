@@ -27,9 +27,6 @@ What this script does
 Score handling
 --------------
 - Score is kept RAW from TargetScan.
-- Score_norm is direction-standardized and rank-normalized so that higher means stronger.
-- For TargetScan, stronger means more negative raw score, so ranking is computed on -1 * raw score.
-- Ranking is computed at the base-row level before family expansion, so miRNA family size does not affect ranks.
 
 Outputs
 -------
@@ -37,7 +34,7 @@ Standardized TSV is written to:
   data/predictions/targetscan/targetscan_standardized.tsv
 
 Schema:
-  Ensembl_ID, Gene_Name, miRNA_ID, miRNA_Name, Score, Score_norm
+  Ensembl_ID, Gene_Name, miRNA_ID, miRNA_Name, Score
 """
 
 from __future__ import annotations
@@ -102,31 +99,6 @@ def _assert_fasta(path: pathlib.Path) -> None:
                 raise RuntimeError(f"Not FASTA (first line: {s[:120]})")
             return
     raise RuntimeError("FASTA check failed: file appears empty.")
-
-
-def _percentile_ranks(values: List[float]) -> List[float]:
-    n = len(values)
-    if n == 0:
-        return []
-
-    indexed = sorted(enumerate(values), key=lambda x: x[1])
-    ranks = [0.0] * n
-
-    i = 0
-    while i < n:
-        j = i + 1
-        while j < n and indexed[j][1] == indexed[i][1]:
-            j += 1
-
-        avg_rank = ((i + 1) + j) / 2.0
-        pct = avg_rank / n
-
-        for k in range(i, j):
-            ranks[indexed[k][0]] = pct
-
-        i = j
-
-    return ranks
 
 
 def setup_logging(log_path: pathlib.Path) -> logging.Logger:
@@ -671,19 +643,16 @@ def step_write_standardized_predictions(
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{PREDICTOR_NAME}_standardized.tsv"
 
-    ranking_values = [-r["score_raw"] for r in rows]
-    rank_scores = _percentile_ranks(ranking_values)
-
     written = Counter()
     with out_path.open("w", encoding="utf-8", newline="") as fout:
         writer = csv.DictWriter(
             fout,
-            fieldnames=["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score", "Score_norm"],
+            fieldnames=["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score"],
             delimiter="\t",
         )
         writer.writeheader()
 
-        for row_obj, rank_score in zip(rows, rank_scores):
+        for row_obj in rows:
             for mir in row_obj["mirs"]:
                 writer.writerow(
                     {
@@ -692,19 +661,10 @@ def step_write_standardized_predictions(
                         "miRNA_ID": mir.mirna_id,
                         "miRNA_Name": mir.mirna_name,
                         "Score": f"{row_obj['score_raw']:.6g}",
-                        "Score_norm": f"{rank_score:.6g}",
                     }
                 )
                 written["written_rows"] += 1
             written["base_rows"] += 1
-
-    logger.info(
-        "%s rank normalization: base_rows=%d | min_rank=%.6g | max_rank=%.6g",
-        PREDICTOR_NAME,
-        len(rows),
-        min(rank_scores) if rank_scores else float("nan"),
-        max(rank_scores) if rank_scores else float("nan"),
-    )
     logger.info(
         "%s -> wrote %d rows (family-expanded) from %d base rows. output=%s",
         PREDICTOR_NAME,

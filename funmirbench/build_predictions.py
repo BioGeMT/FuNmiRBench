@@ -97,9 +97,9 @@ def build_mock_scores(experiments_tsv, root, *, max_genes_per_mirna=5000):
 def write_tsv(scores, out_path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8") as handle:
-        handle.write("mirna\tgene_id\tscore\n")
+        handle.write("Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n")
         for (mirna, gene_id), score in sorted(scores.items()):
-            handle.write(f"{mirna}\t{gene_id}\t{score:.6f}\n")
+            handle.write(f"{gene_id}\t\t\t{mirna}\t{score:.6f}\n")
 
 
 def main():
