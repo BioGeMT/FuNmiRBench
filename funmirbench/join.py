@@ -44,18 +44,14 @@ def load_tool_scores(
         path = root / path
     df = pd.read_csv(path, sep="\t")
     df.columns = [str(c).strip() for c in df.columns]
+    required = ("Ensembl_ID", "miRNA_Name", "Score")
+    missing = [col for col in required if col not in df.columns]
+    if missing:
+        raise ValueError(f"{path} missing required columns: {missing}")
 
-    if {"miRNA_Name", "Ensembl_ID", "Score"}.issubset(df.columns):
-        mirna_col = "miRNA_Name"
-        gene_id_col = "Ensembl_ID"
-        score_col = "Score"
-    else:
-        missing = [col for col in ("mirna", "gene_id", "score") if col not in df.columns]
-        if missing:
-            raise ValueError(f"{path} missing required columns: {missing}")
-        mirna_col = "mirna"
-        gene_id_col = "gene_id"
-        score_col = "score"
+    mirna_col = "miRNA_Name"
+    gene_id_col = "Ensembl_ID"
+    score_col = "Score"
 
     df = df[df[mirna_col].astype(str) == mirna].copy()
     if min_score is not None:
