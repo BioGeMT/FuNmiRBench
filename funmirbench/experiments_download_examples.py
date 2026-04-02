@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import pathlib
 
 import requests
+
+from funmirbench.logger import parse_log_level, setup_logging
 
 
 EXAMPLES = {
@@ -68,6 +71,8 @@ EXAMPLES = {
 
 DEFAULT_SELECTION = ["ensembl-v109-refs", "gse253003-counts", "gse93717-reads"]
 
+logger = logging.getLogger(__name__)
+
 
 def repo_root() -> pathlib.Path:
     return pathlib.Path(__file__).resolve().parents[1]
@@ -75,18 +80,18 @@ def repo_root() -> pathlib.Path:
 
 def download_file(url: str, dest: pathlib.Path, *, force: bool) -> None:
     if dest.exists() and not force:
-        print(f"skip {dest}")
+        logger.warning("skip %s", dest)
         return
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    print(f"download {url}")
+    logger.info("download %s", url)
     response = requests.get(url, stream=True, timeout=120)
     response.raise_for_status()
     with dest.open("wb") as handle:
         for chunk in response.iter_content(chunk_size=1024 * 1024):
             if chunk:
                 handle.write(chunk)
-    print(f"saved {dest}")
+    logger.info("saved %s", dest)
 
 
 def resolve_selection(selection: list[str]) -> list[str]:
@@ -101,7 +106,7 @@ def resolve_selection(selection: list[str]) -> list[str]:
 def download_examples(selection: list[str], *, repo: pathlib.Path | None = None, force: bool = False) -> None:
     repo = (repo or repo_root()).resolve()
     for name in resolve_selection(selection):
-        print(f"== {name} ==")
+        logger.info("== %s ==", name)
         for target in EXAMPLES[name]["targets"]:
             download_file(target["url"], repo / target["dest"], force=force)
 
@@ -115,12 +120,18 @@ def parse_args() -> argparse.Namespace:
         choices=["all", *EXAMPLES.keys()],
         help="Example input to download. Repeat for multiple selections. Defaults to all.",
     )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    setup_logging(parse_log_level(args.log_level))
     download_examples(args.examples or ["all"], force=args.force)
 
 
