@@ -2,12 +2,16 @@
 
 import argparse
 import hashlib
+import logging
 import math
 import pathlib
 
 import pandas as pd
 
 from funmirbench.de_table import extract_gene_ids, find_gene_id_column, read_de_table
+from funmirbench.logger import parse_log_level, setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 def stable_hash_float(s):
@@ -108,7 +112,14 @@ def main():
     parser.add_argument("--out", type=pathlib.Path, required=True)
     parser.add_argument("--root", type=pathlib.Path, default=None)
     parser.add_argument("--max-genes-per-mirna", type=int, default=5000)
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    )
     args = parser.parse_args()
+
+    setup_logging(parse_log_level(args.log_level))
 
     root = (args.root or args.experiments_tsv.parent).resolve()
     scores = build_mock_scores(
@@ -117,7 +128,7 @@ def main():
         max_genes_per_mirna=args.max_genes_per_mirna,
     )
     write_tsv(scores, args.out.resolve())
-    print(f"Wrote {len(scores)} rows to {args.out}")
+    logger.info("Wrote %s rows to %s", len(scores), args.out)
 
 
 if __name__ == "__main__":
