@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import pathlib
 from urllib.parse import quote
@@ -131,3 +132,51 @@ def ensure_zenodo_experiment_cached(
             )
 
     return dest
+
+
+def sync_all_zenodo_experiments(
+    *,
+    repo: pathlib.Path | None = None,
+    token: str | None = None,
+    timeout: int = 120,
+    force: bool = False,
+) -> list[pathlib.Path]:
+    repo = (repo or repo_root()).resolve()
+    registry = fetch_zenodo_file_registry(token=token, timeout=timeout)
+
+    saved = []
+    for filename in sorted(registry):
+        rel_path = pathlib.Path("data") / "experiments" / "processed" / filename
+        print(f"sync {filename}")
+        saved.append(
+            ensure_zenodo_experiment_cached(
+                rel_path,
+                repo=repo,
+                registry=registry,
+                timeout=timeout,
+                force=force,
+            )
+        )
+    return saved
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Sync all benchmark experiment DE tables from Zenodo."
+    )
+    parser.add_argument("--repo", type=pathlib.Path, default=None)
+    parser.add_argument("--token", default=None)
+    parser.add_argument("--timeout", type=int, default=120)
+    parser.add_argument("--force", action="store_true")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    saved = sync_all_zenodo_experiments(
+        repo=args.repo,
+        token=args.token,
+        timeout=args.timeout,
+        force=args.force,
+    )
+    print(f"Synced {len(saved)} experiment tables into data/experiments/processed/")

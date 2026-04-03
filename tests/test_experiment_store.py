@@ -1,4 +1,5 @@
 import hashlib
+import pathlib
 
 import pytest
 
@@ -157,3 +158,78 @@ def test_ensure_zenodo_experiment_cached_raises_for_unknown_filename(tmp_path):
             repo=tmp_path,
             registry={},
         )
+
+
+def test_sync_all_zenodo_experiments_downloads_every_registry_file(tmp_path, monkeypatch, capsys):
+    seen = []
+
+    def fake_fetch_registry(*, token=None, timeout=120):
+        assert token is None
+        assert timeout == 120
+        return {
+            "b.tsv": {"filename": "b.tsv", "checksum": "md5:b", "url": "https://zenodo/b"},
+            "a.tsv": {"filename": "a.tsv", "checksum": "md5:a", "url": "https://zenodo/a"},
+        }
+
+    def fake_ensure(path, *, repo=None, registry=None, token=None, timeout=120, force=False):
+        seen.append((str(path), repo, registry, token, timeout, force))
+        return repo / path
+
+    monkeypatch.setattr(experiment_store, "fetch_zenodo_file_registry", fake_fetch_registry)
+    monkeypatch.setattr(experiment_store, "ensure_zenodo_experiment_cached", fake_ensure)
+
+    saved = experiment_store.sync_all_zenodo_experiments(repo=tmp_path, force=True)
+
+    assert saved == [
+        tmp_path / "data" / "experiments" / "processed" / "a.tsv",
+        tmp_path / "data" / "experiments" / "processed" / "b.tsv",
+    ]
+    assert seen == [
+        (
+            "data\\experiments\\processed\\a.tsv",
+            tmp_path,
+            {
+                "b.tsv": {"filename": "b.tsv", "checksum": "md5:b", "url": "https://zenodo/b"},
+                "a.tsv": {"filename": "a.tsv", "checksum": "md5:a", "url": "https://zenodo/a"},
+            },
+            None,
+            120,
+            True,
+        ),
+        (
+            "data\\experiments\\processed\\b.tsv",
+            tmp_path,
+            {
+                "b.tsv": {"filename": "b.tsv", "checksum": "md5:b", "url": "https://zenodo/b"},
+                "a.tsv": {"filename": "a.tsv", "checksum": "md5:a", "url": "https://zenodo/a"},
+            },
+            None,
+            120,
+            True,
+        ),
+    ]
+    assert capsys.readouterr().out.splitlines() == ["sync a.tsv", "sync b.tsv"]
+
+
+def test_main_syncs_all_and_prints_summary(monkeypatch, capsys):
+    monkeypatch.setattr(
+        experiment_store,
+        "parse_args",
+        lambda: experiment_store.argparse.Namespace(
+            repo=pathlib.Path("repo"),
+            token="tok",
+            timeout=90,
+            force=True,
+        ),
+    )
+    monkeypatch.setattr(
+        experiment_store,
+        "sync_all_zenodo_experiments",
+        lambda **kwargs: [pathlib.Path("one.tsv"), pathlib.Path("two.tsv")],
+    )
+
+    experiment_store.main()
+
+    assert capsys.readouterr().out.splitlines() == [
+        "Synced 2 experiment tables into data/experiments/processed/"
+    ]
