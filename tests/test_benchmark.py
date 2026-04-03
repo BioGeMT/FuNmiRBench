@@ -12,6 +12,20 @@ from funmirbench.build_cheating_predictions import build_cheating_scores
 from funmirbench.build_predictions import build_mock_scores, write_tsv
 
 
+def test_selected_experiment_paths_applies_filters(tmp_path):
+    experiments_tsv = tmp_path / "experiments.tsv"
+    pd.DataFrame(
+        [
+            {"id": "A", "de_table_path": "data/experiments/processed/a.tsv", "mirna_name": "m1"},
+            {"id": "B", "de_table_path": "data/experiments/processed/b.tsv", "mirna_name": "m2"},
+        ]
+    ).to_csv(experiments_tsv, sep="\t", index=False)
+
+    paths = benchmark.selected_experiment_paths(experiments_tsv, {"id": ["B"]})
+
+    assert paths == ["data/experiments/processed/b.tsv"]
+
+
 def test_example_end_to_end(tmp_path):
     """Run a small two-predictor benchmark config and check outputs."""
     repo_root = pathlib.Path(__file__).resolve().parents[1]
@@ -200,8 +214,8 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
 
     sync_calls = []
 
-    def fake_sync_all_zenodo_experiments(*, repo=None, token=None, timeout=120, force=False):
-        sync_calls.append((repo, token, timeout, force))
+    def fake_sync_zenodo_experiments(paths, *, repo=None, registry=None, token=None, timeout=120, force=False):
+        sync_calls.append((paths, repo, token, timeout, force))
         dest = repo / "data" / "experiments" / "processed" / "demo.tsv"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(
@@ -211,7 +225,7 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
         )
         return [dest]
 
-    monkeypatch.setattr(benchmark, "sync_all_zenodo_experiments", fake_sync_all_zenodo_experiments)
+    monkeypatch.setattr(benchmark, "sync_zenodo_experiments", fake_sync_zenodo_experiments)
     monkeypatch.setattr(
         benchmark,
         "evaluate_joined_dataframe",
@@ -230,7 +244,7 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
     out_dir = benchmark.run_benchmark(config)
 
     assert out_dir == results_dir.resolve()
-    assert sync_calls == [(tmp_path, None, 120, False)]
+    assert sync_calls == [(["data/experiments/processed/demo.tsv"], tmp_path, None, 120, False)]
     joined = pd.read_csv(results_dir / "joined" / "T001.tsv", sep="\t")
     assert joined["gene_id"].tolist() == ["ENSG1"]
     assert joined["score_predictor_1"].tolist() == [0.9]

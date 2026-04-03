@@ -140,14 +140,43 @@ def sync_all_zenodo_experiments(
     token: str | None = None,
     timeout: int = 120,
     force: bool = False,
-) -> list[pathlib.Path]:
+    ) -> list[pathlib.Path]:
     repo = (repo or repo_root()).resolve()
     registry = fetch_zenodo_file_registry(token=token, timeout=timeout)
 
+    return sync_zenodo_experiments(
+        [
+            pathlib.Path("data") / "experiments" / "processed" / filename
+            for filename in sorted(registry)
+        ],
+        repo=repo,
+        registry=registry,
+        timeout=timeout,
+        force=force,
+    )
+
+
+def sync_zenodo_experiments(
+    de_table_paths: list[str | pathlib.Path],
+    *,
+    repo: pathlib.Path | None = None,
+    registry: dict[str, dict] | None = None,
+    token: str | None = None,
+    timeout: int = 120,
+    force: bool = False,
+) -> list[pathlib.Path]:
+    repo = (repo or repo_root()).resolve()
+    registry = registry or fetch_zenodo_file_registry(token=token, timeout=timeout)
+
     saved = []
-    for filename in sorted(registry):
-        rel_path = pathlib.Path("data") / "experiments" / "processed" / filename
-        print(f"sync {filename}")
+    seen = set()
+    for de_table_path in de_table_paths:
+        rel_path = pathlib.Path(de_table_path)
+        key = str(rel_path)
+        if key in seen:
+            continue
+        seen.add(key)
+        print(f"sync {rel_path.name}")
         saved.append(
             ensure_zenodo_experiment_cached(
                 rel_path,
@@ -158,6 +187,7 @@ def sync_all_zenodo_experiments(
             )
         )
     return saved
+
 
 
 def parse_args() -> argparse.Namespace:

@@ -70,8 +70,8 @@ Then run the default benchmark:
 uv run funmirbench --config benchmark.yaml
 ```
 
-Before benchmarking, `funmirbench` now syncs the full curated experiment table set from Zenodo into
-`data/experiments/processed/`. The metadata stays in the repo, but the benchmark DE tables are
+Before benchmarking, `funmirbench` syncs the selected curated experiment DE tables from Zenodo
+into `data/experiments/processed/`. The metadata stays in the repo, but the benchmark DE tables are
 treated as fetched local cache rather than committed repo contents.
 
 The default config already points at:
@@ -217,9 +217,8 @@ Run it with:
 uv run funmirbench --config benchmark.yaml
 ```
 
-That command automatically syncs the curated experiment DE tables referenced by
-`metadata/mirna_experiment_info.tsv` from Zenodo into the local `data/experiments/processed/`
-cache before joining predictions.
+That command automatically syncs only the experiment DE tables selected by your benchmark config
+from Zenodo into the local `data/experiments/processed/` cache before joining predictions.
 
 If you want to prefetch the full curated experiment cache yourself, you can also run:
 
