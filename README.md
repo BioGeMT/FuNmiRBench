@@ -37,7 +37,7 @@ That environment also includes `uv`, so `uv run ...` keeps working after activat
 
 Main directories:
 
-- `data/experiments/processed/`: experiment DE tables used by the benchmark
+- `data/experiments/processed/`: local cache for experiment DE tables used by the benchmark
 - `data/experiments/raw/`: local raw GEO inputs such as count matrices and FASTQs
 - `data/predictions/`: local generated predictor TSVs
 - `metadata/mirna_experiment_info.tsv`: experiment registry
@@ -52,9 +52,8 @@ is only for benchmark output.
 ## Quick Start
 
 If you just want to run the benchmark, you do not need the experiments pipeline first. The repo
-already ships:
+already includes:
 
-- processed experiment DE tables in `data/experiments/processed/`
 - experiment metadata in `metadata/mirna_experiment_info.tsv`
 - predictor metadata in `metadata/predictions_info.tsv`
 
@@ -71,6 +70,10 @@ Then run the default benchmark:
 uv run funmirbench --config benchmark.yaml
 ```
 
+Before benchmarking, `funmirbench` now syncs the full curated experiment table set from Zenodo into
+`data/experiments/processed/`. The metadata stays in the repo, but the benchmark DE tables are
+treated as fetched local cache rather than committed repo contents.
+
 The default config already points at:
 
 - `metadata/mirna_experiment_info.tsv`
@@ -84,6 +87,10 @@ and selects 3 real experiment datasets plus 2 demo predictors.
 
 The experiment-ingestion pipeline creates the same DE tables that the benchmark consumes from
 `data/experiments/processed/`.
+
+For the curated benchmark datasets tracked in `metadata/mirna_experiment_info.tsv`, the expected
+workflow is different: those metadata rows stay versioned in the repo, while the corresponding DE
+tables are fetched from Zenodo into the local `data/experiments/processed/` cache when needed.
 
 Experiment config summary:
 
@@ -210,6 +217,16 @@ Run it with:
 uv run funmirbench --config benchmark.yaml
 ```
 
+That command automatically syncs the curated experiment DE tables referenced by
+`metadata/mirna_experiment_info.tsv` from Zenodo into the local `data/experiments/processed/`
+cache before joining predictions.
+
+If you want to prefetch the full curated experiment cache yourself, you can also run:
+
+```bash
+uv run funmirbench-experiments-store
+```
+
 YAML paths can be:
 
 - absolute paths
@@ -266,6 +283,7 @@ When 2 or more predictors are selected, each dataset gets:
 
 ```bash
 uv run funmirbench --config benchmark.yaml
+uv run funmirbench-experiments-store
 uv run funmirbench-validate-experiments --experiments-tsv metadata/mirna_experiment_info.tsv
 uv run funmirbench-experiments-download-examples
 uv run funmirbench-experiments --config config.yaml

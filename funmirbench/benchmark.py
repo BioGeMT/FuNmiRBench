@@ -11,6 +11,7 @@ import yaml
 
 from funmirbench import DatasetMeta
 from funmirbench.evaluate import evaluate_joined_dataframe, write_metric_tables
+from funmirbench.experiment_store import sync_all_zenodo_experiments
 from funmirbench.join import build_joined
 
 
@@ -84,6 +85,10 @@ def run_benchmark(config_path):
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
     root = config_path.parent
+
+    log("Syncing experiment DE tables from Zenodo...")
+    synced = sync_all_zenodo_experiments(repo=root)
+    log(f"Synced {len(synced)} experiment DE tables.")
 
     log("Loading experiments...")
     experiments = load_experiments(
