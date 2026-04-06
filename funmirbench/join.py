@@ -52,15 +52,26 @@ def load_tool_scores(
     mirna_col = "miRNA_Name"
     gene_id_col = "Ensembl_ID"
     score_col = "Score"
+    score_direction = str(tool_meta.get("score_direction", "higher_is_stronger") or "higher_is_stronger")
 
     df = df[df[mirna_col].astype(str) == mirna].copy()
     if min_score is not None:
         df = df[df[score_col].astype(float) >= float(min_score)].copy()
+    df[score_col] = df[score_col].astype(float)
+    if score_direction == "lower_is_stronger":
+        # Convert all predictors to a common "higher is stronger" convention
+        # before downstream evaluation.
+        df[score_col] = -df[score_col]
+    elif score_direction != "higher_is_stronger":
+        raise ValueError(
+            f"Unsupported score_direction {score_direction!r} for tool {tool_id!r}."
+        )
     df["gene_id"] = df[gene_id_col].astype(str)
     if df["gene_id"].duplicated().any():
-        raise ValueError(
-            f"Duplicate mirna+gene scores found for tool {tool_id} in {path}"
-        )
+        # Some predictors can emit repeated miRNA+gene rows after family expansion.
+        # Keep the strongest score using the normalized "higher is stronger" scale.
+        df = df.groupby("gene_id", as_index=False)[score_col].max()
+        return df.rename(columns={score_col: col_name}), path
     return df[["gene_id", score_col]].rename(columns={score_col: col_name}), path
 
 

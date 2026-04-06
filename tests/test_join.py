@@ -100,7 +100,7 @@ class TestBuildJoined:
         assert "score_mock" in joined.columns
         assert pd.isna(joined[joined["gene_id"] == "ENSG003"]["score_mock"].iloc[0])
 
-    def test_duplicate_tool_scores_raise(self, tmp_path):
+    def test_duplicate_tool_scores_keep_strongest(self, tmp_path):
         _write(tmp_path / "de.tsv", (
             "gene_id\tlogFC\tFDR\n"
             "ENSG001\t2.0\t0.001\n"
@@ -117,5 +117,80 @@ class TestBuildJoined:
             geo_accession="GSE006", data_path="de.tsv", root=tmp_path,
         )
         predictions = {"mock": {"predictor_output_path": "scores.tsv"}}
-        with pytest.raises(ValueError, match="Duplicate mirna\\+gene scores"):
-            build_joined(meta, ["mock"], predictions, tmp_path)
+        joined, _ = build_joined(meta, ["mock"], predictions, tmp_path)
+        scored = joined.set_index("gene_id")["score_mock"].to_dict()
+        assert scored["ENSG001"] == 0.9
+
+    def test_lower_is_stronger_scores_are_inverted(self, tmp_path):
+        _write(tmp_path / "de.tsv", (
+            "gene_id\tlogFC\tFDR\n"
+            "ENSG001\t2.0\t0.001\n"
+            "ENSG002\t-1.0\t0.05\n"
+        ))
+        _write(tmp_path / "scores.tsv", (
+            "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+            "ENSG001\tGENE1\t\thsa-miR-1\t-0.9\n"
+            "ENSG002\tGENE2\t\thsa-miR-1\t-0.1\n"
+        ))
+        meta = DatasetMeta(
+            id="T007", miRNA="hsa-miR-1", cell_line="HeLa",
+            tissue="cervix", perturbation="OE", organism="Homo sapiens",
+            geo_accession="GSE007", data_path="de.tsv", root=tmp_path,
+        )
+        predictions = {
+            "targetscan": {
+                "predictor_output_path": "scores.tsv",
+                "score_direction": "lower_is_stronger",
+            }
+        }
+        joined, _ = build_joined(meta, ["targetscan"], predictions, tmp_path)
+        scored = joined.set_index("gene_id")["score_targetscan"].to_dict()
+        assert scored["ENSG001"] == 0.9
+        assert scored["ENSG002"] == 0.1
+
+    def test_invalid_score_direction_raises(self, tmp_path):
+        _write(tmp_path / "de.tsv", (
+            "gene_id\tlogFC\tFDR\n"
+            "ENSG001\t2.0\t0.001\n"
+        ))
+        _write(tmp_path / "scores.tsv", (
+            "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+            "ENSG001\tGENE1\t\thsa-miR-1\t0.9\n"
+        ))
+        meta = DatasetMeta(
+            id="T008", miRNA="hsa-miR-1", cell_line="HeLa",
+            tissue="cervix", perturbation="OE", organism="Homo sapiens",
+            geo_accession="GSE008", data_path="de.tsv", root=tmp_path,
+        )
+        predictions = {
+            "bad_tool": {
+                "predictor_output_path": "scores.tsv",
+                "score_direction": "sideways_is_stronger",
+            }
+        }
+        with pytest.raises(ValueError, match="Unsupported score_direction"):
+            build_joined(meta, ["bad_tool"], predictions, tmp_path)
+
+    def test_duplicate_lower_is_stronger_scores_keep_strongest(self, tmp_path):
+        _write(tmp_path / "de.tsv", (
+            "gene_id\tlogFC\tFDR\n"
+            "ENSG001\t2.0\t0.001\n"
+        ))
+        _write(tmp_path / "scores.tsv", (
+            "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+            "ENSG001\tGENE1\t\thsa-miR-1\t-0.2\n"
+            "ENSG001\tGENE1\t\thsa-miR-1\t-0.9\n"
+        ))
+        meta = DatasetMeta(
+            id="T009", miRNA="hsa-miR-1", cell_line="HeLa",
+            tissue="cervix", perturbation="OE", organism="Homo sapiens",
+            geo_accession="GSE009", data_path="de.tsv", root=tmp_path,
+        )
+        predictions = {
+            "targetscan": {
+                "predictor_output_path": "scores.tsv",
+                "score_direction": "lower_is_stronger",
+            }
+        }
+        joined, _ = build_joined(meta, ["targetscan"], predictions, tmp_path)
+        assert joined.loc[0, "score_targetscan"] == 0.9
