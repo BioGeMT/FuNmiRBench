@@ -6,6 +6,7 @@ This directory contains the standardization pipeline for TEC-miTarget gene-level
 
 - `pipeline.py`: CLI entrypoint for the pipeline.
 - `utils.py`: shared helpers for logging, downloads, cleaning, mapping, and output construction.
+- `tec_mitarget.log`: example log from a completed run.
 
 The prediction files used by this pipeline were shared by the respective authors via email and are stored under `data/TEC-miTarget-model-predictions`.
 
