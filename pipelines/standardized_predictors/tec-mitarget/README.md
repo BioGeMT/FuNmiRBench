@@ -1,0 +1,71 @@
+# TEC-miTarget
+
+This directory contains the standardization pipeline for TEC-miTarget gene-level predictions.
+
+## Files
+
+- `pipeline.py`: CLI entrypoint for the pipeline.
+- `utils.py`: shared helpers for logging, downloads, cleaning, mapping, and output construction.
+
+The prediction files used by this pipeline were shared by the respective authors via email and are stored under `data/TEC-miTarget-model-predictions`.
+
+## What The Pipeline Does
+
+The pipeline:
+
+1. Downloads miRBase `mature.fa` version 22.1.
+2. Downloads a headerless BioMart TSV with:
+   - `Gene stable ID`
+   - `Gene name`
+   - `RefSeq mRNA ID`
+3. Loads TEC-miTarget prediction files from `test_split_0` through `test_split_9`.
+4. Drops rows with missing or invalid values in:
+   - `query_ids`
+   - `target_ids`
+   - `predictions`
+5. Deduplicates prediction rows on those same three columns.
+6. Raises if the same `(query_ids, target_ids)` pair has conflicting prediction scores.
+7. Builds a miRNA mapping from human miRBase names (`hsa-*`) to `MIMAT` IDs.
+8. Builds a RefSeq-to-gene mapping from BioMart after:
+   - dropping invalid rows
+   - dropping duplicate rows
+   - dropping RefSeq IDs that map to more than one row
+9. Maps:
+   - `query_ids` to `miRNA_ID`
+   - `target_ids` to `Ensembl_ID` and `Gene_Name`
+10. Drops rows that fail either mapping.
+11. Writes the standardized output table.
+
+## Output Schema
+
+The output TSV contains:
+
+- `Ensembl_ID`
+- `Gene_Name`
+- `miRNA_ID`
+- `miRNA_Name`
+- `Score`
+
+`miRNA_Name` is copied from `query_ids`. `Score` is the numeric form of `predictions`.
+
+## Run
+
+From this directory:
+
+```bash
+python pipeline.py
+```
+
+## CLI Arguments
+
+```bash
+python pipeline.py \
+  --predictions-root data/TEC-miTarget-model-predictions \
+  --resources-dir data/resources \
+  --output tec_mitarget_standardised.tsv \
+  --log-file tec_mitarget.log
+```
+
+## Logging
+
+Logging is written both to stdout and to the log file passed via `--log-file`.
