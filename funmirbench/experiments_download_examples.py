@@ -80,7 +80,7 @@ def repo_root() -> pathlib.Path:
 
 def download_file(url: str, dest: pathlib.Path, *, force: bool) -> None:
     if dest.exists() and not force:
-        logger.warning("skip %s", dest)
+        logger.info("skip %s", dest)
         return
 
     dest.parent.mkdir(parents=True, exist_ok=True)
