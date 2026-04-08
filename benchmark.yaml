@@ -22,7 +22,7 @@ experiments:
   # tissue: [Cervix]
   # method: [RNA-seq]
   # gse_url: [https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE124530]
-  # de_table_path: [data/experiments/processed/GSE124530_edger_out_oe_hsa_miR_10a_5p_oe_10a5p.tsv]
+  # de_table_path: [data/experiments/processed/18745741/GSE124530_edger_out_oe_hsa_miR_10a_5p_oe_10a5p.tsv]
 
 # Filter predictors by ANY column in the predictions TSV.
 # The default repo config compares the built-in weak and strong demo predictors.

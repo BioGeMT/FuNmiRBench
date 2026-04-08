@@ -16,14 +16,14 @@ def test_selected_experiment_paths_applies_filters(tmp_path):
     experiments_tsv = tmp_path / "experiments.tsv"
     pd.DataFrame(
         [
-            {"id": "A", "de_table_path": "data/experiments/processed/a.tsv", "mirna_name": "m1"},
-            {"id": "B", "de_table_path": "data/experiments/processed/b.tsv", "mirna_name": "m2"},
+            {"id": "A", "de_table_path": "data/experiments/processed/18745741/a.tsv", "mirna_name": "m1"},
+            {"id": "B", "de_table_path": "data/experiments/processed/18745741/b.tsv", "mirna_name": "m2"},
         ]
     ).to_csv(experiments_tsv, sep="\t", index=False)
 
     paths = benchmark.selected_experiment_paths(experiments_tsv, {"id": ["B"]})
 
-    assert paths == ["data/experiments/processed/b.tsv"]
+    assert paths == ["data/experiments/processed/18745741/b.tsv"]
 
 
 def test_example_end_to_end(tmp_path):
@@ -176,7 +176,7 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
                 "experiment_type": "OE",
                 "organism": "Homo sapiens",
                 "gse_url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE000001",
-                "de_table_path": "data/experiments/processed/demo.tsv",
+                "de_table_path": "data/experiments/processed/18745741/demo.tsv",
             }
         ]
     ).to_csv(experiments_tsv, sep="\t", index=False)
@@ -216,7 +216,7 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
 
     def fake_sync_zenodo_experiments(paths, *, repo=None, registry=None, token=None, timeout=120, force=False):
         sync_calls.append((paths, repo, token, timeout, force))
-        dest = repo / "data" / "experiments" / "processed" / "demo.tsv"
+        dest = repo / "data" / "experiments" / "processed" / "18745741" / "demo.tsv"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(
             "gene_id\tlogFC\tFDR\tPValue\n"
@@ -244,7 +244,7 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
     out_dir = benchmark.run_benchmark(config)
 
     assert out_dir == results_dir.resolve()
-    assert sync_calls == [(["data/experiments/processed/demo.tsv"], tmp_path, None, 120, False)]
+    assert sync_calls == [(["data/experiments/processed/18745741/demo.tsv"], tmp_path, None, 120, False)]
     joined = pd.read_csv(results_dir / "joined" / "T001.tsv", sep="\t")
     assert joined["gene_id"].tolist() == ["ENSG1"]
     assert joined["score_predictor_1"].tolist() == [0.9]

@@ -18,9 +18,17 @@ def repo_root() -> pathlib.Path:
     return pathlib.Path(__file__).resolve().parents[1]
 
 
-def experiments_processed_dir(*, repo: pathlib.Path | None = None) -> pathlib.Path:
+def experiments_cache_root_dir(*, repo: pathlib.Path | None = None) -> pathlib.Path:
     repo = (repo or repo_root()).resolve()
     return repo / "data" / "experiments" / "processed"
+
+
+def experiments_processed_dir(*, repo: pathlib.Path | None = None) -> pathlib.Path:
+    return experiments_cache_root_dir(repo=repo) / ZENODO_RECORD
+
+
+def experiment_cache_relpath(filename: str | pathlib.Path) -> pathlib.Path:
+    return pathlib.Path("data") / "experiments" / "processed" / ZENODO_RECORD / pathlib.Path(filename).name
 
 
 def compute_md5(path: str | pathlib.Path, *, chunk_size: int = 1024 * 1024) -> str:
@@ -146,7 +154,7 @@ def sync_all_zenodo_experiments(
 
     return sync_zenodo_experiments(
         [
-            pathlib.Path("data") / "experiments" / "processed" / filename
+            experiment_cache_relpath(filename)
             for filename in sorted(registry)
         ],
         repo=repo,
@@ -209,4 +217,7 @@ def main() -> None:
         timeout=args.timeout,
         force=args.force,
     )
-    print(f"Synced {len(saved)} experiment tables into data/experiments/processed/")
+    print(
+        "Synced "
+        f"{len(saved)} experiment tables into data/experiments/processed/{ZENODO_RECORD}/"
+    )

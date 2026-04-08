@@ -83,7 +83,7 @@ def test_ensure_zenodo_experiment_cached_downloads_and_verifies_md5(tmp_path, mo
     monkeypatch.setattr(experiment_store.requests, "get", fake_get)
 
     out = experiment_store.ensure_zenodo_experiment_cached(
-        "data/experiments/processed/demo.tsv",
+        "data/experiments/processed/18745741/demo.tsv",
         repo=tmp_path,
         registry={
             "demo.tsv": {
@@ -95,14 +95,14 @@ def test_ensure_zenodo_experiment_cached_downloads_and_verifies_md5(tmp_path, mo
     )
 
     assert out == (
-        tmp_path / "data" / "experiments" / "processed" / "demo.tsv"
+        tmp_path / "data" / "experiments" / "processed" / "18745741" / "demo.tsv"
     )
     assert out.read_bytes() == content
     assert seen == [("https://zenodo.example/demo.tsv/content", True, 120)]
 
 
 def test_ensure_zenodo_experiment_cached_reuses_valid_existing_file(tmp_path, monkeypatch):
-    dest = tmp_path / "data" / "experiments" / "processed" / "demo.tsv"
+    dest = tmp_path / "data" / "experiments" / "processed" / "18745741" / "demo.tsv"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text("ok\n", encoding="utf-8")
     expected_md5 = hashlib.md5(dest.read_bytes()).hexdigest()
@@ -113,7 +113,7 @@ def test_ensure_zenodo_experiment_cached_reuses_valid_existing_file(tmp_path, mo
     monkeypatch.setattr(experiment_store.requests, "get", fail_get)
 
     out = experiment_store.ensure_zenodo_experiment_cached(
-        "data/experiments/processed/demo.tsv",
+        "data/experiments/processed/18745741/demo.tsv",
         repo=tmp_path,
         registry={
             "demo.tsv": {
@@ -128,7 +128,7 @@ def test_ensure_zenodo_experiment_cached_reuses_valid_existing_file(tmp_path, mo
 
 
 def test_ensure_zenodo_experiment_cached_rejects_bad_existing_checksum(tmp_path, monkeypatch):
-    dest = tmp_path / "data" / "experiments" / "processed" / "demo.tsv"
+    dest = tmp_path / "data" / "experiments" / "processed" / "18745741" / "demo.tsv"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text("wrong\n", encoding="utf-8")
 
@@ -139,7 +139,7 @@ def test_ensure_zenodo_experiment_cached_rejects_bad_existing_checksum(tmp_path,
 
     with pytest.raises(ValueError, match="failed checksum verification"):
         experiment_store.ensure_zenodo_experiment_cached(
-            "data/experiments/processed/demo.tsv",
+            "data/experiments/processed/18745741/demo.tsv",
             repo=tmp_path,
             registry={
                 "demo.tsv": {
@@ -154,7 +154,7 @@ def test_ensure_zenodo_experiment_cached_rejects_bad_existing_checksum(tmp_path,
 def test_ensure_zenodo_experiment_cached_raises_for_unknown_filename(tmp_path):
     with pytest.raises(KeyError, match="not present in Zenodo record"):
         experiment_store.ensure_zenodo_experiment_cached(
-            "data/experiments/processed/missing.tsv",
+            "data/experiments/processed/18745741/missing.tsv",
             repo=tmp_path,
             registry={},
         )
@@ -181,12 +181,12 @@ def test_sync_all_zenodo_experiments_downloads_every_registry_file(tmp_path, mon
     saved = experiment_store.sync_all_zenodo_experiments(repo=tmp_path, force=True)
 
     assert saved == [
-        tmp_path / "data" / "experiments" / "processed" / "a.tsv",
-        tmp_path / "data" / "experiments" / "processed" / "b.tsv",
+        tmp_path / "data" / "experiments" / "processed" / "18745741" / "a.tsv",
+        tmp_path / "data" / "experiments" / "processed" / "18745741" / "b.tsv",
     ]
     assert seen == [
         (
-            "data\\experiments\\processed\\a.tsv",
+            str(pathlib.Path("data/experiments/processed/18745741/a.tsv")),
             tmp_path,
             {
                 "b.tsv": {"filename": "b.tsv", "checksum": "md5:b", "url": "https://zenodo/b"},
@@ -197,7 +197,7 @@ def test_sync_all_zenodo_experiments_downloads_every_registry_file(tmp_path, mon
             True,
         ),
         (
-            "data\\experiments\\processed\\b.tsv",
+            str(pathlib.Path("data/experiments/processed/18745741/b.tsv")),
             tmp_path,
             {
                 "b.tsv": {"filename": "b.tsv", "checksum": "md5:b", "url": "https://zenodo/b"},
@@ -226,21 +226,21 @@ def test_sync_zenodo_experiments_syncs_only_selected_unique_paths(tmp_path, monk
 
     saved = experiment_store.sync_zenodo_experiments(
         [
-            "data/experiments/processed/b.tsv",
-            "data/experiments/processed/a.tsv",
-            "data/experiments/processed/b.tsv",
+            "data/experiments/processed/18745741/b.tsv",
+            "data/experiments/processed/18745741/a.tsv",
+            "data/experiments/processed/18745741/b.tsv",
         ],
         repo=tmp_path,
         registry=registry,
     )
 
     assert saved == [
-        tmp_path / "data" / "experiments" / "processed" / "b.tsv",
-        tmp_path / "data" / "experiments" / "processed" / "a.tsv",
+        tmp_path / "data" / "experiments" / "processed" / "18745741" / "b.tsv",
+        tmp_path / "data" / "experiments" / "processed" / "18745741" / "a.tsv",
     ]
     assert seen == [
         (
-            "data\\experiments\\processed\\b.tsv",
+            str(pathlib.Path("data/experiments/processed/18745741/b.tsv")),
             tmp_path,
             registry,
             None,
@@ -248,7 +248,7 @@ def test_sync_zenodo_experiments_syncs_only_selected_unique_paths(tmp_path, monk
             False,
         ),
         (
-            "data\\experiments\\processed\\a.tsv",
+            str(pathlib.Path("data/experiments/processed/18745741/a.tsv")),
             tmp_path,
             registry,
             None,
@@ -279,5 +279,5 @@ def test_main_syncs_all_and_prints_summary(monkeypatch, capsys):
     experiment_store.main()
 
     assert capsys.readouterr().out.splitlines() == [
-        "Synced 2 experiment tables into data/experiments/processed/"
+        "Synced 2 experiment tables into data/experiments/processed/18745741/"
     ]

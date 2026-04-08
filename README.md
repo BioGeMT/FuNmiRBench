@@ -37,7 +37,8 @@ That environment also includes `uv`, so `uv run ...` keeps working after activat
 
 Main directories:
 
-- `data/experiments/processed/`: local cache for experiment DE tables used by the benchmark
+- `data/experiments/processed/`: root directory for processed experiment DE tables
+- `data/experiments/processed/18745741/`: local cache for curated benchmark DE tables fetched from Zenodo record `18745741`
 - `data/experiments/raw/`: local raw GEO inputs such as count matrices and FASTQs
 - `data/predictions/`: local generated predictor TSVs
 - `metadata/mirna_experiment_info.tsv`: experiment registry
@@ -71,7 +72,7 @@ uv run funmirbench --config benchmark.yaml
 ```
 
 Before benchmarking, `funmirbench` syncs the selected curated experiment DE tables from Zenodo
-into `data/experiments/processed/`. The metadata stays in the repo, but the benchmark DE tables are
+into `data/experiments/processed/18745741/`. The metadata stays in the repo, but the benchmark DE tables are
 treated as fetched local cache rather than committed repo contents.
 
 The default config already points at:
@@ -85,12 +86,12 @@ and selects 3 real experiment datasets plus 2 demo predictors.
 
 ### 1. Add Experiment Data
 
-The experiment-ingestion pipeline creates the same DE tables that the benchmark consumes from
-`data/experiments/processed/`.
+The experiment-ingestion pipeline creates DE tables under `data/experiments/processed/` for local
+workflow use.
 
 For the curated benchmark datasets tracked in `metadata/mirna_experiment_info.tsv`, the expected
 workflow is different: those metadata rows stay versioned in the repo, while the corresponding DE
-tables are fetched from Zenodo into the local `data/experiments/processed/` cache when needed.
+tables are fetched from Zenodo into the local `data/experiments/processed/18745741/` cache when needed.
 
 Experiment config summary:
 
@@ -218,7 +219,7 @@ uv run funmirbench --config benchmark.yaml
 ```
 
 That command automatically syncs only the experiment DE tables selected by your benchmark config
-from Zenodo into the local `data/experiments/processed/` cache before joining predictions.
+from Zenodo into the local `data/experiments/processed/18745741/` cache before joining predictions.
 
 If you want to prefetch the full curated experiment cache yourself, you can also run:
 
