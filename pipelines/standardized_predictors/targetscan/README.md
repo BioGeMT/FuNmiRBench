@@ -66,14 +66,6 @@ uv run pipeline.py
 uv run pipeline.py --log-level INFO
 ```
 
-Supported log levels:
-
-- `DEBUG`
-- `INFO`
-- `WARNING`
-- `ERROR`
-- `CRITICAL`
-
 ## Logging
 
 Logging is written both to stdout and to `targetscan_pipeline.log`.
