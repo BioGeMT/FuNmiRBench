@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import logging
 import pathlib
 import shutil
 import urllib.parse
@@ -13,15 +14,20 @@ from funmirbench import DatasetMeta
 from funmirbench.evaluate import evaluate_joined_dataframe, write_metric_tables
 from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
+from funmirbench.logger import parse_log_level, setup_logging
 
 
-def log(message):
-    print(message, flush=True)
+logger = logging.getLogger(__name__)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run the FuNmiRBench benchmark.")
     parser.add_argument("--config", type=pathlib.Path, required=True)
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    )
     return parser.parse_args()
 
 
@@ -87,13 +93,13 @@ def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
 
 def run_benchmark(config_path):
     config_path = config_path.expanduser().resolve()
-    log(f"Config: {config_path}")
-    log("Loading benchmark config...")
+    logger.info(f"Config: {config_path}")
+    logger.info("Loading benchmark config...")
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
     root = config_path.parent
 
-    log("Syncing selected experiment DE tables from Zenodo...")
+    logger.info("Syncing selected experiment DE tables from Zenodo...")
     synced = sync_zenodo_experiments(
         selected_experiment_paths(
             root / config["experiments_tsv"],
@@ -101,9 +107,9 @@ def run_benchmark(config_path):
         ),
         repo=root,
     )
-    log(f"Synced {len(synced)} experiment DE tables.")
+    logger.info(f"Synced {len(synced)} experiment DE tables.")
 
-    log("Loading experiments...")
+    logger.info("Loading experiments...")
     experiments = load_experiments(
         root / config["experiments_tsv"],
         root,
@@ -112,7 +118,7 @@ def run_benchmark(config_path):
     if not experiments:
         raise ValueError("Experiment selection resolved to no datasets.")
 
-    log("Loading predictors...")
+    logger.info("Loading predictors...")
     predictions = load_predictions(
         root / config["predictions_tsv"],
         config.get("predictors"),
@@ -134,19 +140,19 @@ def run_benchmark(config_path):
     metric_rows = []
     dataset_outputs = []
 
-    log(f"Experiments: {len(experiments)}")
-    log(f"Predictors:  {tool_ids}")
+    logger.info(f"Experiments: {len(experiments)}")
+    logger.info(f"Predictors:  {tool_ids}")
 
     for meta in experiments:
-        log(f"Dataset: {meta.id} | {meta.miRNA} | {meta.cell_line}")
+        logger.info(f"Dataset: {meta.id} | {meta.miRNA} | {meta.cell_line}")
         clear_dataset_outputs(meta.id, plots_dir, reports_dir)
-        log(f"  Joining predictions for {meta.id}...")
+        logger.info(f"  Joining predictions for {meta.id}...")
         joined, predictor_output_paths = build_joined(meta, tool_ids, predictions, root)
         joined_path = joined_dir / f"{meta.id}.tsv"
         joined.to_csv(joined_path, sep="\t", index=False)
-        log(f"  Wrote joined table: {joined_path}")
+        logger.info(f"  Wrote joined table: {joined_path}")
 
-        log(f"  Evaluating metrics and plots for {meta.id}...")
+        logger.info(f"  Evaluating metrics and plots for {meta.id}...")
         evaluation = evaluate_joined_dataframe(
             joined,
             plots_dir=plots_dir,
@@ -178,9 +184,9 @@ def run_benchmark(config_path):
                 "predictor_correlation_tsv": evaluation["predictor_correlation_tsv"],
             }
         )
-        log(f"  Finished {meta.id}")
+        logger.info(f"  Finished {meta.id}")
 
-    log("Writing metric tables...")
+    logger.info("Writing metric tables...")
     metric_tables = write_metric_tables(metric_rows, tables_dir)
 
     summary = {
@@ -193,14 +199,15 @@ def run_benchmark(config_path):
     }
     summary_path = out_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    log(f"Wrote summary: {summary_path}")
+    logger.info(f"Wrote summary: {summary_path}")
     return out_dir
 
 
 def main():
     args = parse_args()
+    setup_logging(parse_log_level(args.log_level))
     out_dir = run_benchmark(args.config)
-    log(f"Done. Results in {out_dir}")
+    logger.info(f"Done. Results in {out_dir}")
 
 
 if __name__ == "__main__":

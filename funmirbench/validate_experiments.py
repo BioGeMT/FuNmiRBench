@@ -1,12 +1,17 @@
 """Validate that experiment DE tables referenced by metadata exist and are readable."""
 
 import argparse
+import logging
 import pathlib
 from typing import Iterable
 
 import pandas as pd
 
 from funmirbench.de_table import read_de_table
+from funmirbench.logger import parse_log_level, setup_logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def resolve_de_table_path(
@@ -37,7 +42,10 @@ def main():
     parser = argparse.ArgumentParser(description="Validate experiment DE table files.")
     parser.add_argument("--experiments-tsv", type=pathlib.Path, required=True)
     parser.add_argument("--root", type=pathlib.Path, default=None)
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
     args = parser.parse_args()
+
+    setup_logging(parse_log_level(args.log_level))
 
     experiments_tsv = args.experiments_tsv.resolve()
     root = args.root.resolve() if args.root is not None else None
@@ -65,17 +73,17 @@ def main():
         except Exception as exc:
             unreadable.append((row["id"], str(exc)))
 
-    print(f"Datasets in metadata: {total}")
-    print(f"Files present:        {present}")
-    print(f"Readable DE tables:   {readable}")
+    logger.info("Datasets in metadata: %s", total)
+    logger.info("Files present:        %s", present)
+    logger.info("Readable DE tables:   %s", readable)
     if missing:
-        print(f"Missing files:        {len(missing)}")
+        logger.warning("Missing files:        %s", len(missing))
         for dataset_id, path in missing[:20]:
-            print(f"  - {dataset_id}: {path}")
+            logger.warning("  - %s: %s", dataset_id, path)
     if unreadable:
-        print(f"Unreadable files:     {len(unreadable)}")
+        logger.error("Unreadable files:     %s", len(unreadable))
         for dataset_id, message in unreadable[:20]:
-            print(f"  - {dataset_id}: {message}")
+            logger.error("  - %s: %s", dataset_id, message)
 
 
 if __name__ == "__main__":
