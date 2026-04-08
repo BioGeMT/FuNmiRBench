@@ -1,6 +1,7 @@
 """Generate a strong demo-only predictor from DE labels."""
 
 import argparse
+import logging
 import math
 import pathlib
 
@@ -8,6 +9,9 @@ import pandas as pd
 
 from funmirbench.build_predictions import stable_hash_float, write_tsv
 from funmirbench.de_table import find_gene_id_column, read_de_table
+from funmirbench.logger import parse_log_level, setup_logging
+
+logger = logging.getLogger(__name__)
 
 DEMO_DATASET_IDS = [
     "GSE109725_OE_miR_204_5p",
@@ -123,7 +127,14 @@ def main():
     parser.add_argument("--fdr-threshold", type=float, default=0.05)
     parser.add_argument("--abs-logfc-threshold", type=float, default=1.0)
     parser.add_argument("--negative-leak-fraction", type=float, default=0.008)
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    )
     args = parser.parse_args()
+
+    setup_logging(parse_log_level(args.log_level))
 
     root = (args.root or args.experiments_tsv.parent).resolve()
     dataset_ids = args.dataset_ids or DEMO_DATASET_IDS
@@ -136,7 +147,7 @@ def main():
         negative_leak_fraction=args.negative_leak_fraction,
     )
     write_tsv(scores, args.out.resolve())
-    print(f"Wrote {len(scores)} rows to {args.out}")
+    logger.info("Wrote %s rows to %s", len(scores), args.out)
 
 
 if __name__ == "__main__":

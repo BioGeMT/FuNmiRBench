@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import logging
 import os
 import pathlib
 import re
@@ -18,7 +19,11 @@ import pandas as pd
 import requests
 import yaml
 
+from funmirbench.logger import parse_log_level, setup_logging
+
 GSE_URL_TEMPLATE = "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={gse}"
+
+logger = logging.getLogger(__name__)
 
 
 def repo_root() -> pathlib.Path:
@@ -47,10 +52,6 @@ def ensure_clean_dir(path: pathlib.Path, *, force: bool) -> None:
 
 def write_json(obj, path: pathlib.Path) -> None:
     path.write_text(json.dumps(obj, indent=2) + "\n", encoding="utf-8")
-
-
-def log(message: str) -> None:
-    print(message, flush=True)
 
 
 def default_thread_count(*, cap: int, floor: int = 4) -> int:
@@ -297,7 +298,7 @@ def run_deseq2_from_counts(
     output_path: pathlib.Path,
 ) -> tuple[list[str], pathlib.Path, pathlib.Path]:
     require_local_binary("Rscript")
-    log("Running DESeq2 from count matrix...")
+    logger.info("Running DESeq2 from count matrix...")
     r_script = repo / "pipelines" / "experiments" / "run_deseq2_counts.R"
     command = [
         "Rscript",
@@ -547,7 +548,7 @@ def build_salmon_index(
 ) -> tuple[pathlib.Path, list[str], pathlib.Path, pathlib.Path]:
     require_local_binary("salmon")
     threads = int(source_cfg.get("salmon_threads", default_thread_count(cap=32)))
-    log(f"Building Salmon index with {threads} threads...")
+    logger.info("Building Salmon index with %s threads...", threads)
     out_dir = run_dir / "reference" / "salmon_index"
     out_dir.parent.mkdir(parents=True, exist_ok=True)
     extra_args = [str(arg) for arg in source_cfg.get("salmon_index_extra_args", [])]
@@ -645,7 +646,7 @@ def prepare_reference_assets(
             current_run_dir=run_dir,
         )
         if reused_salmon_index is not None:
-            log(f"Reusing Salmon index from {reused_salmon_index.parent.parent.name}...")
+            logger.info("Reusing Salmon index from %s...", reused_salmon_index.parent.parent.name)
             salmon_index = reused_salmon_index
             generated["reused_salmon_index"] = True
             if reused_tx2gene_tsv is not None:
@@ -718,7 +719,7 @@ def run_salmon_quant(
 ) -> pathlib.Path:
     require_local_binary("salmon")
     threads = int(source_cfg.get("salmon_threads", default_thread_count(cap=32)))
-    log(f"Running Salmon for sample {sample['sample_id']} with {threads} threads...")
+    logger.info("Running Salmon for sample %s with %s threads...", sample["sample_id"], threads)
     out_dir = run_dir / "salmon" / sample["sample_id"]
     out_dir.mkdir(parents=True, exist_ok=True)
     extra_args = [str(arg) for arg in source_cfg.get("salmon_extra_args", ["--validateMappings"])]
@@ -771,7 +772,12 @@ def run_sra_download(
     require_local_binary("fasterq-dump")
     accession = sample["sra_accession"]
     threads = int(source_cfg.get("sra_threads", default_thread_count(cap=16)))
-    log(f"Downloading reads for sample {sample['sample_id']} from {accession} with {threads} threads...")
+    logger.info(
+        "Downloading reads for sample %s from %s with %s threads...",
+        sample["sample_id"],
+        accession,
+        threads,
+    )
     sample_reads_dir = run_dir / "reads" / sample["sample_id"]
     sample_reads_dir.mkdir(parents=True, exist_ok=True)
     sra_cache_dir = run_dir / "sra"
@@ -863,7 +869,7 @@ def run_deseq2(
     output_path: pathlib.Path,
 ) -> tuple[list[str], pathlib.Path, pathlib.Path]:
     require_local_binary("Rscript")
-    log("Running tximport + DESeq2...")
+    logger.info("Running tximport + DESeq2...")
     r_script = repo / "pipelines" / "experiments" / "run_deseq2.R"
     command = [
         "Rscript",
@@ -897,9 +903,9 @@ def run_count_matrix_mode(
     run_dir: pathlib.Path,
     force: bool,
 ) -> dict:
-    log(f"Mode: count_matrix ({config['dataset_id']})")
+    logger.info("Mode: count_matrix (%s)", config["dataset_id"])
     source_cfg = config.get("source", {})
-    log("Loading count matrix...")
+    logger.info("Loading count matrix...")
     counts_df, counts_source, count_matrix_url = load_source_table(
         source_cfg,
         path_key="count_matrix_path",
@@ -947,9 +953,9 @@ def run_reads_mode(
     run_dir: pathlib.Path,
     force: bool,
 ) -> dict:
-    log(f"Mode: reads ({config['dataset_id']})")
+    logger.info("Mode: reads (%s)", config["dataset_id"])
     source_cfg = config.get("source", {})
-    log("Loading reads config...")
+    logger.info("Loading reads config...")
     control_samples, treated_samples = load_reads_samples(config, config_path=config_path, repo=repo)
     control_samples, treated_samples, download_manifest = materialize_reads_samples(
         source_cfg=source_cfg,
@@ -959,7 +965,7 @@ def run_reads_mode(
         treated_samples=treated_samples,
     )
     sample_sheet = write_reads_sample_sheet(run_dir, control_samples, treated_samples)
-    log("Preparing references...")
+    logger.info("Preparing references...")
     reference_assets = prepare_reference_assets(
         dataset_id=config["dataset_id"],
         source_cfg=source_cfg,
@@ -981,7 +987,7 @@ def run_reads_mode(
             sample_id=sample["sample_id"],
         )
         if reusable_quant is not None:
-            log(f"Reusing Salmon quant for sample {sample['sample_id']}...")
+            logger.info("Reusing Salmon quant for sample %s...", sample["sample_id"])
             quant_paths[sample["sample_id"]] = reusable_quant
             reused_quant_samples.append(sample["sample_id"])
         else:
@@ -1064,7 +1070,7 @@ def run_ingestion_config(config_path: pathlib.Path, repo: pathlib.Path | None = 
     run_dir = repo / "pipelines" / "experiments" / "runs" / f"{utc_now_stamp()}_{dataset_id}"
     ensure_clean_dir(run_dir, force=force)
     shutil.copy2(config_path, run_dir / "config.yaml")
-    log(f"Run dir: {run_dir}")
+    logger.info("Run dir: %s", run_dir)
 
     source_cfg = config.get("source", {})
     mode = normalize_space(source_cfg.get("mode", ""))
@@ -1085,14 +1091,19 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run one experiment-ingestion config.")
     parser.add_argument("--config", type=pathlib.Path, required=True)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    )
     return parser.parse_args(argv)
 
 
 def main() -> None:
     args = parse_args()
+    setup_logging(parse_log_level(args.log_level))
     result = run_ingestion_config(args.config, force=args.force)
-    print(f"Run dir: {result['run_dir']}")
-    print(f"DE table: {result['de_table_path']}")
+    logger.info("DE table: %s", result["de_table_path"])
 
 
 if __name__ == "__main__":

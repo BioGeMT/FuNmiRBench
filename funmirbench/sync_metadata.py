@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import pathlib
 import sys
 
 import pandas as pd
+
+from funmirbench.logger import parse_log_level, setup_logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def repo_root() -> pathlib.Path:
@@ -112,16 +118,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--kind", choices=sorted(REGISTRIES), required=True)
     parser.add_argument("--input", type=pathlib.Path, action="append", default=[])
     parser.add_argument("--registry", type=pathlib.Path)
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
     return parser.parse_args(sys.argv[1:])
 
 
 def main() -> None:
     args = parse_args()
+    setup_logging(parse_log_level(args.log_level))
     result = sync_metadata(kind=args.kind, inputs=args.input, registry_path=args.registry)
-    print(f"Registry: {result['registry']}")
-    print(f"Rows before: {result['rows_before']}")
-    print(f"Rows added or updated: {result['rows_added_or_updated']}")
-    print(f"Rows after: {result['rows_after']}")
+    logger.info("Registry: %s", result["registry"])
+    logger.info("Rows before: %s", result["rows_before"])
+    logger.info("Rows added or updated: %s", result["rows_added_or_updated"])
+    logger.info("Rows after: %s", result["rows_after"])
 
 
 if __name__ == "__main__":
