@@ -22,11 +22,13 @@ What this script does
 5) Downloads miRBase mature.fa pinned to release 22.1 and parses accession->name mapping.
 
 6) Builds one standardized prediction set from Summary_Counts.all_predictions.txt:
-   - targetscan (score: Cumulative weighted context++ score)
+   - targetscan (score: raw Cumulative weighted context++ score)
 
 Score handling
 --------------
 - Score is kept RAW from TargetScan.
+- Rows are dropped when the Ensembl gene recovered from the transcript does not
+  agree with TargetScan's own gene annotation for that transcript.
 
 Outputs
 -------
@@ -48,7 +50,7 @@ import urllib.request
 import zipfile
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 
 logger = logging.getLogger(__name__)
@@ -175,8 +177,9 @@ def step2_build_representative_transcript_index(
 ) -> Dict[str, Any]:
     logger.info("\n=== STEP 2/7: Build representative-transcript index from Gene_info.txt ===")
 
-    best_tx_by_gene_id: Dict[str, Tuple[str, int, str]] = {}
+    rep_txs_by_gene_id: Dict[str, List[Tuple[str, int, str]]] = {}
     gene_id_by_tx: Dict[str, str] = {}
+    targetscan_gene_id_by_tx: Dict[str, str] = {}
     gene_symbol_by_gene_id: Dict[str, str] = {}
 
     tag_count_dist: Counter[int] = Counter()
@@ -198,25 +201,26 @@ def step2_build_representative_transcript_index(
 
             tx = row["Transcript ID"].strip()
             gene_id = row["Gene ID"].strip()
+            gene_id_stable = _strip_version(gene_id)
             gene_sym = row["Gene symbol"].strip()
             rep_flag = row["Representative transcript?"].strip()
             tags = int(row["3P-seq tags"].strip())
 
             gene_id_by_tx[tx] = gene_id
-            gene_symbol_by_gene_id[gene_id] = gene_sym
-            tx_count_by_gene[gene_id] += 1
+            targetscan_gene_id_by_tx[tx] = gene_id_stable
+            gene_symbol_by_gene_id[gene_id_stable] = gene_sym
+            tx_count_by_gene[gene_id_stable] += 1
 
             if rep_flag != "1":
                 continue
 
             n_rep_rows += 1
-            rep_count_by_gene[gene_id] += 1
+            rep_count_by_gene[gene_id_stable] += 1
             tag_count_dist[tags] += 1
 
-            if gene_id not in best_tx_by_gene_id:
-                best_tx_by_gene_id[gene_id] = (tx, tags, gene_sym)
+            rep_txs_by_gene_id.setdefault(gene_id_stable, []).append((tx, tags, gene_sym))
 
-    genes_with_rep = len(best_tx_by_gene_id)
+    genes_with_rep = len(rep_txs_by_gene_id)
     genes_with_multi_rep = sum(1 for c in rep_count_by_gene.values() if c > 1)
 
     logger.info(
@@ -235,6 +239,21 @@ def step2_build_representative_transcript_index(
         "Representative-transcript QC: genes_with_multiple_representative_rows=%d",
         genes_with_multi_rep
     )
+    if genes_with_multi_rep:
+        logger.info("Genes with >1 representative transcript were found; all representative transcripts will be kept.")
+        multi_rep_examples = 0
+        for gene_id, reps in rep_txs_by_gene_id.items():
+            if len(reps) <= 1:
+                continue
+            logger.info(
+                "  multi-representative gene: %s (%s transcripts) -> %s",
+                gene_id,
+                len(reps),
+                ", ".join(tx for tx, _tags, _sym in reps[:report_top_n]),
+            )
+            multi_rep_examples += 1
+            if multi_rep_examples >= report_top_n:
+                break
 
     top_tags = tag_count_dist.most_common(report_top_n)
     logger.info(
@@ -243,12 +262,14 @@ def step2_build_representative_transcript_index(
         " | ".join([f"{k}:{v}" for k, v in top_tags]),
     )
 
-    for gid, (tx, tags, sym) in list(best_tx_by_gene_id.items())[:3]:
+    for gid, reps in list(rep_txs_by_gene_id.items())[:3]:
+        tx, tags, sym = reps[0]
         logger.info("  sample representative transcript: %s -> %s (3P-seq tags=%d, symbol=%s)", gid, tx, tags, sym)
 
     return {
-        "best_tx_by_gene_id": best_tx_by_gene_id,
+        "rep_txs_by_gene_id": rep_txs_by_gene_id,
         "gene_id_by_tx": gene_id_by_tx,
+        "targetscan_gene_id_by_tx": targetscan_gene_id_by_tx,
         "gene_symbol_by_gene_id": gene_symbol_by_gene_id,
     }
 
@@ -374,7 +395,8 @@ def step5_qc_targetscan_vs_ensembl_transcripts(
     logger.info("\n=== STEP 5/7: QC TargetScan representative transcript overlap with Ensembl v115 ===")
 
     gene_id_by_tx = tx_index["gene_id_by_tx"]
-    best_tx_by_gene_id = tx_index["best_tx_by_gene_id"]
+    targetscan_gene_id_by_tx = tx_index["targetscan_gene_id_by_tx"]
+    rep_txs_by_gene_id = tx_index["rep_txs_by_gene_id"]
     tx_to_gene_ensembl = ensembl_tables["tx_to_gene"]
 
     ts_all_tx = list(gene_id_by_tx.keys())
@@ -385,12 +407,39 @@ def step5_qc_targetscan_vs_ensembl_transcripts(
     logger.info("Ensembl v115 transcripts indexed: %d", len(tx_to_gene_ensembl))
     logger.info("Overlap (stable transcript ID): %d", stripped_hits)
 
-    ts_rep_tx = [tx for (tx, _tags, _sym) in best_tx_by_gene_id.values()]
+    ts_rep_tx = [tx for reps in rep_txs_by_gene_id.values() for (tx, _tags, _sym) in reps]
     ts_rep_tx_stripped = [_strip_version(t) for t in ts_rep_tx]
     rep_hits = sum(1 for t in ts_rep_tx_stripped if t in tx_to_gene_ensembl)
 
     logger.info("TargetScan representative transcripts: %d", len(ts_rep_tx))
     logger.info("Representative-transcript overlap with Ensembl (stable transcript ID): %d", rep_hits)
+
+    rep_gene_matches = 0
+    rep_gene_mismatches = 0
+    mismatch_examples = []
+    mismatch_example_keys = set()
+    for tx_raw in ts_rep_tx:
+        tx_stable = _strip_version(tx_raw)
+        ensembl_gene_id = tx_to_gene_ensembl.get(tx_stable)
+        if ensembl_gene_id is None:
+            continue
+        targetscan_gene_id = targetscan_gene_id_by_tx.get(tx_raw)
+        if targetscan_gene_id == ensembl_gene_id:
+            rep_gene_matches += 1
+        else:
+            rep_gene_mismatches += 1
+            if len(mismatch_examples) < report_n:
+                mismatch_examples.append((tx_raw, targetscan_gene_id or "NA", ensembl_gene_id))
+
+    logger.info(
+        "Representative transcript gene-ID agreement vs Ensembl: match=%d | mismatch=%d",
+        rep_gene_matches,
+        rep_gene_mismatches,
+    )
+    if mismatch_examples:
+        logger.info("Sample representative transcript gene-ID mismatches (tx -> TargetScan gene -> Ensembl gene):")
+        for tx_raw, targetscan_gene_id, ensembl_gene_id in mismatch_examples:
+            logger.info("  %s -> %s -> %s", tx_raw, targetscan_gene_id, ensembl_gene_id)
 
     misses = []
     for raw, stripped in zip(ts_rep_tx, ts_rep_tx_stripped):
@@ -544,35 +593,47 @@ def step_write_standardized_predictions(
 ) -> None:
     logger.info("\n=== Write standardized predictions (%s) ===", PREDICTOR_NAME)
 
-    best_tx_by_gene_id = tx_index["best_tx_by_gene_id"]
-    gene_id_by_tx_ts = tx_index["gene_id_by_tx"]
+    rep_txs_by_gene_id = tx_index["rep_txs_by_gene_id"]
+    targetscan_gene_id_by_tx = tx_index["targetscan_gene_id_by_tx"]
     tx_to_gene_ens = ensembl_tables["tx_to_gene"]
     gene_to_name_ens = ensembl_tables["gene_to_name"]
+
+    representative_tx_set = {
+        tx
+        for reps in rep_txs_by_gene_id.values()
+        for tx, _tags, _sym in reps
+    }
 
     out_predictions_dir = pathlib.Path(out_predictions_dir)
     out_predictions_dir.mkdir(parents=True, exist_ok=True)
 
+    out_dir = out_predictions_dir / PREDICTOR_NAME
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{PREDICTOR_NAME}_standardized.tsv"
+
     stats = Counter()
-    weakest_nonnull_raw = None
+    mismatch_examples = []
+    mismatch_example_keys = set()
+    null_score_examples = []
+    unique_rows: Dict[Tuple[str, str], Dict[str, str | float]] = {}
+    pre_mismatch_pair_counts: Counter[Tuple[str, str]] = Counter()
+    post_mismatch_pair_counts: Counter[Tuple[str, str]] = Counter()
 
     with pathlib.Path(summary_counts_path).open("r", encoding="utf-8") as fin:
-        reader = csv.DictReader(fin, delimiter="\t")
+        summary_reader = csv.DictReader(fin, delimiter="\t")
 
-        for row in reader:
+        for row in summary_reader:
             if row["Species ID"].strip() != species_id:
                 continue
 
             tx_raw = row["Transcript ID"].strip()
-            gene_id_ts = gene_id_by_tx_ts.get(tx_raw)
-            if gene_id_ts is None:
-                continue
-
-            best = best_tx_by_gene_id.get(gene_id_ts)
-            if best is None or tx_raw != best[0]:
+            if tx_raw not in representative_tx_set:
                 continue
 
             tx_stable = _strip_version(tx_raw)
-            if tx_stable not in tx_to_gene_ens:
+            gene_id_ens = tx_to_gene_ens.get(tx_stable)
+            if gene_id_ens is None:
+                stats["rows_missing_ensembl_gene"] += 1
                 continue
 
             representative_mirna = row["Representative miRNA"].strip()
@@ -581,88 +642,115 @@ def step_write_standardized_predictions(
                 stats["rows_missing_mirna_annotation"] += 1
                 continue
 
-            stats["rows_after_filters"] += 1
-            v = _to_float_or_none(row[TARGETSCAN_SCORE_COL])
-            if v is None:
-                stats["rows_null_score"] += 1
+            pre_mismatch_pair_counts[(gene_id_ens, mirna_entry.mirna_id)] += 1
+
+            targetscan_gene_id = targetscan_gene_id_by_tx.get(tx_raw)
+            if targetscan_gene_id != gene_id_ens:
+                stats["rows_gene_id_mismatch"] += 1
+                sample_key = (tx_raw, targetscan_gene_id or "NA", gene_id_ens)
+                if len(mismatch_examples) < 10 and sample_key not in mismatch_example_keys:
+                    mismatch_example_keys.add(sample_key)
+                    mismatch_examples.append((tx_raw, targetscan_gene_id or "NA", gene_id_ens))
                 continue
 
-            stats["rows_nonnull_score"] += 1
-            if weakest_nonnull_raw is None or v > weakest_nonnull_raw:
-                weakest_nonnull_raw = v
+            raw_score = _to_float_or_none(row[TARGETSCAN_SCORE_COL])
+            if raw_score is None:
+                stats["rows_null_score"] += 1
+                if len(null_score_examples) < 10:
+                    null_score_examples.append((tx_raw, representative_mirna))
+                continue
+
+            stats["rows_after_filters"] += 1
+            key = (gene_id_ens, mirna_entry.mirna_id)
+            post_mismatch_pair_counts[key] += 1
+            if key in unique_rows:
+                stats["duplicate_gene_mirna_rows"] += 1
+                if raw_score < float(unique_rows[key]["Score"]):
+                    unique_rows[key] = {
+                        "Ensembl_ID": gene_id_ens,
+                        "Gene_Name": gene_to_name_ens.get(gene_id_ens) or row["Gene Symbol"].strip(),
+                        "miRNA_ID": mirna_entry.mirna_id,
+                        "miRNA_Name": mirna_entry.mirna_name,
+                        "Score": raw_score,
+                    }
+                continue
+
+            unique_rows[key] = {
+                "Ensembl_ID": gene_id_ens,
+                "Gene_Name": gene_to_name_ens.get(gene_id_ens) or row["Gene Symbol"].strip(),
+                "miRNA_ID": mirna_entry.mirna_id,
+                "miRNA_Name": mirna_entry.mirna_name,
+                "Score": raw_score,
+            }
+
+    if stats["rows_null_score"]:
+        details = ", ".join(f"{tx}/{mirna}" for tx, mirna in null_score_examples)
+        raise ValueError(
+            f"Unexpected NULL {TARGETSCAN_SCORE_COL!r} values after filtering: "
+            f"{stats['rows_null_score']} rows. Sample rows: {details}"
+        )
 
     if stats["rows_after_filters"] == 0:
         raise ValueError(f"No rows remain after filters for {PREDICTOR_NAME}.")
-    if weakest_nonnull_raw is None:
-        raise ValueError(f"No non-NULL scores remain after filters for {PREDICTOR_NAME}.")
 
-    logger.info(
-        "%s score column '%s': weakest raw(non-NULL)=%.6g | NULL rows=%d (imputed as %.6g) | rows_missing_mirna_annotation=%d",
-        PREDICTOR_NAME,
-        TARGETSCAN_SCORE_COL,
-        weakest_nonnull_raw,
-        stats["rows_null_score"],
-        weakest_nonnull_raw,
-        stats["rows_missing_mirna_annotation"],
+    duplicate_pairs_before_mismatch = sum(1 for c in pre_mismatch_pair_counts.values() if c > 1)
+    duplicate_pairs_after_mismatch = sum(1 for c in post_mismatch_pair_counts.values() if c > 1)
+    rep_gene_mismatch_count = sum(
+        1 for reps in rep_txs_by_gene_id.values()
+        for tx_raw, _tags, _sym in reps
+        if (
+            (targetscan_gene_id_by_tx.get(tx_raw) is not None)
+            and (_strip_version(tx_raw) in tx_to_gene_ens)
+            and (targetscan_gene_id_by_tx.get(tx_raw) != tx_to_gene_ens[_strip_version(tx_raw)])
+        )
     )
 
-    out_dir = out_predictions_dir / PREDICTOR_NAME
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{PREDICTOR_NAME}_standardized.tsv"
+    logger.info(
+        "%s score column '%s': kept raw TargetScan score | rows_missing_mirna_annotation=%d | rows_missing_ensembl_gene=%d | rows_gene_id_mismatch=%d | NULL rows=%d",
+        PREDICTOR_NAME,
+        TARGETSCAN_SCORE_COL,
+        stats["rows_missing_mirna_annotation"],
+        stats["rows_missing_ensembl_gene"],
+        stats["rows_gene_id_mismatch"],
+        stats["rows_null_score"],
+    )
+    logger.info(
+        "Filtering summary: %s NULL scores after filtering | %s representative transcripts whose TargetScan gene ID disagrees with Ensembl",
+        f"{stats['rows_null_score']:,}",
+        f"{rep_gene_mismatch_count:,}",
+    )
+    logger.info(
+        "Filtering summary: %s summary rows dropped by the TargetScan/Ensembl gene mismatch filter | duplicate gene-miRNA pairs %s -> %s",
+        f"{stats['rows_gene_id_mismatch']:,}",
+        f"{duplicate_pairs_before_mismatch:,}",
+        f"{duplicate_pairs_after_mismatch:,}",
+    )
+    if mismatch_examples:
+        logger.info("Sample rows dropped for TargetScan/Ensembl gene-ID mismatch (tx -> TargetScan gene -> Ensembl gene):")
+        for tx_raw, targetscan_gene_id, gene_id_ens in mismatch_examples:
+            logger.info("  %s -> %s -> %s", tx_raw, targetscan_gene_id, gene_id_ens)
 
-    written = Counter()
-    with pathlib.Path(summary_counts_path).open("r", encoding="utf-8") as fin, out_path.open("w", encoding="utf-8", newline="") as fout:
-        summary_reader = csv.DictReader(fin, delimiter="\t")
+    with out_path.open("w", encoding="utf-8", newline="") as fout:
         writer = csv.DictWriter(
             fout,
             fieldnames=["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score"],
             delimiter="\t",
         )
         writer.writeheader()
-
-        for row in summary_reader:
-            if row["Species ID"].strip() != species_id:
-                continue
-
-            tx_raw = row["Transcript ID"].strip()
-            gene_id_ts = gene_id_by_tx_ts.get(tx_raw)
-            if gene_id_ts is None:
-                continue
-
-            best = best_tx_by_gene_id.get(gene_id_ts)
-            if best is None or tx_raw != best[0]:
-                continue
-
-            tx_stable = _strip_version(tx_raw)
-            gene_id_ens = tx_to_gene_ens.get(tx_stable)
-            if gene_id_ens is None:
-                continue
-
-            representative_mirna = row["Representative miRNA"].strip()
-            mirna_entry = mirna_annotations.get(representative_mirna)
-            if mirna_entry is None:
-                continue
-
-            raw_score = _to_float_or_none(row[TARGETSCAN_SCORE_COL])
-            if raw_score is None:
-                raw_score = weakest_nonnull_raw
-
+        for record in sorted(unique_rows.values(), key=lambda row: (str(row["Ensembl_ID"]), str(row["miRNA_ID"]))):
             writer.writerow(
                 {
-                    "Ensembl_ID": gene_id_ens,
-                    "Gene_Name": gene_to_name_ens.get(gene_id_ens) or row["Gene Symbol"].strip(),
-                    "miRNA_ID": mirna_entry.mirna_id,
-                    "miRNA_Name": mirna_entry.mirna_name,
-                    "Score": f"{float(raw_score):.6g}",
+                    **record,
+                    "Score": f"{float(record['Score']):.6g}",
                 }
             )
-            written["written_rows"] += 1
-            written["base_rows"] += 1
+
     logger.info(
-        "%s -> wrote %d rows from %d base rows using Representative miRNA annotations. output=%s",
+        "%s -> wrote %d unique gene-miRNA rows from %d kept transcript-level rows; collapsed_duplicate_rows=%d. output=%s",
         PREDICTOR_NAME,
-        written["written_rows"],
-        written["base_rows"],
+        len(unique_rows),
+        stats["rows_after_filters"],
+        stats["duplicate_gene_mirna_rows"],
         out_path,
     )
 
