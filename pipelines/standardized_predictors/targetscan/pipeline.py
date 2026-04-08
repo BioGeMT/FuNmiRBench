@@ -46,9 +46,9 @@ import pathlib
 import shutil
 import urllib.request
 import zipfile
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 
 logger = logging.getLogger(__name__)
@@ -455,16 +455,15 @@ class MirnaEntry:
     mirna_name: str
 
 
-def step_mirfamily_to_human_matures(
+def step_build_human_mirna_annotations(
     mir_family_info_path: pathlib.Path,
     *,
     mirbase_acc2name: Dict[str, str],
     species_id: str = "9606",
-) -> Dict[str, List[MirnaEntry]]:
-    logger.info("\n=== STEP 7/7 Build miRNA family -> human mature miRNAs mapping (validated against miRBase v22.1) ===")
+) -> Dict[str, MirnaEntry]:
+    logger.info("\n=== STEP 7/7 Build human mature miRNA annotation lookup (validated against miRBase v22.1) ===")
 
-    fam2mirs: Dict[str, List[MirnaEntry]] = defaultdict(list)
-    seen: Dict[str, set[Tuple[str, str]]] = defaultdict(set)
+    annotations: Dict[str, MirnaEntry] = {}
 
     n_total = 0
     n_species = 0
@@ -473,6 +472,7 @@ def step_mirfamily_to_human_matures(
     n_name_match = 0
     n_name_replaced = 0
     n_kept = 0
+    n_duplicate_names = 0
 
     with pathlib.Path(mir_family_info_path).open("r", encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="\t")
@@ -501,31 +501,36 @@ def step_mirfamily_to_human_matures(
             else:
                 n_name_replaced += 1
 
-            pair = (mir_acc, mir_name_v22)
-            if pair in seen[seed]:
+            if mir_name_ts in annotations:
+                existing = annotations[mir_name_ts]
+                if existing.mirna_id != mir_acc or existing.mirna_name != mir_name_v22:
+                    raise ValueError(
+                        f"Conflicting human mature miRNA annotation for {mir_name_ts!r}: "
+                        f"{existing.mirna_id}/{existing.mirna_name} vs {mir_acc}/{mir_name_v22}"
+                    )
+                n_duplicate_names += 1
                 continue
 
-            seen[seed].add(pair)
-            fam2mirs[seed].append(MirnaEntry(mirna_id=mir_acc, mirna_name=mir_name_v22))
+            annotations[mir_name_ts] = MirnaEntry(mirna_id=mir_acc, mirna_name=mir_name_v22)
             n_kept += 1
 
     logger.info(
-        "miR_Family_Info stats: rows_total=%d | rows_species(%s)=%d | kept=%d | unique_families=%d",
-        n_total, species_id, n_species, n_kept, len(fam2mirs)
+        "miR_Family_Info stats: rows_total=%d | rows_species(%s)=%d | kept=%d | unique_human_mature_mirnas=%d",
+        n_total, species_id, n_species, n_kept, len(annotations)
     )
     logger.info(
-        "miRNA annotation QC vs miRBase v%s: name_match=%d | name_replaced=%d | dropped_missing_accession=%d | dropped_missing_fields=%d",
-        MIRBASE_RELEASE, n_name_match, n_name_replaced, n_acc_missing_in_mirbase, n_missing_fields
+        "miRNA annotation QC vs miRBase v%s: name_match=%d | name_replaced=%d | duplicate_names=%d | dropped_missing_accession=%d | dropped_missing_fields=%d",
+        MIRBASE_RELEASE, n_name_match, n_name_replaced, n_duplicate_names, n_acc_missing_in_mirbase, n_missing_fields
     )
 
-    if fam2mirs:
-        k = next(iter(fam2mirs.keys()))
+    if annotations:
+        k = next(iter(annotations.keys()))
         logger.info(
-            "  sample family: %s -> %d human miRNAs after miRBase validation (e.g., %s)",
-            k, len(fam2mirs[k]), fam2mirs[k][0].mirna_name
+            "  sample annotation: %s -> %s",
+            k, annotations[k].mirna_id
         )
 
-    return dict(fam2mirs)
+    return annotations
 
 
 def step_write_standardized_predictions(
@@ -533,7 +538,7 @@ def step_write_standardized_predictions(
     *,
     tx_index: Dict[str, Any],
     ensembl_tables: Dict[str, Dict[str, str]],
-    family_to_mirs: Dict[str, List[MirnaEntry]],
+    mirna_annotations: Dict[str, MirnaEntry],
     out_predictions_dir: pathlib.Path,
     species_id: str = "9606",
 ) -> None:
@@ -570,8 +575,10 @@ def step_write_standardized_predictions(
             if tx_stable not in tx_to_gene_ens:
                 continue
 
-            fam = row["miRNA family"].strip()
-            if fam not in family_to_mirs:
+            representative_mirna = row["Representative miRNA"].strip()
+            mirna_entry = mirna_annotations.get(representative_mirna)
+            if mirna_entry is None:
+                stats["rows_missing_mirna_annotation"] += 1
                 continue
 
             stats["rows_after_filters"] += 1
@@ -590,20 +597,30 @@ def step_write_standardized_predictions(
         raise ValueError(f"No non-NULL scores remain after filters for {PREDICTOR_NAME}.")
 
     logger.info(
-        "%s score column '%s': weakest raw(non-NULL)=%.6g | NULL rows=%d (imputed as %.6g)",
+        "%s score column '%s': weakest raw(non-NULL)=%.6g | NULL rows=%d (imputed as %.6g) | rows_missing_mirna_annotation=%d",
         PREDICTOR_NAME,
         TARGETSCAN_SCORE_COL,
         weakest_nonnull_raw,
         stats["rows_null_score"],
         weakest_nonnull_raw,
+        stats["rows_missing_mirna_annotation"],
     )
 
-    rows: List[Dict[str, Any]] = []
+    out_dir = out_predictions_dir / PREDICTOR_NAME
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{PREDICTOR_NAME}_standardized.tsv"
 
-    with pathlib.Path(summary_counts_path).open("r", encoding="utf-8") as fin:
-        reader = csv.DictReader(fin, delimiter="\t")
+    written = Counter()
+    with pathlib.Path(summary_counts_path).open("r", encoding="utf-8") as fin, out_path.open("w", encoding="utf-8", newline="") as fout:
+        summary_reader = csv.DictReader(fin, delimiter="\t")
+        writer = csv.DictWriter(
+            fout,
+            fieldnames=["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score"],
+            delimiter="\t",
+        )
+        writer.writeheader()
 
-        for row in reader:
+        for row in summary_reader:
             if row["Species ID"].strip() != species_id:
                 continue
 
@@ -621,52 +638,28 @@ def step_write_standardized_predictions(
             if gene_id_ens is None:
                 continue
 
-            fam = row["miRNA family"].strip()
-            mirs = family_to_mirs.get(fam)
-            if not mirs:
+            representative_mirna = row["Representative miRNA"].strip()
+            mirna_entry = mirna_annotations.get(representative_mirna)
+            if mirna_entry is None:
                 continue
 
             raw_score = _to_float_or_none(row[TARGETSCAN_SCORE_COL])
             if raw_score is None:
                 raw_score = weakest_nonnull_raw
 
-            rows.append(
+            writer.writerow(
                 {
                     "Ensembl_ID": gene_id_ens,
                     "Gene_Name": gene_to_name_ens.get(gene_id_ens) or row["Gene Symbol"].strip(),
-                    "mirs": mirs,
-                    "score_raw": float(raw_score),
+                    "miRNA_ID": mirna_entry.mirna_id,
+                    "miRNA_Name": mirna_entry.mirna_name,
+                    "Score": f"{float(raw_score):.6g}",
                 }
             )
-
-    out_dir = out_predictions_dir / PREDICTOR_NAME
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{PREDICTOR_NAME}_standardized.tsv"
-
-    written = Counter()
-    with out_path.open("w", encoding="utf-8", newline="") as fout:
-        writer = csv.DictWriter(
-            fout,
-            fieldnames=["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score"],
-            delimiter="\t",
-        )
-        writer.writeheader()
-
-        for row_obj in rows:
-            for mir in row_obj["mirs"]:
-                writer.writerow(
-                    {
-                        "Ensembl_ID": row_obj["Ensembl_ID"],
-                        "Gene_Name": row_obj["Gene_Name"],
-                        "miRNA_ID": mir.mirna_id,
-                        "miRNA_Name": mir.mirna_name,
-                        "Score": f"{row_obj['score_raw']:.6g}",
-                    }
-                )
-                written["written_rows"] += 1
+            written["written_rows"] += 1
             written["base_rows"] += 1
     logger.info(
-        "%s -> wrote %d rows (family-expanded) from %d base rows. output=%s",
+        "%s -> wrote %d rows from %d base rows using Representative miRNA annotations. output=%s",
         PREDICTOR_NAME,
         written["written_rows"],
         written["base_rows"],
@@ -724,7 +717,7 @@ def main() -> None:
     mirbase_fa = step6_download_mirbase_mature(data_dir, force=False)
     mirbase_acc2name = parse_mirbase_mature(mirbase_fa)
 
-    family_to_mirs = step_mirfamily_to_human_matures(
+    mirna_annotations = step_build_human_mirna_annotations(
         files["miR_Family_Info.txt"],
         mirbase_acc2name=mirbase_acc2name,
         species_id="9606",
@@ -734,7 +727,7 @@ def main() -> None:
         files["Summary_Counts.all_predictions.txt"],
         tx_index=tx_index,
         ensembl_tables=ensembl_tables,
-        family_to_mirs=family_to_mirs,
+        mirna_annotations=mirna_annotations,
         out_predictions_dir=out_predictions_dir,
         species_id="9606",
     )
