@@ -27,7 +27,7 @@ def main() -> None:
                 <Attribute name = "refseq_mrna" />
             </Dataset>
         </Query>"""
-    biomart_url = "http://www.ensembl.org/biomart/martservice"
+    biomart_url = "https://Sep2025.archive.ensembl.org/biomart/martservice"
     biomart_path = args.resources_dir / "biomart" / "hsapiens_refseq_to_ensembl.tsv"
     biomart_path = download_file(biomart_url, biomart_path, logger, params={"query": biomart_query}, timeout=300)
 
