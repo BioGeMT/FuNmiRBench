@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import pathlib
+import tempfile
 from urllib.parse import quote
 
 import requests
@@ -124,22 +125,36 @@ def ensure_zenodo_experiment_cached(
     dest.parent.mkdir(parents=True, exist_ok=True)
     response = requests.get(str(meta["url"]), stream=True, timeout=timeout)
     response.raise_for_status()
-    with dest.open("wb") as handle:
-        for chunk in response.iter_content(chunk_size=1024 * 1024):
-            if chunk:
-                handle.write(chunk)
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=dest.parent,
+            prefix=f".{dest.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            tmp_path = pathlib.Path(handle.name)
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    handle.write(chunk)
 
-    if checksum_value:
-        algorithm, expected_digest = parse_checksum(checksum_value)
-        if algorithm != "md5":
-            raise ValueError(f"Unsupported checksum algorithm: {algorithm}")
-        actual_digest = compute_md5(dest)
-        if actual_digest != expected_digest:
-            raise ValueError(
-                f"Checksum mismatch for {filename}: expected {expected_digest}, got {actual_digest}."
-            )
+        if checksum_value:
+            algorithm, expected_digest = parse_checksum(checksum_value)
+            if algorithm != "md5":
+                raise ValueError(f"Unsupported checksum algorithm: {algorithm}")
+            actual_digest = compute_md5(tmp_path)
+            if actual_digest != expected_digest:
+                raise ValueError(
+                    f"Checksum mismatch for {filename}: expected {expected_digest}, got {actual_digest}."
+                )
 
-    return dest
+        tmp_path.replace(dest)
+        tmp_path = None
+        return dest
+    finally:
+        if tmp_path is not None and tmp_path.exists():
+            tmp_path.unlink()
 
 
 def sync_all_zenodo_experiments(

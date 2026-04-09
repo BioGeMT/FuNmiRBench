@@ -99,6 +99,7 @@ def test_ensure_zenodo_experiment_cached_downloads_and_verifies_md5(tmp_path, mo
     )
     assert out.read_bytes() == content
     assert seen == [("https://zenodo.example/demo.tsv/content", True, 120)]
+    assert list(out.parent.glob(".*demo.tsv.*.tmp")) == []
 
 
 def test_ensure_zenodo_experiment_cached_reuses_valid_existing_file(tmp_path, monkeypatch):
@@ -149,6 +150,78 @@ def test_ensure_zenodo_experiment_cached_rejects_bad_existing_checksum(tmp_path,
                 }
             },
         )
+
+
+def test_ensure_zenodo_experiment_cached_force_keeps_existing_file_on_checksum_mismatch(tmp_path, monkeypatch):
+    dest = tmp_path / "data" / "experiments" / "processed" / "18745741" / "demo.tsv"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("good\n", encoding="utf-8")
+    original = dest.read_text(encoding="utf-8")
+
+    bad_content = b"bad-download\n"
+
+    def fake_get(url, stream, timeout):
+        assert url == "https://zenodo.example/demo.tsv/content"
+        assert stream is True
+        assert timeout == 120
+        return FakeResponse(chunks=[bad_content])
+
+    monkeypatch.setattr(experiment_store.requests, "get", fake_get)
+
+    with pytest.raises(ValueError, match="Checksum mismatch"):
+        experiment_store.ensure_zenodo_experiment_cached(
+            "data/experiments/processed/18745741/demo.tsv",
+            repo=tmp_path,
+            force=True,
+            registry={
+                "demo.tsv": {
+                    "filename": "demo.tsv",
+                    "checksum": "md5:00000000000000000000000000000000",
+                    "url": "https://zenodo.example/demo.tsv/content",
+                }
+            },
+        )
+
+    assert dest.read_text(encoding="utf-8") == original
+    assert list(dest.parent.glob(".*demo.tsv.*.tmp")) == []
+
+
+def test_ensure_zenodo_experiment_cached_force_keeps_existing_file_on_download_error(tmp_path, monkeypatch):
+    dest = tmp_path / "data" / "experiments" / "processed" / "18745741" / "demo.tsv"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("good\n", encoding="utf-8")
+    original = dest.read_text(encoding="utf-8")
+
+    class BrokenResponse(FakeResponse):
+        def iter_content(self, chunk_size):
+            del chunk_size
+            yield b"partial"
+            raise RuntimeError("download interrupted")
+
+    def fake_get(url, stream, timeout):
+        assert url == "https://zenodo.example/demo.tsv/content"
+        assert stream is True
+        assert timeout == 120
+        return BrokenResponse()
+
+    monkeypatch.setattr(experiment_store.requests, "get", fake_get)
+
+    with pytest.raises(RuntimeError, match="download interrupted"):
+        experiment_store.ensure_zenodo_experiment_cached(
+            "data/experiments/processed/18745741/demo.tsv",
+            repo=tmp_path,
+            force=True,
+            registry={
+                "demo.tsv": {
+                    "filename": "demo.tsv",
+                    "checksum": "",
+                    "url": "https://zenodo.example/demo.tsv/content",
+                }
+            },
+        )
+
+    assert dest.read_text(encoding="utf-8") == original
+    assert list(dest.parent.glob(".*demo.tsv.*.tmp")) == []
 
 
 def test_ensure_zenodo_experiment_cached_raises_for_unknown_filename(tmp_path):
