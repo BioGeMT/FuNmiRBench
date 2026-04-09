@@ -268,3 +268,21 @@ def build_output_table(
     out = df.copy()
     out[score_column] = pd.to_numeric(out[prediction_column], errors="coerce")
     return out.loc[:, final_columns].copy()
+
+def check_and_deduplicate_final_pairs(
+    df: pd.DataFrame,
+    ensembl_id_column: str,
+    mimat_column: str,
+    score_column: str,
+    logger: logging.Logger,
+) -> pd.DataFrame:
+    grouped = df.groupby([ensembl_id_column, mimat_column])[score_column].nunique()
+    conflicts = grouped[grouped > 1]
+    if not conflicts.empty:
+        raise ValueError("Conflicting scores found for Ensembl ID : miRNA MIMAT pairs.")
+
+    before = len(df)
+    out = df.drop_duplicates(subset=[ensembl_id_column, mimat_column, score_column]).copy()
+    if len(out) != before:
+        logger.info("Final rows after Ensembl ID : miRNA MIMAT : score deduplication: %d/%d", len(out), before)
+    return out

@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from utils import configure_logging, download_file, load_prediction_files, create_mirna_name_to_mimat_mapping, map_mirna_names_to_mimat, create_refseq_to_ensembl_mapping, map_refseq_to_ensembl, build_output_table
+from utils import configure_logging, download_file, load_prediction_files, create_mirna_name_to_mimat_mapping, map_mirna_names_to_mimat, create_refseq_to_ensembl_mapping, map_refseq_to_ensembl, build_output_table, check_and_deduplicate_final_pairs
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -103,6 +103,13 @@ def main() -> None:
         prediction_column,
         score_column,
         final_columns,
+    )
+    final = check_and_deduplicate_final_pairs(
+        final,
+        ensembl_id_column,
+        mimat_column,
+        score_column,
+        logger,
     )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
