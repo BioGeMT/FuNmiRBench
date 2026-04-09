@@ -233,25 +233,27 @@ def test_ensure_zenodo_experiment_cached_raises_for_unknown_filename(tmp_path):
         )
 
 
-def test_sync_all_zenodo_experiments_downloads_every_registry_file(tmp_path, monkeypatch, capsys):
+def test_sync_all_zenodo_experiments_uses_metadata_paths(tmp_path, monkeypatch):
     seen = []
+    metadata_dir = tmp_path / "metadata"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    (metadata_dir / "mirna_experiment_info.tsv").write_text(
+        "id\tde_table_path\n"
+        "dataset_b\tdata/experiments/processed/18745741/b.tsv\n"
+        "dataset_a\tdata/experiments/processed/18745741/a.tsv\n",
+        encoding="utf-8",
+    )
 
-    def fake_fetch_registry(*, token=None, timeout=120):
-        assert token is None
-        assert timeout == 120
-        return {
-            "b.tsv": {"filename": "b.tsv", "checksum": "md5:b", "url": "https://zenodo/b"},
-            "a.tsv": {"filename": "a.tsv", "checksum": "md5:a", "url": "https://zenodo/a"},
-        }
+    def fake_sync(paths, *, repo=None, registry=None, token=None, timeout=120, force=False):
+        seen.append((paths, repo, registry, token, timeout, force))
+        return [repo / pathlib.Path(path) for path in sorted(set(paths))]
 
-    def fake_ensure(path, *, repo=None, registry=None, token=None, timeout=120, force=False):
-        seen.append((str(path), repo, registry, token, timeout, force))
-        return repo / path
+    monkeypatch.setattr(experiment_store, "sync_zenodo_experiments", fake_sync)
 
-    monkeypatch.setattr(experiment_store, "fetch_zenodo_file_registry", fake_fetch_registry)
-    monkeypatch.setattr(experiment_store, "ensure_zenodo_experiment_cached", fake_ensure)
-
-    saved = experiment_store.sync_all_zenodo_experiments(repo=tmp_path, force=True)
+    saved = experiment_store.sync_all_zenodo_experiments(
+        repo=tmp_path,
+        force=True,
+    )
 
     assert saved == [
         tmp_path / "data" / "experiments" / "processed" / "18745741" / "a.tsv",
@@ -259,29 +261,72 @@ def test_sync_all_zenodo_experiments_downloads_every_registry_file(tmp_path, mon
     ]
     assert seen == [
         (
-            str(pathlib.Path("data/experiments/processed/18745741/a.tsv")),
+            [
+                "data/experiments/processed/18745741/b.tsv",
+                "data/experiments/processed/18745741/a.tsv",
+            ],
             tmp_path,
-            {
-                "b.tsv": {"filename": "b.tsv", "checksum": "md5:b", "url": "https://zenodo/b"},
-                "a.tsv": {"filename": "a.tsv", "checksum": "md5:a", "url": "https://zenodo/a"},
-            },
             None,
-            120,
-            True,
-        ),
-        (
-            str(pathlib.Path("data/experiments/processed/18745741/b.tsv")),
-            tmp_path,
-            {
-                "b.tsv": {"filename": "b.tsv", "checksum": "md5:b", "url": "https://zenodo/b"},
-                "a.tsv": {"filename": "a.tsv", "checksum": "md5:a", "url": "https://zenodo/a"},
-            },
             None,
             120,
             True,
         ),
     ]
-    assert capsys.readouterr().out.splitlines() == ["sync a.tsv", "sync b.tsv"]
+
+
+def test_sync_all_zenodo_experiments_deduplicates_repeated_metadata_paths(tmp_path, monkeypatch, capsys):
+    seen = []
+    metadata_dir = tmp_path / "metadata"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    (metadata_dir / "mirna_experiment_info.tsv").write_text(
+        "id\tde_table_path\n"
+        "dataset_b1\tdata/experiments/processed/18745741/b.tsv\n"
+        "dataset_a\tdata/experiments/processed/18745741/a.tsv\n"
+        "dataset_b2\tdata/experiments/processed/18745741/b.tsv\n",
+        encoding="utf-8",
+    )
+
+    def fake_ensure(path, *, repo=None, registry=None, token=None, timeout=120, force=False):
+        seen.append((str(path), repo, registry, token, timeout, force))
+        return repo / path
+
+    registry = {
+        "a.tsv": {"filename": "a.tsv", "checksum": "md5:a", "url": "https://zenodo/a"},
+        "b.tsv": {"filename": "b.tsv", "checksum": "md5:b", "url": "https://zenodo/b"},
+    }
+
+    monkeypatch.setattr(
+        experiment_store,
+        "fetch_zenodo_file_registry",
+        lambda *, token=None, timeout=120: registry,
+    )
+    monkeypatch.setattr(experiment_store, "ensure_zenodo_experiment_cached", fake_ensure)
+
+    saved = experiment_store.sync_all_zenodo_experiments(repo=tmp_path)
+
+    assert saved == [
+        tmp_path / "data" / "experiments" / "processed" / "18745741" / "b.tsv",
+        tmp_path / "data" / "experiments" / "processed" / "18745741" / "a.tsv",
+    ]
+    assert seen == [
+        (
+            str(pathlib.Path("data/experiments/processed/18745741/b.tsv")),
+            tmp_path,
+            registry,
+            None,
+            120,
+            False,
+        ),
+        (
+            str(pathlib.Path("data/experiments/processed/18745741/a.tsv")),
+            tmp_path,
+            registry,
+            None,
+            120,
+            False,
+        ),
+    ]
+    assert capsys.readouterr().out.splitlines() == ["sync b.tsv", "sync a.tsv"]
 
 
 def test_sync_zenodo_experiments_syncs_only_selected_unique_paths(tmp_path, monkeypatch, capsys):

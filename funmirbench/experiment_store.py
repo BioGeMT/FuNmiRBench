@@ -8,6 +8,7 @@ import pathlib
 import tempfile
 from urllib.parse import quote
 
+import pandas as pd
 import requests
 
 
@@ -26,6 +27,10 @@ def experiments_cache_root_dir(*, repo: pathlib.Path | None = None) -> pathlib.P
 
 def experiments_processed_dir(*, repo: pathlib.Path | None = None) -> pathlib.Path:
     return experiments_cache_root_dir(repo=repo) / ZENODO_RECORD
+
+
+def experiments_metadata_tsv(*, repo: pathlib.Path | None = None) -> pathlib.Path:
+    return (repo or repo_root()).resolve() / "metadata" / "mirna_experiment_info.tsv"
 
 
 def experiment_cache_relpath(filename: str | pathlib.Path) -> pathlib.Path:
@@ -165,15 +170,13 @@ def sync_all_zenodo_experiments(
     force: bool = False,
     ) -> list[pathlib.Path]:
     repo = (repo or repo_root()).resolve()
-    registry = fetch_zenodo_file_registry(token=token, timeout=timeout)
+    df = pd.read_csv(experiments_metadata_tsv(repo=repo), sep="\t")
+    de_table_paths = [str(value) for value in df["de_table_path"].dropna().tolist()]
 
     return sync_zenodo_experiments(
-        [
-            experiment_cache_relpath(filename)
-            for filename in sorted(registry)
-        ],
+        de_table_paths,
         repo=repo,
-        registry=registry,
+        token=token,
         timeout=timeout,
         force=force,
     )
