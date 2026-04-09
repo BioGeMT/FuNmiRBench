@@ -86,6 +86,16 @@ class TestReadDeTable:
         df = read_de_table(path)
         assert df.columns[0] == "gene_id"
 
+    def test_missing_first_header_promotes_index_to_gene_id_column(self, tmp_tsv_factory):
+        path = tmp_tsv_factory(
+            "logFC\tlogCPM\tF\tPValue\tFDR\n"
+            "ENSG00000000001\t1.5\t4.0\t10.0\t0.001\t0.01\n"
+            "ENSG00000000002\t-0.8\t3.5\t8.0\t0.002\t0.05\n"
+        )
+        df = read_de_table(path)
+        assert list(df.columns) == ["gene_id", "logFC", "logCPM", "F", "PValue", "FDR"]
+        assert list(df["gene_id"]) == ["ENSG00000000001", "ENSG00000000002"]
+
     def test_nonexistent_file_raises(self, tmp_path):
         path = tmp_path / "does_not_exist.tsv"
         with __import__("pytest").raises(FileNotFoundError):
