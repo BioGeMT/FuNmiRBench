@@ -1,7 +1,6 @@
 import argparse
 from pathlib import Path
-from utils import setup_logging, download_file, load_prediction_files, create_mirna_name_to_mimat_mapping, map_mirna_names_to_mimat, create_refseq_to_ensembl_mapping, map_refseq_to_ensembl, build_output_table
-
+from utils import configure_logging, download_file, load_prediction_files, create_mirna_name_to_mimat_mapping, map_mirna_names_to_mimat, create_refseq_to_ensembl_mapping, map_refseq_to_ensembl, build_output_table
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -9,9 +8,10 @@ def main() -> None:
     parser.add_argument("--resources-dir", type=Path, default=Path("data/resources"), help="Directory for downloaded miRBase/BioMart files")
     parser.add_argument("--output", type=Path, default=Path("tec_mitarget_standardised.tsv"), help="Output TSV path")
     parser.add_argument("--log-file", type=Path, default=Path("tec_mitarget.log"), help="Log file path")
+    parser.add_argument("--log-level", type=str, default="INFO", help="Logging level. Default: INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] )
 
     args = parser.parse_args()
-    logger = setup_logging(args.log_file)
+    logger = configure_logging(args.log_file, args.log_level)
     logger.info("Starting pipeline")
 
     mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"

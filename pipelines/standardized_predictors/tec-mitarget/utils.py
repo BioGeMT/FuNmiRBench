@@ -1,32 +1,31 @@
 import logging
-import sys
 from pathlib import Path
 from typing import Iterable, Optional
 
 import pandas as pd
 import requests
 
-def setup_logging(log_path: Path) -> logging.Logger:
+from funmirbench.logger import (
+    DEFAULT_DATE_FORMAT,
+    DEFAULT_LOG_FORMAT,
+    parse_log_level,
+    setup_logging,
+)
+
+def configure_logging(log_path: Path, log_level: str) -> logging.Logger:
     log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-    logger.handlers.clear()
-    logger.propagate = False
-
-    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-
-    file_handler = logging.FileHandler(log_path)
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setLevel(logging.INFO)
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
-
-    return logger
+    setup_logging(parse_log_level(log_level))
+    root_logger = logging.getLogger()
+    file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+    file_handler.setLevel(root_logger.level)
+    file_handler.setFormatter(
+        logging.Formatter(
+            fmt=DEFAULT_LOG_FORMAT,
+            datefmt=DEFAULT_DATE_FORMAT,
+        )
+    )
+    root_logger.addHandler(file_handler)
+    return logging.getLogger(__name__)
 
 def download_file(
     url: str,

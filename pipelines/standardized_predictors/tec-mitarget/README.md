@@ -64,7 +64,8 @@ python pipeline.py \
   --predictions-root data/TEC-miTarget-model-predictions \
   --resources-dir data/resources \
   --output tec_mitarget_standardised.tsv \
-  --log-file tec_mitarget.log
+  --log-file tec_mitarget.log \
+  --log-level INFO
 ```
 
 ## Logging
