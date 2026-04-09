@@ -38,7 +38,7 @@ That environment also includes `uv`, so `uv run ...` keeps working after activat
 Main directories:
 
 - `data/experiments/processed/`: root directory for processed experiment DE tables
-- `data/experiments/processed/18745741/`: local cache for curated benchmark DE tables fetched from Zenodo record `18745741`
+- `data/experiments/processed/18745741/`: local cache for curated benchmark DE tables from Zenodo record `18745741`; the repo currently ships the 3 default benchmark TSVs here
 - `data/experiments/raw/`: local raw GEO inputs such as count matrices and FASTQs
 - `data/predictions/`: local generated predictor TSVs
 - `metadata/mirna_experiment_info.tsv`: experiment registry
@@ -72,8 +72,8 @@ uv run funmirbench --config benchmark.yaml
 ```
 
 Before benchmarking, `funmirbench` syncs the selected curated experiment DE tables from Zenodo
-into `data/experiments/processed/18745741/`. The metadata stays in the repo, but the benchmark DE tables are
-treated as fetched local cache rather than committed repo contents.
+into `data/experiments/processed/18745741/` as needed. The repo currently ships the 3 TSVs used by
+the default benchmark config, while other curated benchmark DE tables are treated as fetched local cache.
 
 The default config already points at:
 
@@ -90,8 +90,9 @@ The experiment-ingestion pipeline creates DE tables under `data/experiments/proc
 workflow use.
 
 For the curated benchmark datasets tracked in `metadata/mirna_experiment_info.tsv`, the expected
-workflow is different: those metadata rows stay versioned in the repo, while the corresponding DE
-tables are fetched from Zenodo into the local `data/experiments/processed/18745741/` cache when needed.
+workflow is different: those metadata rows stay versioned in the repo, and the corresponding DE
+tables live under the local `data/experiments/processed/18745741/` cache. The repo currently ships
+the 3 default benchmark TSVs there, and other curated tables are fetched from Zenodo when needed.
 
 Experiment config summary:
 
