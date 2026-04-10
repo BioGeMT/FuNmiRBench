@@ -35,7 +35,8 @@ The pipeline:
    - `query_ids` to `miRNA_ID`
    - `target_ids` to `Ensembl_ID` and `Gene_Name`
 10. Drops rows that fail either mapping.
-11. Writes the standardized output table.
+11. Checks the final `(Ensembl_ID, miRNA_ID)` pairs, raising on conflicting scores and dropping exact duplicates.
+12. Writes the standardized output table.
 
 ## Output Schema
 
@@ -49,22 +50,32 @@ The output TSV contains:
 
 `miRNA_Name` is copied from `query_ids`. `Score` is the numeric form of `predictions`.
 
+## Output Location
+
+By default, the standardized file is written to:
+
+```text
+data/predictions/tec-mitarget/tec_mitarget_standardised.tsv
+```
+
+relative to the repository root.
+
 ## Run
 
-From this directory:
+From the repository root:
 
 ```bash
-python pipeline.py
+python pipelines/standardized_predictors/tec-mitarget/pipeline.py
 ```
 
 ## CLI Arguments
 
 ```bash
-python pipeline.py \
-  --predictions-root data/TEC-miTarget-model-predictions \
-  --resources-dir data/resources \
-  --output tec_mitarget_standardised.tsv \
-  --log-file tec_mitarget.log \
+python pipelines/standardized_predictors/tec-mitarget/pipeline.py \
+  --predictions-root pipelines/standardized_predictors/tec-mitarget/data/TEC-miTarget-model-predictions \
+  --resources-dir pipelines/standardized_predictors/tec-mitarget/data/resources \
+  --output data/predictions/tec-mitarget/tec_mitarget_standardised.tsv \
+  --log-file pipelines/standardized_predictors/tec-mitarget/tec_mitarget.log \
   --log-level INFO
 ```
 
