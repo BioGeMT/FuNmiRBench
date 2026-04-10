@@ -1,17 +1,19 @@
-2026-04-09 12:15:15 | INFO | utils | Starting pipeline
-2026-04-09 12:15:15 | INFO | utils | Using data/resources/mirbase/mature.fa
-2026-04-09 12:15:15 | INFO | utils | Using data/resources/biomart/hsapiens_refseq_to_ensembl.tsv
-2026-04-09 12:15:15 | INFO | utils | Loading predictions
-2026-04-09 12:15:15 | INFO | utils | Keeping valid rows: 3838/3838
-2026-04-09 12:15:15 | INFO | utils | Keeping unique rows: 3086/3838
-2026-04-09 12:15:15 | INFO | utils | Creating miRNA name to MIMAT ID mapping
-2026-04-09 12:15:15 | INFO | utils | Creating RefSeq to Ensembl ID, Gene name mapping
-2026-04-09 12:15:16 | INFO | utils | Keeping valid rows: 74593/554612
-2026-04-09 12:15:16 | INFO | utils | Keeping unique rows: 74568/74593
-2026-04-09 12:15:16 | INFO | utils | Keeping non-conflicting rows: 63157/74568
-2026-04-09 12:15:17 | INFO | utils | Mapping miRNA names to MIMAT IDs
-2026-04-09 12:15:17 | INFO | utils | Mapped rows: 3044/3086
-2026-04-09 12:15:17 | INFO | utils | Mapping RefSeq IDs to Ensembl IDs and Gene names
-2026-04-09 12:15:17 | INFO | utils | Mapped rows: 2876/3044
-2026-04-09 12:15:17 | INFO | utils | Building final schema output table
-2026-04-09 12:15:17 | INFO | utils | Output written to: tec_mitarget_standardised.tsv
+2026-04-10 13:02:05 | INFO | utils | Starting pipeline
+2026-04-10 13:02:05 | INFO | utils | Downloading pipelines/standardized_predictors/tec-mitarget/data/resources/mirbase/mature.fa
+2026-04-10 13:02:07 | INFO | utils | Saved pipelines/standardized_predictors/tec-mitarget/data/resources/mirbase/mature.fa
+2026-04-10 13:02:07 | INFO | utils | Downloading pipelines/standardized_predictors/tec-mitarget/data/resources/biomart/hsapiens_refseq_to_ensembl.tsv
+2026-04-10 13:03:29 | INFO | utils | Saved pipelines/standardized_predictors/tec-mitarget/data/resources/biomart/hsapiens_refseq_to_ensembl.tsv
+2026-04-10 13:03:29 | INFO | utils | Loading predictions
+2026-04-10 13:03:29 | INFO | utils | Keeping valid rows: 3838/3838
+2026-04-10 13:03:29 | INFO | utils | Keeping unique rows: 3086/3838
+2026-04-10 13:03:29 | INFO | utils | Creating miRNA name to MIMAT ID mapping
+2026-04-10 13:03:29 | INFO | utils | Creating RefSeq to Ensembl ID, Gene name mapping
+2026-04-10 13:03:29 | INFO | utils | Keeping valid rows: 74593/554612
+2026-04-10 13:03:29 | INFO | utils | Keeping unique rows: 74568/74593
+2026-04-10 13:03:30 | INFO | utils | Keeping non-conflicting rows: 63157/74568
+2026-04-10 13:03:31 | INFO | utils | Mapping miRNA names to MIMAT IDs
+2026-04-10 13:03:31 | INFO | utils | Mapped rows: 3044/3086
+2026-04-10 13:03:31 | INFO | utils | Mapping RefSeq IDs to Ensembl IDs and Gene names
+2026-04-10 13:03:31 | INFO | utils | Mapped rows: 2876/3044
+2026-04-10 13:03:31 | INFO | utils | Building final schema output table
+2026-04-10 13:03:31 | INFO | utils | Output written to: data/predictions/tec-mitarget/tec_mitarget_standardised.tsv

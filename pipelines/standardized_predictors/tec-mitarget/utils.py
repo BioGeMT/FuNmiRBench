@@ -12,6 +12,15 @@ from funmirbench.logger import (
     setup_logging,
 )
 
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+def resolve_path_relative_to_root(path: Path) -> Path:
+    try:
+        return path.resolve().relative_to(repo_root())
+    except ValueError:
+        return path
+
 def configure_logging(log_path: Path, log_level: str) -> logging.Logger:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     setup_logging(parse_log_level(log_level))
@@ -37,10 +46,10 @@ def download_file(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if output_path.exists():
-        logger.info("Using %s", output_path)
+        logger.info("Using %s", resolve_path_relative_to_root(output_path))
         return output_path
 
-    logger.info("Downloading %s", output_path)
+    logger.info("Downloading %s", resolve_path_relative_to_root(output_path))
 
     response = requests.get(url, params=params, timeout=timeout)
     response.raise_for_status()
@@ -48,7 +57,7 @@ def download_file(
         raise RuntimeError(f"Empty response from {url}")
 
     output_path.write_bytes(response.content)
-    logger.info("Saved %s", output_path)
+    logger.info("Saved %s", resolve_path_relative_to_root(output_path))
     return output_path
 
 def _drop_invalid_rows(

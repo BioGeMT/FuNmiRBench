@@ -1,13 +1,15 @@
 import argparse
 from pathlib import Path
-from utils import configure_logging, download_file, load_prediction_files, create_mirna_name_to_mimat_mapping, map_mirna_names_to_mimat, create_refseq_to_ensembl_mapping, map_refseq_to_ensembl, build_output_table, check_and_deduplicate_final_pairs
+from utils import configure_logging, download_file, load_prediction_files, create_mirna_name_to_mimat_mapping, map_mirna_names_to_mimat, create_refseq_to_ensembl_mapping, map_refseq_to_ensembl, build_output_table, check_and_deduplicate_final_pairs, repo_root, resolve_path_relative_to_root
 
 def main() -> None:
+    root = repo_root()
+    pipeline_dir = root / "pipelines" / "standardized_predictors" / "tec-mitarget"
     parser = argparse.ArgumentParser()
-    parser.add_argument("--predictions-root", type=Path, default=Path("data/TEC-miTarget-model-predictions"), help="Root dir containing test_split_* folders")
-    parser.add_argument("--resources-dir", type=Path, default=Path("data/resources"), help="Directory for downloaded miRBase/BioMart files")
-    parser.add_argument("--output", type=Path, default=Path("tec_mitarget_standardised.tsv"), help="Output TSV path")
-    parser.add_argument("--log-file", type=Path, default=Path("tec_mitarget.log"), help="Log file path")
+    parser.add_argument("--predictions-root", type=Path, default=pipeline_dir / "data" / "TEC-miTarget-model-predictions", help="Root dir containing test_split_* folders")
+    parser.add_argument("--resources-dir", type=Path, default=pipeline_dir / "data" / "resources", help="Directory for downloaded miRBase/BioMart files")
+    parser.add_argument("--output", type=Path, default=root / "data" / "predictions" / "tec-mitarget" / "tec_mitarget_standardised.tsv", help="Output TSV path")
+    parser.add_argument("--log-file", type=Path, default=pipeline_dir / "tec_mitarget.log", help="Log file path")
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level. Default: INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] )
 
     args = parser.parse_args()
@@ -114,7 +116,7 @@ def main() -> None:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     final.to_csv(args.output, sep="\t", index=False)
-    logger.info("Output written to: %s", args.output)
+    logger.info("Output written to: %s", resolve_path_relative_to_root(args.output))
 
 
 if __name__ == "__main__":
