@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from utils import configure_logging, download_file, load_prediction_files, create_mirna_name_to_mimat_mapping, map_mirna_names_to_mimat, create_refseq_to_ensembl_mapping, map_refseq_to_ensembl, build_output_table, check_and_deduplicate_final_pairs, repo_root, resolve_path_relative_to_root
+from utils import configure_logging, download_file, load_prediction_files, create_mirna_name_to_mimat_mapping, map_mirna_names_to_mimat, create_refseq_to_ensembl_mapping, map_refseq_to_ensembl, build_output_table, repo_root, resolve_path_relative_to_root
 
 def main() -> None:
     root = repo_root()
@@ -43,7 +43,7 @@ def main() -> None:
         for split in splits
     ]
     logger.info("Loading predictions")
-    pred = load_prediction_files(
+    pred_df = load_prediction_files(
         prediction_paths,
         query_column,
         target_column,
@@ -81,8 +81,8 @@ def main() -> None:
     ]
 
     logger.info("Mapping miRNA names to MIMAT IDs")
-    pred = map_mirna_names_to_mimat(
-        pred,
+    pred_df = map_mirna_names_to_mimat(
+        pred_df,
         mirna_name_to_mimat_map,
         query_column,
         mirna_name_column,
@@ -91,8 +91,8 @@ def main() -> None:
     )
 
     logger.info("Mapping RefSeq IDs to Ensembl IDs and Gene names")
-    pred = map_refseq_to_ensembl(
-        pred,
+    pred_df = map_refseq_to_ensembl(
+        pred_df,
         refseq_to_ensembl_map,
         target_column,
         ensembl_id_column,
@@ -100,22 +100,18 @@ def main() -> None:
         logger,
     )
     logger.info("Building final schema output table")
-    final = build_output_table(
-        pred,
+    final_df = build_output_table(
+        pred_df,
         prediction_column,
         score_column,
         final_columns,
-    )
-    final = check_and_deduplicate_final_pairs(
-        final,
         ensembl_id_column,
         mimat_column,
-        score_column,
         logger,
     )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    final.to_csv(args.output, sep="\t", index=False)
+    final_df.to_csv(args.output, sep="\t", index=False)
     logger.info("Output written to: %s", resolve_path_relative_to_root(args.output))
 
 

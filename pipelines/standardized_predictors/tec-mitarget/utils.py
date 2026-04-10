@@ -268,17 +268,7 @@ def map_refseq_to_ensembl(
     out[gene_name_column] = mapped.str[1]
     return _drop_unmapped_rows(out, ensembl_id_column, logger)
 
-def build_output_table(
-    df: pd.DataFrame,
-    prediction_column: str,
-    score_column: str,
-    final_columns: list[str],
-) -> pd.DataFrame:
-    out = df.copy()
-    out[score_column] = pd.to_numeric(out[prediction_column], errors="coerce")
-    return out.loc[:, final_columns].copy()
-
-def check_and_deduplicate_final_pairs(
+def _check_and_deduplicate_final_pairs(
     df: pd.DataFrame,
     ensembl_id_column: str,
     mimat_column: str,
@@ -292,6 +282,29 @@ def check_and_deduplicate_final_pairs(
 
     before = len(df)
     out = df.drop_duplicates(subset=[ensembl_id_column, mimat_column, score_column]).copy()
-    if len(out) != before:
-        logger.info("Final rows after Ensembl ID : miRNA MIMAT : score deduplication: %d/%d", len(out), before)
+    logger.info(
+        "Final rows after Ensembl ID : miRNA MIMAT : score deduplication: %d/%d",
+        len(out),
+        before,
+    )
     return out
+
+def build_output_table(
+    df: pd.DataFrame,
+    prediction_column: str,
+    score_column: str,
+    final_columns: list[str],
+    ensembl_id_column: str,
+    mimat_column: str,
+    logger: logging.Logger,
+) -> pd.DataFrame:
+    out = df.copy()
+    out[score_column] = pd.to_numeric(out[prediction_column], errors="coerce")
+    out = out.loc[:, final_columns].copy()
+    return _check_and_deduplicate_final_pairs(
+        out,
+        ensembl_id_column,
+        mimat_column,
+        score_column,
+        logger,
+    )
