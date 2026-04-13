@@ -31,7 +31,7 @@ def test_example_end_to_end(tmp_path):
     repo_root = pathlib.Path(__file__).resolve().parents[1]
     tmp_dir = tmp_path
     config = tmp_dir / "benchmark.yaml"
-    out_dir = tmp_dir / "results"
+    out_root = tmp_dir / "results"
 
     experiments = pd.read_csv(repo_root / "metadata" / "mirna_experiment_info.tsv", sep="\t")
     experiments = experiments[
@@ -92,17 +92,20 @@ def test_example_end_to_end(tmp_path):
                 "  abs_logfc_threshold: 1.0",
                 "  predictor_top_fraction: 0.10",
                 "",
-                f"out_dir: {out_dir}",
+                "tags: [demo, end_to_end]",
+                "",
+                f"out_dir: {out_root}",
                 "",
             ]
         ),
         encoding="utf-8",
     )
 
-    stale_plot = out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "mock_score_vs_logFC.png"
+    stale_run_dir = out_root / "legacy_run"
+    stale_plot = stale_run_dir / "plots" / "GSE109725_OE_miR_204_5p" / "mock_score_vs_logFC.png"
     stale_plot.parent.mkdir(parents=True, exist_ok=True)
     stale_plot.write_text("stale", encoding="utf-8")
-    stale_report = out_dir / "reports" / "GSE109725_OE_miR_204_5p__mock_evaluation_report.txt"
+    stale_report = stale_run_dir / "reports" / "GSE109725_OE_miR_204_5p__mock_evaluation_report.txt"
     stale_report.parent.mkdir(parents=True, exist_ok=True)
     stale_report.write_text("stale", encoding="utf-8")
 
@@ -111,6 +114,10 @@ def test_example_end_to_end(tmp_path):
         capture_output=True, text=True, cwd=str(repo_root),
     )
     assert result.returncode == 0, f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+
+    summary_paths = list(out_root.glob("*/summary.json"))
+    assert len(summary_paths) == 1
+    out_dir = summary_paths[0].parent
 
     assert (out_dir / "summary.json").is_file()
     assert (out_dir / "tables" / "aps_per_experiment.tsv").is_file()
@@ -124,6 +131,10 @@ def test_example_end_to_end(tmp_path):
     ]
 
     summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["out_root"] == str(out_root)
+    assert summary["out_dir"] == str(out_dir)
+    assert summary["run_dir_name"] == out_dir.name
+    assert summary["tags"] == ["demo", "end_to_end"]
     assert set(summary["dataset_ids"]) == {
         "GSE109725_OE_miR_204_5p",
         "GSE210778_OE_miR_375_3p",
@@ -148,8 +159,8 @@ def test_example_end_to_end(tmp_path):
     assert not (
         out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "predictor_2_roc_curve.png"
     ).exists()
-    assert not stale_plot.exists()
-    assert not stale_report.exists()
+    assert stale_plot.exists()
+    assert stale_report.exists()
 
     aps_lines = (out_dir / "tables" / "aps_per_experiment.tsv").read_text(
         encoding="utf-8"

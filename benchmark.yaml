@@ -25,9 +25,9 @@ experiments:
   # de_table_path: [data/experiments/processed/18745741/GSE124530_edger_out_oe_hsa_miR_10a_5p_oe_10a5p.tsv]
 
 # Filter predictors by ANY column in the predictions TSV.
-# The default repo config compares the built-in weak and strong demo predictors.
+# The default repo config compares the two demo predictors plus TargetScan.
 predictors:
-  tool_id: [predictor_1, predictor_2]
+  tool_id: [predictor_1, predictor_2, targetscan]
   # official_name: [Predictor 1, Predictor 2]
   # organism: [Homo sapiens]
   # score_type: [probability]

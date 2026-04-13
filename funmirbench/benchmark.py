@@ -1,9 +1,11 @@
 """Run the FuNmiRBench benchmark from a single YAML config."""
 
 import argparse
+import hashlib
 import json
 import logging
 import pathlib
+import re
 import shutil
 import urllib.parse
 
@@ -18,6 +20,63 @@ from funmirbench.logger import parse_log_level, setup_logging
 
 
 logger = logging.getLogger(__name__)
+
+
+def _slugify(value):
+    text = str(value).strip().lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    text = text.strip("-")
+    return text or "na"
+
+
+def _summarize_values(prefix, values, *, max_items=2):
+    items = [_slugify(value) for value in values if str(value).strip()]
+    if not items:
+        return f"{prefix}-none"
+
+    digest = hashlib.sha1("|".join(items).encode("utf-8")).hexdigest()[:8]
+    if len(items) <= max_items:
+        body = "-".join(items)
+    else:
+        body = "-".join(items[:max_items]) + f"-plus{len(items) - max_items}"
+
+    part = f"{prefix}-{body}"
+    if len(part) > 80:
+        return f"{prefix}-{len(items)}items-{digest}"
+    return part
+
+
+def build_run_dir_name(*, experiments, tool_ids, eval_cfg, tags=None):
+    del eval_cfg
+    parts = []
+
+    if tags:
+        if isinstance(tags, str):
+            tags = [tags]
+        parts.append(_summarize_values("tag", tags, max_items=3))
+
+    perturbations = {
+        str(meta.perturbation).strip().upper()
+        for meta in experiments
+        if str(meta.perturbation).strip()
+    }
+    cell_lines = {
+        str(meta.cell_line).strip()
+        for meta in experiments
+        if str(meta.cell_line).strip() and str(meta.cell_line).strip().upper() != "NA"
+    }
+
+    parts.extend(
+        [
+            f"exp{len(experiments)}",
+            f"pred{len(tool_ids)}",
+            f"oe{int('OE' in perturbations)}",
+            f"ko{int('KO' in perturbations)}",
+            f"kd{int('KD' in perturbations)}",
+            f"cell{len(cell_lines)}",
+        ]
+    )
+    return "__".join(parts)
 
 
 def parse_args():
@@ -127,7 +186,21 @@ def run_benchmark(config_path):
         raise ValueError("Predictor selection resolved to no predictors.")
 
     eval_cfg = config.get("evaluation", {})
-    out_dir = (root / config.get("out_dir", "results")).resolve()
+    out_root = (root / config.get("out_dir", "results")).resolve()
+    out_root.mkdir(parents=True, exist_ok=True)
+    run_dir_name = build_run_dir_name(
+        experiments=experiments,
+        tool_ids=list(predictions),
+        eval_cfg=eval_cfg,
+        tags=config.get("tags"),
+    )
+    out_dir = out_root / run_dir_name
+    suffix = 2
+    while out_dir.exists():
+        out_dir = out_root / f"{run_dir_name}__r{suffix}"
+        suffix += 1
+    log(f"Results root: {out_root}")
+    log(f"Run output dir: {out_dir}")
 
     joined_dir = out_dir / "joined"
     plots_dir = out_dir / "plots"
@@ -191,7 +264,10 @@ def run_benchmark(config_path):
 
     summary = {
         "config": str(config_path),
+        "out_root": str(out_root),
         "out_dir": str(out_dir),
+        "run_dir_name": out_dir.name,
+        "tags": config.get("tags", []),
         "dataset_ids": [meta.id for meta in experiments],
         "tool_ids": tool_ids,
         "metric_tables": metric_tables,

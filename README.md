@@ -204,7 +204,8 @@ Benchmark config summary:
 - `experiments`: which experiment rows to include
 - `predictors`: which predictor rows to include
 - `evaluation`: thresholds and ranking settings
-- `out_dir`: results directory
+- `tags`: optional labels included in the per-run output folder name
+- `out_dir`: results root directory; each benchmark run creates its own subfolder under this root
 
 Run it with:
 
@@ -244,6 +245,8 @@ evaluation:
   abs_logfc_threshold: 1.0
   predictor_top_fraction: 0.10
 
+tags: [demo]
+
 out_dir: results/
 ```
 
@@ -257,7 +260,11 @@ normal workflow is just to edit or uncomment filters.
 
 ## Outputs
 
-After a benchmark run, `results/` contains:
+After a benchmark run, `results/` contains one new run folder, for example:
+
+- `results/tag-demo__exp3__pred2__oe1__ko1__kd0__cell3/`
+
+Inside each run folder you get:
 
 - `joined/`: joined DE + predictor score tables
 - `tables/`: APS, PR-AUC, AUROC, and Spearman summary tables
