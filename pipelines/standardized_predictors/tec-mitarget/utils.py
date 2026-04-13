@@ -176,7 +176,7 @@ def create_refseq_to_ensembl_mapping(
 
     mapping: dict[str, tuple[str, str]] = {}
     for _, row in biomart.iterrows():
-        refseq_id = row[biomart_refseq_column]
+        refseq_id = str(row[biomart_refseq_column]).strip()
         mapping[refseq_id] = (
             row[biomart_ensembl_id_column],
             row[biomart_gene_name_column],
@@ -240,8 +240,8 @@ def map_mirna_names_to_mimat(
     mimat_column: str,
 ) -> pd.DataFrame:
     out = df.copy()
-    out[mirna_name_column] = out[query_column]
-    out[mimat_column] = out[query_column].map(mirna_name_to_id)
+    out[mirna_name_column] = out[query_column].astype(str).str.strip()
+    out[mimat_column] = out[mirna_name_column].map(mirna_name_to_id)
     return _drop_unmapped_rows(out, mimat_column)
 
 def map_refseq_to_ensembl(
@@ -252,6 +252,7 @@ def map_refseq_to_ensembl(
     gene_name_column: str,
 ) -> pd.DataFrame:
     out = df.copy()
+    out[refseq_column] = out[refseq_column].astype(str).str.strip()
     mapped = out[refseq_column].map(refseq_to_ensembl_map)
     out[ensembl_id_column] = mapped.str[0]
     out[gene_name_column] = mapped.str[1]
