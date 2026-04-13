@@ -12,7 +12,10 @@ miniconda3/
 .vscode/
 
 # Local data outputs (NOT tracked)
-data/experiments/raw/
+data/experiments/processed/*
+!data/experiments/processed/18745741/
+!data/experiments/processed/18745741/*.tsv
+data/experiments/raw/*
 data/predictions/*
 !data/predictions/mock/
 data/predictions/mock/*

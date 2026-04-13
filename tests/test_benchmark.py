@@ -7,8 +7,23 @@ import sys
 
 import pandas as pd
 
+from funmirbench import benchmark
 from funmirbench.build_cheating_predictions import build_cheating_scores
 from funmirbench.build_predictions import build_mock_scores, write_tsv
+
+
+def test_selected_experiment_paths_applies_filters(tmp_path):
+    experiments_tsv = tmp_path / "experiments.tsv"
+    pd.DataFrame(
+        [
+            {"id": "A", "de_table_path": "data/experiments/processed/18745741/a.tsv", "mirna_name": "m1"},
+            {"id": "B", "de_table_path": "data/experiments/processed/18745741/b.tsv", "mirna_name": "m2"},
+        ]
+    ).to_csv(experiments_tsv, sep="\t", index=False)
+
+    paths = benchmark.selected_experiment_paths(experiments_tsv, {"id": ["B"]})
+
+    assert paths == ["data/experiments/processed/18745741/b.tsv"]
 
 
 def test_example_end_to_end(tmp_path):
@@ -143,3 +158,93 @@ def test_example_end_to_end(tmp_path):
     header = aps_lines[0].split("\t")
     assert "predictor_1" in header
     assert "predictor_2" in header
+
+
+def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
+    config = tmp_path / "benchmark.yaml"
+    experiments_tsv = tmp_path / "experiments.tsv"
+    predictions_tsv = tmp_path / "predictions.tsv"
+    results_dir = tmp_path / "results"
+
+    pd.DataFrame(
+        [
+            {
+                "id": "T001",
+                "mirna_name": "hsa-miR-test",
+                "tested_cell_line": "HeLa",
+                "tissue": "cervix",
+                "experiment_type": "OE",
+                "organism": "Homo sapiens",
+                "gse_url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE000001",
+                "de_table_path": "data/experiments/processed/18745741/demo.tsv",
+            }
+        ]
+    ).to_csv(experiments_tsv, sep="\t", index=False)
+
+    score_path = tmp_path / "scores.tsv"
+    score_path.write_text(
+        "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+        "ENSG1\tGENE1\t\thsa-miR-test\t0.9\n",
+        encoding="utf-8",
+    )
+    pd.DataFrame(
+        [
+            {
+                "tool_id": "predictor_1",
+                "predictor_output_path": str(score_path),
+            }
+        ]
+    ).to_csv(predictions_tsv, sep="\t", index=False)
+
+    config.write_text(
+        "\n".join(
+            [
+                f"experiments_tsv: {experiments_tsv}",
+                f"predictions_tsv: {predictions_tsv}",
+                "experiments:",
+                "  id: [T001]",
+                "predictors:",
+                "  tool_id: [predictor_1]",
+                f"out_dir: {results_dir}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    sync_calls = []
+
+    def fake_sync_zenodo_experiments(paths, *, repo=None, registry=None, token=None, timeout=120, force=False):
+        sync_calls.append((paths, repo, token, timeout, force))
+        dest = repo / "data" / "experiments" / "processed" / "18745741" / "demo.tsv"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(
+            "gene_id\tlogFC\tFDR\tPValue\n"
+            "ENSG1\t-2.0\t0.01\t0.001\n",
+            encoding="utf-8",
+        )
+        return [dest]
+
+    monkeypatch.setattr(benchmark, "sync_zenodo_experiments", fake_sync_zenodo_experiments)
+    monkeypatch.setattr(
+        benchmark,
+        "evaluate_joined_dataframe",
+        lambda *args, **kwargs: {
+            "metric_rows": [],
+            "plots": [],
+            "predictor_correlation_tsv": None,
+        },
+    )
+    monkeypatch.setattr(
+        benchmark,
+        "write_metric_tables",
+        lambda metric_rows, tables_dir: {"aps_per_experiment": str(tables_dir / "aps.tsv")},
+    )
+
+    out_dir = benchmark.run_benchmark(config)
+
+    assert out_dir == results_dir.resolve()
+    assert sync_calls == [(["data/experiments/processed/18745741/demo.tsv"], tmp_path, None, 120, False)]
+    joined = pd.read_csv(results_dir / "joined" / "T001.tsv", sep="\t")
+    assert joined["gene_id"].tolist() == ["ENSG1"]
+    assert joined["score_predictor_1"].tolist() == [0.9]

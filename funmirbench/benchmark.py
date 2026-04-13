@@ -12,6 +12,7 @@ import yaml
 
 from funmirbench import DatasetMeta
 from funmirbench.evaluate import evaluate_joined_dataframe, write_metric_tables
+from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
 from funmirbench.logger import parse_log_level, setup_logging
 
@@ -64,6 +65,13 @@ def load_experiments(tsv_path, root, filters):
     return metas
 
 
+def selected_experiment_paths(tsv_path, filters) -> list[str]:
+    df = pd.read_csv(tsv_path, sep="\t")
+    if filters:
+        df = filter_df(df, filters)
+    return [str(value) for value in df["de_table_path"].tolist()]
+
+
 def load_predictions(tsv_path, filters):
     df = pd.read_csv(tsv_path, sep="\t")
     if filters:
@@ -90,6 +98,16 @@ def run_benchmark(config_path):
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
     root = config_path.parent
+
+    logger.info("Syncing selected experiment DE tables from Zenodo...")
+    synced = sync_zenodo_experiments(
+        selected_experiment_paths(
+            root / config["experiments_tsv"],
+            config.get("experiments"),
+        ),
+        repo=root,
+    )
+    logger.info(f"Synced {len(synced)} experiment DE tables.")
 
     logger.info("Loading experiments...")
     experiments = load_experiments(
