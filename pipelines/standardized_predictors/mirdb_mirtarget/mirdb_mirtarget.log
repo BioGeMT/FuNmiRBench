@@ -1,0 +1,17 @@
+2026-04-13 11:13:55 | INFO | utils | Starting pipeline
+2026-04-13 11:13:55 | INFO | utils | Using pipelines/standardized_predictors/mirdb_mirtarget/data/resources/mirbase/mature.fa
+2026-04-13 11:13:55 | INFO | utils | Using pipelines/standardized_predictors/mirdb_mirtarget/data/resources/biomart/hsapiens_refseq_to_ensembl.tsv
+2026-04-13 11:13:55 | INFO | utils | Loading predictions
+2026-04-13 11:14:16 | INFO | utils | Keeping valid rows: 8255691/8255691
+2026-04-13 11:14:20 | INFO | utils | Keeping unique rows: 8255691/8255691
+2026-04-13 11:14:24 | INFO | utils | Creating miRNA name to MIMAT ID mapping
+2026-04-13 11:14:24 | INFO | utils | Creating RefSeq to Ensembl ID, Gene name mapping
+2026-04-13 11:14:25 | INFO | utils | Keeping valid rows: 74593/554612
+2026-04-13 11:14:25 | INFO | utils | Keeping unique rows: 74568/74593
+2026-04-13 11:14:25 | INFO | utils | Keeping non-conflicting rows: 63157/74568
+2026-04-13 11:14:27 | INFO | utils | Mapping miRNA names to MIMAT IDs
+2026-04-13 11:14:28 | INFO | utils | Mapping RefSeq IDs to Ensembl IDs and Gene names
+2026-04-13 11:14:34 | INFO | utils | Mapped rows: 7720191/8255691
+2026-04-13 11:14:34 | INFO | utils | Building final schema output table
+2026-04-13 11:14:41 | INFO | utils | Final rows after collapsing Ensembl ID : miRNA MIMAT pairs by max score: 7714323/7720191
+2026-04-13 11:14:56 | INFO | utils | Output written to: data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardised.tsv
