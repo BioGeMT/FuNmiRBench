@@ -12,6 +12,8 @@ from funmirbench.logger import (
     setup_logging,
 )
 
+logger = logging.getLogger("utils")
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -21,7 +23,7 @@ def resolve_path_relative_to_root(path: Path) -> Path:
     except ValueError:
         return path
 
-def configure_logging(log_path: Path, log_level: str) -> logging.Logger:
+def configure_logging(log_path: Path, log_level: str) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     setup_logging(parse_log_level(log_level))
     root_logger = logging.getLogger()
@@ -34,12 +36,10 @@ def configure_logging(log_path: Path, log_level: str) -> logging.Logger:
         )
     )
     root_logger.addHandler(file_handler)
-    return logging.getLogger(__name__)
 
 def download_file(
     url: str,
     output_path: Path,
-    logger: logging.Logger,
     params: Optional[dict[str, str]] = None,
     timeout: int = 120,
 ) -> Path:
@@ -55,6 +55,9 @@ def download_file(
     response.raise_for_status()
     if not response.content.strip():
         raise RuntimeError(f"Empty response from {url}")
+    response_text = response.content.decode("utf-8", errors="replace")
+    if "Query ERROR:" in response_text or "BioMart::Exception" in response_text:
+        raise RuntimeError(f"BioMart returned an error response from {url}")
 
     output_path.write_bytes(response.content)
     logger.info("Saved %s", resolve_path_relative_to_root(output_path))
@@ -63,7 +66,6 @@ def download_file(
 def _drop_invalid_rows(
     df: pd.DataFrame,
     columns: list[str],
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     
     before = len(df)
@@ -84,7 +86,6 @@ def _drop_invalid_rows(
 def _drop_duplicate_rows(
     df: pd.DataFrame,
     columns: list[str],
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     before = len(df)
     out = df.drop_duplicates(subset=columns).copy()
@@ -107,7 +108,7 @@ def load_prediction_files(
     raw_mirna_column: str,
     raw_transcript_column: str,
     raw_prediction_column: str,
-    logger: logging.Logger,
+    raw_ncbi_gene_id_column: str,
 ) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing prediction file: {path}")
@@ -116,16 +117,38 @@ def load_prediction_files(
         path,
         sep="\t",
         header=None,
-        usecols=[0, 1, 2],
-        names=[raw_mirna_column, raw_transcript_column, raw_prediction_column],
+        usecols=[0, 1, 2, 3],
+        names=[
+            raw_mirna_column,
+            raw_transcript_column,
+            raw_prediction_column,
+            raw_ncbi_gene_id_column,
+        ],
+        dtype=str,
     )
     if df.empty:
         raise RuntimeError("No prediction file was loaded")
     
-    cols = [raw_mirna_column, raw_transcript_column, raw_prediction_column]
-    df = _drop_invalid_rows(df, cols, logger)
-    df = _drop_duplicate_rows(df, cols, logger)
-    _check_conflicting_prediction_scores(df, raw_mirna_column, raw_transcript_column, raw_prediction_column)
+    cols = [
+        raw_mirna_column,
+        raw_transcript_column,
+        raw_prediction_column,
+        raw_ncbi_gene_id_column,
+    ]
+    df = _drop_invalid_rows(df, cols)
+    df = _drop_duplicate_rows(df, cols)
+    _check_conflicting_prediction_scores(
+        df,
+        raw_mirna_column,
+        raw_transcript_column,
+        raw_prediction_column,
+    )
+    _check_conflicting_prediction_scores(
+        df,
+        raw_mirna_column,
+        raw_ncbi_gene_id_column,
+        raw_prediction_column,
+    )
 
     return df
 
@@ -134,7 +157,6 @@ def _drop_conflicting_refseq_rows(
     refseq_column: str,
     ensembl_id_column: str,
     gene_name_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     before = len(df)
 
@@ -151,9 +173,8 @@ def create_refseq_to_ensembl_mapping(
     biomart_ensembl_id_column: str,
     biomart_gene_name_column: str,
     biomart_refseq_column: str,
-    logger: logging.Logger,
 ) -> dict[str, tuple[str, str]]:
-    biomart = pd.read_csv(biomart_path, sep="\t", dtype=str, names=[biomart_ensembl_id_column, biomart_gene_name_column, biomart_refseq_column])
+    biomart = pd.read_csv(biomart_path, sep="\t", dtype=str)
     required_columns = {biomart_ensembl_id_column, biomart_gene_name_column, biomart_refseq_column}
     missing = required_columns - set(biomart.columns)
     if missing:
@@ -167,24 +188,21 @@ def create_refseq_to_ensembl_mapping(
     biomart = _drop_invalid_rows(
         biomart.loc[:, biomart_columns].copy(),
         biomart_columns,
-        logger,
     )
     biomart = _drop_duplicate_rows(
         biomart,
         biomart_columns,
-        logger,
     )
     biomart = _drop_conflicting_refseq_rows(
         biomart,
         biomart_refseq_column,
         biomart_ensembl_id_column,
         biomart_gene_name_column,
-        logger,
     )
 
     mapping: dict[str, tuple[str, str]] = {}
     for _, row in biomart.iterrows():
-        refseq_id = row[biomart_refseq_column]
+        refseq_id = str(row[biomart_refseq_column]).strip()
         mapping[refseq_id] = (
             row[biomart_ensembl_id_column],
             row[biomart_gene_name_column],
@@ -225,13 +243,9 @@ def create_mirna_name_to_mimat_mapping(mature_fa_path: Path) -> dict[str, str]:
 def _drop_unmapped_rows(
     df: pd.DataFrame,
     mapped_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     before = len(df)
     out = df.loc[df[mapped_column].notna()].copy()
-
-    if len(out) == before:
-        return df
 
     logger.info(
         "Mapped rows: %d/%d",
@@ -247,12 +261,11 @@ def map_mirna_names_to_mimat(
     query_column: str,
     mirna_name_column: str,
     mimat_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     out = df.copy()
-    out[mirna_name_column] = out[query_column]
-    out[mimat_column] = out[query_column].map(mirna_name_to_id)
-    return _drop_unmapped_rows(out, mimat_column, logger)
+    out[mirna_name_column] = out[query_column].astype(str).str.strip()
+    out[mimat_column] = out[mirna_name_column].map(mirna_name_to_id)
+    return _drop_unmapped_rows(out, mimat_column)
 
 def map_refseq_to_ensembl(
     df: pd.DataFrame,
@@ -260,32 +273,141 @@ def map_refseq_to_ensembl(
     refseq_column: str,
     ensembl_id_column: str,
     gene_name_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     out = df.copy()
+    out[refseq_column] = out[refseq_column].astype(str).str.strip()
     mapped = out[refseq_column].map(refseq_to_ensembl_map)
     out[ensembl_id_column] = mapped.str[0]
     out[gene_name_column] = mapped.str[1]
-    return _drop_unmapped_rows(out, ensembl_id_column, logger)
+    return _drop_unmapped_rows(out, ensembl_id_column)
 
-def _collapse_final_pairs(      # keep only the highest scoring prediction (strongest) for each Ensembl ID : miRNA MIMAT pair
+def _drop_conflicting_ncbi_gene_id_rows(
+    df: pd.DataFrame,
+    ncbi_gene_id_column: str,
+    ensembl_id_column: str,
+    gene_name_column: str,
+) -> pd.DataFrame:
+    before = len(df)
+
+    counts = df.groupby(ncbi_gene_id_column).size()
+    conflicting_ncbi_gene_ids = counts[counts > 1].index
+
+    out = df.loc[~df[ncbi_gene_id_column].isin(conflicting_ncbi_gene_ids)].copy()
+
+    logger.info("Keeping non-conflicting rows: %d/%d", len(out), before)
+    return out
+
+def create_ncbi_gene_id_to_ensembl_mapping(
+    biomart_path: Path,
+    biomart_ensembl_id_column: str,
+    biomart_gene_name_column: str,
+    biomart_ncbi_gene_id_column: str,
+) -> dict[str, tuple[str, str]]:
+    biomart = pd.read_csv(
+        biomart_path,
+        sep="\t",
+        dtype=str,
+    )
+    required_columns = {
+        biomart_ensembl_id_column,
+        biomart_gene_name_column,
+        biomart_ncbi_gene_id_column,
+    }
+    missing = required_columns - set(biomart.columns)
+    if missing:
+        raise ValueError(f"{biomart_path} is missing columns: {missing}")
+
+    biomart_columns = [
+        biomart_ensembl_id_column,
+        biomart_gene_name_column,
+        biomart_ncbi_gene_id_column,
+    ]
+    biomart = _drop_invalid_rows(
+        biomart.loc[:, biomart_columns].copy(),
+        biomart_columns,
+    )
+    biomart = _drop_duplicate_rows(
+        biomart,
+        biomart_columns,
+    )
+    biomart = _drop_conflicting_ncbi_gene_id_rows(
+        biomart,
+        biomart_ncbi_gene_id_column,
+        biomart_ensembl_id_column,
+        biomart_gene_name_column,
+    )
+
+    mapping: dict[str, tuple[str, str]] = {}
+    for _, row in biomart.iterrows():
+        ncbi_gene_id = str(row[biomart_ncbi_gene_id_column]).strip()
+        mapping[ncbi_gene_id] = (
+            row[biomart_ensembl_id_column],
+            row[biomart_gene_name_column],
+        )
+
+    return mapping
+
+def map_ncbi_gene_id_to_ensembl(
+    df: pd.DataFrame,
+    ncbi_gene_id_to_ensembl_map: dict[str, tuple[str, str]],
+    ncbi_gene_id_column: str,
+    ensembl_id_column: str,
+    gene_name_column: str,
+    *,
+    drop_unmapped: bool = True,
+) -> pd.DataFrame:
+    out = df.copy()
+    out[ncbi_gene_id_column] = out[ncbi_gene_id_column].astype(str).str.strip()
+    mapped = out[ncbi_gene_id_column].map(ncbi_gene_id_to_ensembl_map)
+    out[ensembl_id_column] = mapped.str[0]
+    out[gene_name_column] = mapped.str[1]
+    if drop_unmapped:
+        return _drop_unmapped_rows(out, ensembl_id_column)
+
+    logger.info(
+        "Mapped rows: %d/%d",
+        out[ensembl_id_column].notna().sum(),
+        len(out),
+    )
+    return out
+
+def fill_unmapped_rows_with_refseq_to_ensembl(
+    df: pd.DataFrame,
+    refseq_to_ensembl_map: dict[str, tuple[str, str]],
+    refseq_column: str,
+    ensembl_id_column: str,
+    gene_name_column: str,
+) -> pd.DataFrame:
+    out = df.copy()
+    out[refseq_column] = out[refseq_column].astype(str).str.strip()
+
+    needs_mapping = out[ensembl_id_column].isna()
+    before_unmapped = int(needs_mapping.sum())
+
+    mapped = out.loc[needs_mapping, refseq_column].map(refseq_to_ensembl_map)
+    out.loc[needs_mapping, ensembl_id_column] = mapped.str[0]
+    out.loc[needs_mapping, gene_name_column] = mapped.str[1]
+
+    after_unmapped = int(out[ensembl_id_column].isna().sum())
+    logger.info(
+        "Fallback RefSeq mapping rescued rows: %d/%d",
+        before_unmapped - after_unmapped,
+        before_unmapped,
+    )
+    return _drop_unmapped_rows(out, ensembl_id_column)
+
+def _collapse_final_pairs(
     df: pd.DataFrame,
     ensembl_id_column: str,
     mimat_column: str,
     score_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     before = len(df)
-    out = (
-        df.sort_values(
-            by=[ensembl_id_column, mimat_column, score_column],
-            ascending=[True, True, False],
-        )
-        .drop_duplicates(subset=[ensembl_id_column, mimat_column], keep="first")
-        .copy()
-    )
+    out = df.drop_duplicates(
+        subset=[ensembl_id_column, mimat_column, score_column],
+    ).copy()
     logger.info(
-        "Final rows after collapsing Ensembl ID : miRNA MIMAT pairs by max score: %d/%d",
+        "Final rows after exact deduplication on Ensembl ID : miRNA MIMAT : score: %d/%d",
         len(out),
         before,
     )
@@ -298,7 +420,6 @@ def build_output_table(
     final_columns: list[str],
     ensembl_id_column: str,
     mimat_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     out = df.copy()
     out[score_column] = pd.to_numeric(out[prediction_column], errors="coerce")
@@ -308,5 +429,4 @@ def build_output_table(
         ensembl_id_column,
         mimat_column,
         score_column,
-        logger,
     )

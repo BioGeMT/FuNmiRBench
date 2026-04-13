@@ -1,0 +1,122 @@
+# miRDB MirTarget v4.0
+
+This directory contains the standardization pipeline for miRDB gene-level predictions.
+
+## Files
+
+- `pipeline.py`: CLI entrypoint for the pipeline.
+- `utils.py`: shared helpers for logging, downloads, cleaning, mapping, and output construction.
+- `mirdb_mirtarget.log`: log file written by the default run.
+
+The pipeline downloads and reuses annotation resources under:
+
+```text
+data/resources/
+```
+
+This includes:
+
+- `mirbase/mature.fa`
+- `biomart/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv`
+
+The pipeline expects a raw miRDB text file at:
+
+```text
+data/MirTarget4.0_human_targets.txt
+```
+
+This file was shared by the respective authors via email since their publicly available predictions file only includes prediction scores in the range: 50 to 100 due to some filter. 
+
+The file is treated as a 4-column tab-separated table without a header:
+
+1. `miRNA`
+2. `refseq_id`
+3. `prediction`
+4. `ncbi_gene_id`
+
+The pipeline reads and names all four columns, but gene-level mapping is attempted in this order:
+
+1. `ncbi_gene_id`
+2. `refseq_id` fallback for rows still unmapped after step 1
+
+## What The Pipeline Does
+
+The pipeline:
+
+1. Downloads miRBase `mature.fa` version 22.1.
+2. Downloads a BioMart TSV with headers and unique rows containing:
+   - `Gene stable ID`
+   - `Gene name`
+   - `RefSeq mRNA ID`
+   - `NCBI gene (formerly Entrezgene) ID`
+3. Loads the raw miRDB predictions file.
+4. Drops rows with missing or invalid values in:
+   - `miRNA`
+   - `refseq_id`
+   - `prediction`
+   - `ncbi_gene_id`
+5. Deduplicates exact duplicate raw rows on those same four columns.
+6. Raises if the same `(miRNA, refseq_id)` pair has conflicting scores in the raw input.
+7. Raises if the same `(miRNA, ncbi_gene_id)` pair has conflicting scores in the raw input.
+8. Builds a miRNA mapping from human miRBase names (`hsa-*`) to `MIMAT` IDs.
+9. Builds an NCBI Gene ID to `(Ensembl_ID, Gene_Name)` mapping from BioMart.
+10. Builds a RefSeq mRNA to `(Ensembl_ID, Gene_Name)` mapping from the same BioMart file.
+11. Maps:
+    - `miRNA` to `miRNA_ID`
+    - `ncbi_gene_id` to `Ensembl_ID` and `Gene_Name`
+12. For rows still missing an Ensembl mapping, falls back to `refseq_id`.
+13. Drops rows that still fail gene mapping after the fallback.
+14. Converts `prediction` to numeric `Score`.
+15. Drops only exact duplicate final rows on:
+    - `Ensembl_ID`
+    - `miRNA_ID`
+    - `Score`
+16. Writes the standardized output table.
+
+## Output Schema
+
+The output TSV contains:
+
+- `Ensembl_ID`
+- `Gene_Name`
+- `miRNA_ID`
+- `miRNA_Name`
+- `Score`
+
+`miRNA_Name` is copied from the raw `miRNA` column. `Score` is the numeric form of `prediction`.
+
+## Output Location
+
+By default, the standardized file is written to:
+
+```text
+data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardised.tsv
+```
+
+relative to the repository root.
+
+## Run
+
+From the repository root:
+
+```bash
+conda run -n standardized_predictors \
+  python pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py
+```
+
+## CLI Arguments
+
+```bash
+conda run -n standardized_predictors \
+  python pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py \
+  --predictions-file pipelines/standardized_predictors/mirdb_mirtarget/data/MirTarget4.0_human_targets.txt \
+  --resources-dir pipelines/standardized_predictors/mirdb_mirtarget/data/resources \
+  --output data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardised.tsv \
+  --log-file pipelines/standardized_predictors/mirdb_mirtarget/mirdb_mirtarget.log \
+  --log-level INFO
+```
+
+## Logging
+
+Logging is written both to stdout and to the log file passed via `--log-file`.
+

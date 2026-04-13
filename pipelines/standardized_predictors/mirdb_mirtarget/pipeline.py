@@ -1,6 +1,9 @@
 import argparse
+import logging
 from pathlib import Path
-from utils import configure_logging, download_file, load_prediction_files, create_mirna_name_to_mimat_mapping, map_mirna_names_to_mimat, create_refseq_to_ensembl_mapping, map_refseq_to_ensembl, build_output_table, repo_root, resolve_path_relative_to_root
+from utils import configure_logging, download_file, load_prediction_files, create_mirna_name_to_mimat_mapping, map_mirna_names_to_mimat, create_ncbi_gene_id_to_ensembl_mapping, map_ncbi_gene_id_to_ensembl, create_refseq_to_ensembl_mapping, fill_unmapped_rows_with_refseq_to_ensembl, build_output_table, repo_root, resolve_path_relative_to_root
+
+logger = logging.getLogger("pipeline")
 
 def main() -> None:
     root = repo_root()
@@ -13,16 +16,16 @@ def main() -> None:
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level. Default: INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] )
 
     args = parser.parse_args()
-    logger = configure_logging(args.log_file, args.log_level)
+    configure_logging(args.log_file, args.log_level)
     logger.info("Starting pipeline")
 
     mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"
     mirbase_path = args.resources_dir / "mirbase" / "mature.fa"
-    mirbase_path = download_file(mirbase_url, mirbase_path, logger)
+    mirbase_path = download_file(mirbase_url, mirbase_path)
 
     biomart_query = """<?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE Query>
-        <Query  virtualSchemaName = "default" formatter = "TSV" header = "0" uniqueRows = "0" count = "" datasetConfigVersion = "0.6" >
+        <Query  virtualSchemaName = "default" formatter = "TSV" header = "1" uniqueRows = "1" count = "" datasetConfigVersion = "0.6" >
             <Dataset name = "hsapiens_gene_ensembl" interface = "default" >
                 <Attribute name = "ensembl_gene_id" />
                 <Attribute name = "external_gene_name" />
@@ -31,35 +34,43 @@ def main() -> None:
             </Dataset>
         </Query>"""
     biomart_url = "https://Sep2025.archive.ensembl.org/biomart/martservice"
-    biomart_path = args.resources_dir / "biomart" / "hsapiens_refseq_to_ensembl.tsv"
-    biomart_path = download_file(biomart_url, biomart_path, logger, params={"query": biomart_query}, timeout=300)
+    biomart_path = args.resources_dir / "biomart" / "hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv"
+    biomart_path = download_file(biomart_url, biomart_path, params={"query": biomart_query}, timeout=360)
 
     raw_predictions_path = args.predictions_file
     raw_mirna_column = "miRNA"
-    raw_transcript_column = "target"
+    raw_transcript_column = "refseq_id"
     raw_prediction_column = "prediction"
+    raw_ncbi_gene_id_column = "ncbi_gene_id"
     logger.info("Loading predictions")
     pred_df = load_prediction_files(
         raw_predictions_path,
         raw_mirna_column,
         raw_transcript_column,
         raw_prediction_column,
-        logger,
+        raw_ncbi_gene_id_column,
     )
 
     logger.info("Creating miRNA name to MIMAT ID mapping")
     mirna_name_to_mimat_map = create_mirna_name_to_mimat_mapping(mirbase_path)
 
-    logger.info("Creating RefSeq to Ensembl ID, Gene name mapping")
+    logger.info("Creating NCBI Gene ID to Ensembl ID, Gene name mapping")
     biomart_ensembl_id_column = "Gene stable ID"
     biomart_gene_name_column = "Gene name"
     biomart_refseq_column = "RefSeq mRNA ID"
+    biomart_ncbi_gene_id_column = "NCBI gene (formerly Entrezgene) ID"
+    ncbi_gene_id_to_ensembl_map = create_ncbi_gene_id_to_ensembl_mapping(
+        biomart_path,
+        biomart_ensembl_id_column,
+        biomart_gene_name_column,
+        biomart_ncbi_gene_id_column,
+    )
+    logger.info("Creating RefSeq to Ensembl ID, Gene name mapping")
     refseq_to_ensembl_map = create_refseq_to_ensembl_mapping(
         biomart_path,
         biomart_ensembl_id_column,
         biomart_gene_name_column,
         biomart_refseq_column,
-        logger,
     )
 
     # Define final schema
@@ -83,17 +94,24 @@ def main() -> None:
         raw_mirna_column,
         mirna_name_column,
         mimat_column,
-        logger,
     )
 
-    logger.info("Mapping RefSeq IDs to Ensembl IDs and Gene names")
-    pred_df = map_refseq_to_ensembl(
+    logger.info("Mapping NCBI Gene IDs to Ensembl IDs and Gene names")
+    pred_df = map_ncbi_gene_id_to_ensembl(
+        pred_df,
+        ncbi_gene_id_to_ensembl_map,
+        raw_ncbi_gene_id_column,
+        ensembl_id_column,
+        gene_name_column,
+        drop_unmapped=False,
+    )
+    logger.info("Falling back to RefSeq IDs for rows still missing Ensembl mappings")
+    pred_df = fill_unmapped_rows_with_refseq_to_ensembl(
         pred_df,
         refseq_to_ensembl_map,
         raw_transcript_column,
         ensembl_id_column,
         gene_name_column,
-        logger,
     )
     logger.info("Building final schema output table")
     final_df = build_output_table(
@@ -103,7 +121,6 @@ def main() -> None:
         final_columns,
         ensembl_id_column,
         mimat_column,
-        logger,
     )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
