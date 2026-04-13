@@ -5,6 +5,7 @@ import pathlib
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib.colors import ListedColormap, TwoSlopeNorm
 from sklearn.metrics import (
     auc,
     average_precision_score,
@@ -14,6 +15,50 @@ from sklearn.metrics import (
 )
 
 SCORE_PREFIX = "score_"
+FIGURE_DPI = 300
+NEGATIVE_COLOR = "#B8C4D6"
+POSITIVE_COLOR = "#D04E4E"
+NEUTRAL_COLOR = "#5B6577"
+GRID_COLOR = "#D8DEE9"
+SCORE_CMAP = ListedColormap(
+    ["#F6F7FB", "#C5D7EE", "#7FA8D8", "#2F5D8C", "#17324D"]
+)
+GT_CMAP = ListedColormap(["#EEF1F6", "#243B53"])
+CURVE_COLORS = [
+    "#1F77B4",
+    "#D1495B",
+    "#2A9D8F",
+    "#9467BD",
+    "#D97D0D",
+    "#4C78A8",
+]
+
+
+def _tool_label(tool_id):
+    return str(tool_id).replace("_", " ")
+
+
+def _dataset_heading(dataset_id, *, suffix=None):
+    if suffix:
+        return f"{dataset_id} | {suffix}"
+    return str(dataset_id)
+
+
+def _style_axes(ax, *, grid_axis="y"):
+    ax.set_facecolor("white")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#A0AEC0")
+    ax.spines["bottom"].set_color("#A0AEC0")
+    ax.tick_params(colors="#3C4858", labelsize=9)
+    if grid_axis:
+        ax.grid(True, axis=grid_axis, color=GRID_COLOR, linewidth=0.8, alpha=0.9)
+    ax.set_axisbelow(True)
+
+
+def _save_figure(fig, out_path):
+    fig.savefig(out_path, dpi=FIGURE_DPI, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
 
 
 def _safe_neglog10(series):
@@ -80,21 +125,68 @@ def _prepare_scored_frame(joined, *, score_col, fdr_threshold, abs_logfc_thresho
 def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_path):
     pearson = float(df[score_col].corr(df["logFC"], method="pearson"))
     spearman = float(df[score_col].corr(df["logFC"], method="spearman"))
+    fig, ax = plt.subplots(figsize=(7.4, 5.2))
+    positive_mask = df["is_positive"].astype(bool)
+    negatives = df.loc[~positive_mask]
+    positives = df.loc[positive_mask]
 
-    plt.figure(figsize=(7, 5))
-    plt.scatter(df[score_col], df["logFC"], alpha=0.5, s=12)
-    plt.xlabel(f"{tool_id} score")
-    plt.ylabel("logFC")
-    plt.title(f"{dataset_id}: {tool_id} score vs logFC")
-    plt.text(
-        0.02, 0.98,
-        f"pearson={pearson:.4f}\nspearman={spearman:.4f}",
-        transform=plt.gca().transAxes, va="top", ha="left",
-        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8},
+    _style_axes(ax, grid_axis="both")
+    ax.scatter(
+        negatives[score_col],
+        negatives["logFC"],
+        s=18,
+        alpha=0.55,
+        color=NEGATIVE_COLOR,
+        edgecolors="none",
+        label="background genes",
+        rasterized=True,
     )
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
-    plt.close()
+    ax.scatter(
+        positives[score_col],
+        positives["logFC"],
+        s=28,
+        alpha=0.9,
+        color=POSITIVE_COLOR,
+        edgecolors="white",
+        linewidths=0.35,
+        label="DE positives",
+        rasterized=True,
+        zorder=3,
+    )
+    ax.axhline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle="--", alpha=0.75)
+    score_min = float(df[score_col].min())
+    score_max = float(df[score_col].max())
+    if score_min <= 0.0 <= score_max:
+        ax.axvline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle=":", alpha=0.75)
+    ax.set_xlabel(f"{_tool_label(tool_id)} score", fontsize=10)
+    ax.set_ylabel("logFC", fontsize=10)
+    ax.set_title(
+        _dataset_heading(dataset_id, suffix=f"{_tool_label(tool_id)} score vs logFC"),
+        fontsize=12,
+        fontweight="semibold",
+        loc="left",
+    )
+    ax.text(
+        0.01,
+        1.02,
+        f"n={len(df):,} genes | positives={int(positive_mask.sum()):,}",
+        transform=ax.transAxes,
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+        va="bottom",
+    )
+    ax.text(
+        0.99,
+        0.02,
+        f"Pearson {pearson:.3f}\nSpearman {spearman:.3f}",
+        transform=ax.transAxes,
+        va="bottom",
+        ha="right",
+        fontsize=9,
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "white", "edgecolor": GRID_COLOR},
+    )
+    ax.legend(frameon=False, loc="upper right", fontsize=9)
+    _save_figure(fig, out_path)
     return pearson, spearman
 
 
@@ -110,39 +202,76 @@ def _compute_auroc(y_true, y_score):
 
 
 def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
-    plt.figure(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(6.4, 5.1))
+    _style_axes(ax, grid_axis="both")
     baseline = None
-    for item in comparisons:
+    for index, item in enumerate(comparisons):
         precision, recall, _ = precision_recall_curve(item["y_true"], item["y_score"])
         pr_auc = auc(recall, precision)
         if baseline is None:
             baseline = float(pd.Series(item["y_true"]).mean())
-        plt.plot(recall, precision, label=f"{item['tool_id']} ({pr_auc:.3f})")
+        ax.plot(
+            recall,
+            precision,
+            label=f"{_tool_label(item['tool_id'])} ({pr_auc:.3f})",
+            linewidth=2.2,
+            color=CURVE_COLORS[index % len(CURVE_COLORS)],
+        )
     if baseline is not None:
-        plt.axhline(baseline, linestyle="--", color="grey", label=f"random ({baseline:.3f})")
-    plt.xlabel("Recall")
-    plt.ylabel("Precision")
-    plt.title(f"{dataset_id}: predictor PR curves")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
-    plt.close()
+        ax.axhline(
+            baseline,
+            linestyle="--",
+            linewidth=1.4,
+            color=NEUTRAL_COLOR,
+            label=f"random ({baseline:.3f})",
+        )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("Recall", fontsize=10)
+    ax.set_ylabel("Precision", fontsize=10)
+    ax.set_title(
+        _dataset_heading(dataset_id, suffix="precision-recall comparison"),
+        fontsize=12,
+        fontweight="semibold",
+        loc="left",
+    )
+    ax.legend(frameon=False, fontsize=9, loc="lower left")
+    _save_figure(fig, out_path)
 
 
 def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
-    plt.figure(figsize=(6, 5))
-    for item in comparisons:
+    fig, ax = plt.subplots(figsize=(6.4, 5.1))
+    _style_axes(ax, grid_axis="both")
+    for index, item in enumerate(comparisons):
         fpr, tpr, _ = roc_curve(item["y_true"], item["y_score"])
         auroc = roc_auc_score(item["y_true"], item["y_score"])
-        plt.plot(fpr, tpr, label=f"{item['tool_id']} ({auroc:.3f})")
-    plt.plot([0, 1], [0, 1], linestyle="--", color="grey", label="random")
-    plt.xlabel("False positive rate")
-    plt.ylabel("True positive rate")
-    plt.title(f"{dataset_id}: predictor ROC curves")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
-    plt.close()
+        ax.plot(
+            fpr,
+            tpr,
+            label=f"{_tool_label(item['tool_id'])} ({auroc:.3f})",
+            linewidth=2.2,
+            color=CURVE_COLORS[index % len(CURVE_COLORS)],
+        )
+    ax.plot(
+        [0, 1],
+        [0, 1],
+        linestyle="--",
+        linewidth=1.4,
+        color=NEUTRAL_COLOR,
+        label="random",
+    )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("False positive rate", fontsize=10)
+    ax.set_ylabel("True positive rate", fontsize=10)
+    ax.set_title(
+        _dataset_heading(dataset_id, suffix="ROC comparison"),
+        fontsize=12,
+        fontweight="semibold",
+        loc="left",
+    )
+    ax.legend(frameon=False, fontsize=9, loc="lower right")
+    _save_figure(fig, out_path)
 
 
 def _plot_algorithms_vs_genes_heatmap(
@@ -172,24 +301,33 @@ def _plot_algorithms_vs_genes_heatmap(
         1, 3, figsize=(figure_width, figure_height),
         gridspec_kw={"width_ratios": [0.4, 0.5, max(2, len(tool_ids))]},
     )
+    for axis in axes:
+        axis.set_facecolor("white")
+        axis.spines["top"].set_visible(False)
+        axis.spines["right"].set_visible(False)
+        axis.spines["left"].set_visible(False)
+        axis.spines["bottom"].set_visible(False)
+        axis.tick_params(length=0, labelsize=8)
 
-    axes[0].imshow(work["is_positive"].to_numpy().reshape(-1, 1), aspect="auto", cmap="Greys")
-    axes[0].set_title("GT")
-    axes[0].set_xticks([0])
-    axes[0].set_xticklabels(["pos"], rotation=90)
-
-    axes[1].imshow(
-        work["logFC"].to_numpy().reshape(-1, 1), aspect="auto", cmap="coolwarm",
-        vmin=-max_abs_logfc, vmax=max_abs_logfc,
+    gt_image = axes[0].imshow(
+        work["is_positive"].to_numpy().reshape(-1, 1), aspect="auto", cmap=GT_CMAP, vmin=0, vmax=1
     )
-    axes[1].set_title("logFC")
+    axes[0].set_title("GT", fontsize=10, fontweight="semibold")
+    axes[0].set_xticks([0])
+    axes[0].set_xticklabels(["positive"], rotation=90)
+
+    logfc_image = axes[1].imshow(
+        work["logFC"].to_numpy().reshape(-1, 1), aspect="auto", cmap="coolwarm",
+        norm=TwoSlopeNorm(vmin=-max_abs_logfc, vcenter=0.0, vmax=max_abs_logfc),
+    )
+    axes[1].set_title("logFC", fontsize=10, fontweight="semibold")
     axes[1].set_xticks([0])
     axes[1].set_xticklabels(["logFC"], rotation=90)
 
-    heat = axes[2].imshow(normalized.to_numpy(), aspect="auto", cmap="viridis", vmin=0, vmax=1)
-    axes[2].set_title(f"{dataset_id}: algorithms vs genes")
+    heat = axes[2].imshow(normalized.to_numpy(), aspect="auto", cmap=SCORE_CMAP, vmin=0, vmax=1)
+    axes[2].set_title("Predictor scores", fontsize=10, fontweight="semibold")
     axes[2].set_xticks(range(len(tool_ids)))
-    axes[2].set_xticklabels(tool_ids, rotation=45, ha="right")
+    axes[2].set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
 
     if len(work) <= 40:
         labels = work["gene_id"].tolist()
@@ -200,10 +338,24 @@ def _plot_algorithms_vs_genes_heatmap(
         for axis in axes:
             axis.set_yticks([])
 
-    fig.colorbar(heat, ax=axes[2], fraction=0.046, pad=0.04, label="normalized score")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
-    plt.close()
+    axes[0].set_ylabel("genes", fontsize=10, color="#3C4858")
+    fig.suptitle(
+        _dataset_heading(dataset_id, suffix="gene-level benchmarking overview"),
+        x=0.06,
+        ha="left",
+        fontsize=13,
+        fontweight="semibold",
+    )
+    fig.text(
+        0.06,
+        0.965,
+        f"{len(work):,} genes ordered by benchmark ground truth and effect size",
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    fig.colorbar(logfc_image, ax=axes[1], fraction=0.06, pad=0.04, label="logFC")
+    fig.colorbar(heat, ax=axes[2], fraction=0.03, pad=0.02, label="normalized score")
+    _save_figure(fig, out_path)
 
 
 def _plot_predictor_correlation_heatmap(
@@ -225,20 +377,34 @@ def _plot_predictor_correlation_heatmap(
                 corr = float(normalized[a][union_mask].corr(normalized[b][union_mask], method="spearman"))
             matrix.loc[a, b] = corr
 
-    plt.figure(figsize=(max(5, len(tool_ids) * 1.5), max(4, len(tool_ids) * 1.2)))
-    image = plt.imshow(matrix.astype(float).to_numpy(), cmap="coolwarm", vmin=-1, vmax=1)
-    plt.xticks(range(len(tool_ids)), tool_ids, rotation=45, ha="right")
-    plt.yticks(range(len(tool_ids)), tool_ids)
-    plt.title(f"{dataset_id}: predictor correlation (top {int(top_fraction * 100)}%)")
+    fig, ax = plt.subplots(
+        figsize=(max(5.2, len(tool_ids) * 1.6), max(4.6, len(tool_ids) * 1.25))
+    )
+    image = ax.imshow(matrix.astype(float).to_numpy(), cmap="coolwarm", vmin=-1, vmax=1)
+    ax.set_xticks(range(len(tool_ids)))
+    ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+    ax.set_yticks(range(len(tool_ids)))
+    ax.set_yticklabels([_tool_label(tool_id) for tool_id in tool_ids])
+    ax.set_title(
+        _dataset_heading(dataset_id, suffix=f"predictor agreement (top {int(top_fraction * 100)}%)"),
+        fontsize=12,
+        fontweight="semibold",
+        loc="left",
+    )
+    ax.set_facecolor("white")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+    ax.tick_params(length=0, labelsize=9)
     for i, a in enumerate(tool_ids):
         for j, b in enumerate(tool_ids):
             value = matrix.loc[a, b]
             label = "nan" if pd.isna(value) else f"{value:.2f}"
-            plt.text(j, i, label, ha="center", va="center", color="black")
-    plt.colorbar(image, label="Spearman")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
-    plt.close()
+            color = "white" if not pd.isna(value) and abs(value) >= 0.55 else "#22303C"
+            ax.text(j, i, label, ha="center", va="center", color=color, fontsize=9)
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="Spearman")
+    _save_figure(fig, out_path)
     return matrix
 
 
