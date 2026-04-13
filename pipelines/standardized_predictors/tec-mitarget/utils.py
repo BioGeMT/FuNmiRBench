@@ -12,6 +12,8 @@ from funmirbench.logger import (
     setup_logging,
 )
 
+logger = logging.getLogger("utils")
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -21,7 +23,7 @@ def resolve_path_relative_to_root(path: Path) -> Path:
     except ValueError:
         return path
 
-def configure_logging(log_path: Path, log_level: str) -> logging.Logger:
+def configure_logging(log_path: Path, log_level: str) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     setup_logging(parse_log_level(log_level))
     root_logger = logging.getLogger()
@@ -34,12 +36,10 @@ def configure_logging(log_path: Path, log_level: str) -> logging.Logger:
         )
     )
     root_logger.addHandler(file_handler)
-    return logging.getLogger(__name__)
 
 def download_file(
     url: str,
     output_path: Path,
-    logger: logging.Logger,
     params: Optional[dict[str, str]] = None,
     timeout: int = 120,
 ) -> Path:
@@ -63,7 +63,6 @@ def download_file(
 def _drop_invalid_rows(
     df: pd.DataFrame,
     columns: list[str],
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     
     before = len(df)
@@ -84,7 +83,6 @@ def _drop_invalid_rows(
 def _drop_duplicate_rows(
     df: pd.DataFrame,
     columns: list[str],
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     before = len(df)
     out = df.drop_duplicates(subset=columns).copy()
@@ -107,7 +105,6 @@ def load_prediction_files(
     query_column: str,
     target_column: str,
     prediction_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     dfs = []
     cols = [query_column, target_column, prediction_column]
@@ -123,8 +120,8 @@ def load_prediction_files(
         raise RuntimeError("No prediction files were loaded")
 
     combined = pd.concat(dfs, ignore_index=True)
-    combined = _drop_invalid_rows(combined, cols, logger)
-    combined = _drop_duplicate_rows(combined, cols, logger)
+    combined = _drop_invalid_rows(combined, cols)
+    combined = _drop_duplicate_rows(combined, cols)
     _check_conflicting_prediction_scores(combined, query_column, target_column, prediction_column)
 
     return combined
@@ -134,7 +131,6 @@ def _drop_conflicting_refseq_rows(
     refseq_column: str,
     ensembl_id_column: str,
     gene_name_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     before = len(df)
 
@@ -151,7 +147,6 @@ def create_refseq_to_ensembl_mapping(
     biomart_ensembl_id_column: str,
     biomart_gene_name_column: str,
     biomart_refseq_column: str,
-    logger: logging.Logger,
 ) -> dict[str, tuple[str, str]]:
     biomart = pd.read_csv(biomart_path, sep="\t", dtype=str, names=[biomart_ensembl_id_column, biomart_gene_name_column, biomart_refseq_column])
     required_columns = {biomart_ensembl_id_column, biomart_gene_name_column, biomart_refseq_column}
@@ -167,19 +162,16 @@ def create_refseq_to_ensembl_mapping(
     biomart = _drop_invalid_rows(
         biomart.loc[:, biomart_columns].copy(),
         biomart_columns,
-        logger,
     )
     biomart = _drop_duplicate_rows(
         biomart,
         biomart_columns,
-        logger,
     )
     biomart = _drop_conflicting_refseq_rows(
         biomart,
         biomart_refseq_column,
         biomart_ensembl_id_column,
         biomart_gene_name_column,
-        logger,
     )
 
     mapping: dict[str, tuple[str, str]] = {}
@@ -225,7 +217,6 @@ def create_mirna_name_to_mimat_mapping(mature_fa_path: Path) -> dict[str, str]:
 def _drop_unmapped_rows(
     df: pd.DataFrame,
     mapped_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     before = len(df)
     out = df.loc[df[mapped_column].notna()].copy()
@@ -247,12 +238,11 @@ def map_mirna_names_to_mimat(
     query_column: str,
     mirna_name_column: str,
     mimat_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     out = df.copy()
     out[mirna_name_column] = out[query_column]
     out[mimat_column] = out[query_column].map(mirna_name_to_id)
-    return _drop_unmapped_rows(out, mimat_column, logger)
+    return _drop_unmapped_rows(out, mimat_column)
 
 def map_refseq_to_ensembl(
     df: pd.DataFrame,
@@ -260,20 +250,18 @@ def map_refseq_to_ensembl(
     refseq_column: str,
     ensembl_id_column: str,
     gene_name_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     out = df.copy()
     mapped = out[refseq_column].map(refseq_to_ensembl_map)
     out[ensembl_id_column] = mapped.str[0]
     out[gene_name_column] = mapped.str[1]
-    return _drop_unmapped_rows(out, ensembl_id_column, logger)
+    return _drop_unmapped_rows(out, ensembl_id_column)
 
 def _check_and_deduplicate_final_pairs(
     df: pd.DataFrame,
     ensembl_id_column: str,
     mimat_column: str,
     score_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     grouped = df.groupby([ensembl_id_column, mimat_column])[score_column].nunique()
     conflicts = grouped[grouped > 1]
@@ -296,7 +284,6 @@ def build_output_table(
     final_columns: list[str],
     ensembl_id_column: str,
     mimat_column: str,
-    logger: logging.Logger,
 ) -> pd.DataFrame:
     out = df.copy()
     out[score_column] = pd.to_numeric(out[prediction_column], errors="coerce")
@@ -306,5 +293,4 @@ def build_output_table(
         ensembl_id_column,
         mimat_column,
         score_column,
-        logger,
     )
