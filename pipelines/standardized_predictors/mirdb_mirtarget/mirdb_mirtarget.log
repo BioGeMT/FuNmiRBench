@@ -1,25 +1,26 @@
-2026-04-13 16:10:56 | INFO | pipeline | Starting pipeline
-2026-04-13 16:10:56 | INFO | utils | Using pipelines/standardized_predictors/mirdb_mirtarget/data/resources/mirbase/mature.fa
-2026-04-13 16:10:56 | INFO | utils | Using pipelines/standardized_predictors/mirdb_mirtarget/data/resources/biomart/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv
-2026-04-13 16:10:56 | INFO | pipeline | Loading predictions
-2026-04-13 16:11:17 | INFO | utils | Keeping valid rows: 8255691/8255691
-2026-04-13 16:11:22 | INFO | utils | Keeping unique rows: 8255691/8255691
-2026-04-13 16:11:32 | INFO | pipeline | Creating miRNA name to MIMAT ID mapping
-2026-04-13 16:11:32 | INFO | pipeline | Creating NCBI Gene ID to Ensembl ID, Gene name mapping
-2026-04-13 16:11:33 | INFO | utils | Keeping valid rows: 110750/168112
-2026-04-13 16:11:33 | INFO | utils | Keeping unique rows: 34460/110750
-2026-04-13 16:11:33 | INFO | utils | Keeping non-conflicting rows: 23869/34460
-2026-04-13 16:11:33 | INFO | pipeline | Creating RefSeq to Ensembl ID, Gene name mapping
-2026-04-13 16:11:34 | INFO | utils | Keeping valid rows: 79730/168112
-2026-04-13 16:11:34 | INFO | utils | Keeping unique rows: 74568/79730
-2026-04-13 16:11:34 | INFO | utils | Keeping non-conflicting rows: 63157/74568
-2026-04-13 16:11:36 | INFO | pipeline | Mapping miRNA names to MIMAT IDs
-2026-04-13 16:11:38 | INFO | utils | Mapped rows: 8255691/8255691
-2026-04-13 16:11:38 | INFO | pipeline | Mapping NCBI Gene IDs to Ensembl IDs and Gene names
-2026-04-13 16:11:42 | INFO | utils | Mapped rows: 7766362/8255691
-2026-04-13 16:11:42 | INFO | pipeline | Falling back to RefSeq IDs for rows still missing Ensembl mappings
-2026-04-13 16:11:44 | INFO | utils | Fallback RefSeq mapping rescued rows: 38099/489329
-2026-04-13 16:11:46 | INFO | utils | Mapped rows: 7804461/8255691
-2026-04-13 16:11:46 | INFO | pipeline | Building final schema output table
-2026-04-13 16:11:51 | INFO | utils | Final rows after exact deduplication on Ensembl ID : miRNA MIMAT : score: 7800352/7804461
-2026-04-13 16:12:07 | INFO | pipeline | Output written to: data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardised.tsv
+2026-04-13 17:05:41 | INFO | pipeline | Starting pipeline
+2026-04-13 17:05:41 | INFO | utils | Using pipelines/standardized_predictors/mirdb_mirtarget/data/resources/mirbase/mature.fa
+2026-04-13 17:05:41 | INFO | utils | Using pipelines/standardized_predictors/mirdb_mirtarget/data/resources/biomart/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv
+2026-04-13 17:05:41 | INFO | pipeline | Loading predictions
+2026-04-13 17:06:02 | INFO | utils | Keeping valid rows: 8255691/8255691
+2026-04-13 17:06:07 | INFO | utils | Keeping unique rows: 8255691/8255691
+2026-04-13 17:06:18 | INFO | pipeline | Creating miRNA name to MIMAT ID mapping
+2026-04-13 17:06:18 | INFO | pipeline | Creating NCBI Gene ID to Ensembl ID, Gene name mapping
+2026-04-13 17:06:18 | INFO | utils | Keeping valid rows: 110750/168112
+2026-04-13 17:06:18 | INFO | utils | Keeping unique rows: 34460/110750
+2026-04-13 17:06:18 | INFO | utils | Keeping non-conflicting rows: 23869/34460
+2026-04-13 17:06:19 | INFO | pipeline | Creating RefSeq to Ensembl ID, Gene name mapping
+2026-04-13 17:06:19 | INFO | utils | Keeping valid rows: 79730/168112
+2026-04-13 17:06:19 | INFO | utils | Keeping unique rows: 74568/79730
+2026-04-13 17:06:19 | INFO | utils | Keeping non-conflicting rows: 63157/74568
+2026-04-13 17:06:21 | INFO | pipeline | Mapping miRNA names to MIMAT IDs
+2026-04-13 17:06:23 | INFO | utils | Mapped rows: 8255691/8255691
+2026-04-13 17:06:23 | INFO | pipeline | Mapping NCBI Gene IDs to Ensembl IDs and Gene names
+2026-04-13 17:06:28 | INFO | utils | Mapped rows: 7766362/8255691
+2026-04-13 17:06:28 | INFO | pipeline | Falling back to RefSeq IDs for rows still missing Ensembl mappings
+2026-04-13 17:06:30 | INFO | utils | Fallback RefSeq mapping rescued rows: 38099/489329
+2026-04-13 17:06:31 | INFO | utils | Mapped rows: 7804461/8255691
+2026-04-13 17:06:31 | INFO | pipeline | Building final schema output table
+2026-04-13 17:06:42 | INFO | utils | Rows after dropping conflicting Ensembl ID : miRNA MIMAT pairs: 7799023/7804461
+2026-04-13 17:06:45 | INFO | utils | Final rows after exact deduplication on Ensembl ID : miRNA MIMAT : score: 7795525/7799023
+2026-04-13 17:07:02 | INFO | pipeline | Output written to: data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardised.tsv

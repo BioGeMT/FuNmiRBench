@@ -402,14 +402,27 @@ def _collapse_final_pairs(
     mimat_column: str,
     score_column: str,
 ) -> pd.DataFrame:
-    before = len(df)
+    before_conflict_drop = len(df)
+    grouped = df.groupby([ensembl_id_column, mimat_column])[score_column].nunique()
+    conflicts = grouped[grouped > 1]
+    conflicting_pairs = set(conflicts.index)
+    if conflicting_pairs:
+        pair_index = list(zip(df[ensembl_id_column], df[mimat_column]))
+        df = df.loc[[pair not in conflicting_pairs for pair in pair_index]].copy()
+    logger.info(
+        "Rows after dropping conflicting Ensembl ID : miRNA MIMAT pairs: %d/%d",
+        len(df),
+        before_conflict_drop,
+    )
+
+    before_dedup = len(df)
     out = df.drop_duplicates(
         subset=[ensembl_id_column, mimat_column, score_column],
     ).copy()
     logger.info(
         "Final rows after exact deduplication on Ensembl ID : miRNA MIMAT : score: %d/%d",
         len(out),
-        before,
+        before_dedup,
     )
     return out
 
