@@ -228,6 +228,93 @@ def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_pa
     return pearson, spearman
 
 
+def _plot_gsea_enrichment(df, *, score_col, dataset_id, tool_id, out_path):
+    ordered = df.sort_values([score_col, "gene_id"], ascending=[False, True]).reset_index(drop=True)
+    hits = ordered["is_positive"].astype(int).to_numpy(dtype=int)
+    total_hits = int(hits.sum())
+    total_misses = int(len(hits) - total_hits)
+    if total_hits == 0 or total_misses == 0:
+        raise ValueError(f"Cannot build enrichment plot for {tool_id}: need both hits and misses.")
+
+    hit_step = 1.0 / total_hits
+    miss_step = 1.0 / total_misses
+    running_es = np.cumsum(np.where(hits == 1, hit_step, -miss_step))
+    max_index = int(np.argmax(running_es))
+    min_index = int(np.argmin(running_es))
+    if abs(float(running_es[max_index])) >= abs(float(running_es[min_index])):
+        es = float(running_es[max_index])
+        peak_index = max_index
+    else:
+        es = float(running_es[min_index])
+        peak_index = min_index
+
+    positions = np.arange(1, len(ordered) + 1)
+    hit_positions = positions[hits == 1]
+
+    fig, axes = plt.subplots(
+        3,
+        1,
+        figsize=(7.2, 6.2),
+        sharex=True,
+        gridspec_kw={"height_ratios": [3.0, 0.8, 1.6], "hspace": 0.08},
+    )
+    curve_ax, hit_ax, score_ax = axes
+    for ax in axes:
+        ax.set_facecolor("white")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.tick_params(colors="#3C4858", labelsize=9)
+
+    curve_ax.grid(True, axis="y", color=GRID_COLOR, linewidth=0.8, alpha=0.9)
+    curve_ax.set_axisbelow(True)
+    curve_ax.plot(positions, running_es, color="#2F5D8C", linewidth=2.2)
+    curve_ax.axhline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle="--", alpha=0.8)
+    curve_ax.scatter(
+        [positions[peak_index]],
+        [running_es[peak_index]],
+        color=POSITIVE_COLOR if es >= 0 else "#4C78A8",
+        s=26,
+        zorder=3,
+    )
+    curve_ax.set_ylabel("Running ES", fontsize=10)
+    curve_ax.set_title(
+        f"{_tool_label(tool_id)} enrichment of GT positives",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.965,
+        (
+            f"{_dataset_caption(dataset_id)}"
+            f"  |  positives={total_hits:,}/{len(ordered):,}"
+            f"  |  ES={es:.3f}"
+        ),
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+
+    hit_ax.vlines(hit_positions, 0.0, 1.0, color=POSITIVE_COLOR, linewidth=0.8)
+    hit_ax.set_ylim(0.0, 1.0)
+    hit_ax.set_yticks([])
+    hit_ax.set_ylabel("Hits", fontsize=9)
+    hit_ax.spines["left"].set_visible(False)
+    hit_ax.spines["bottom"].set_visible(False)
+
+    ordered_scores = ordered[score_col].to_numpy(dtype=float)
+    score_ax.fill_between(positions, ordered_scores, 0.0, color="#BFD3EA", alpha=0.95)
+    score_ax.plot(positions, ordered_scores, color="#577590", linewidth=1.2)
+    score_ax.set_ylabel("Score", fontsize=9)
+    score_ax.set_xlabel("Ranked genes", fontsize=10)
+    score_ax.grid(True, axis="y", color=GRID_COLOR, linewidth=0.8, alpha=0.9)
+    score_ax.set_axisbelow(True)
+
+    _save_figure(fig, out_path)
+    return es
+
+
 def _compute_pr_metrics(y_true, y_score):
     precision, recall, _ = precision_recall_curve(y_true, y_score)
     pr_auc = auc(recall, precision)
@@ -809,12 +896,20 @@ def evaluate_joined_dataframe(
             fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
         )
         scatter_png = dataset_plots_dir / f"{tool_id}_score_vs_logFC.png"
+        gsea_png = dataset_plots_dir / f"{tool_id}_gsea_enrichment.png"
         pearson, spearman = _plot_scatter_with_correlation(
             scored,
             score_col=score_col,
             dataset_id=dataset_id,
             tool_id=tool_id,
             out_path=scatter_png,
+        )
+        enrichment_score = _plot_gsea_enrichment(
+            scored,
+            score_col=score_col,
+            dataset_id=dataset_id,
+            tool_id=tool_id,
+            out_path=gsea_png,
         )
         pr_auc, aps = _compute_pr_metrics(scored["is_positive"], scored[score_col])
         auroc = _compute_auroc(scored["is_positive"], scored[score_col])
@@ -845,7 +940,7 @@ def evaluate_joined_dataframe(
             (
                 f"    Tool: {tool_id} | coverage={coverage_info['coverage']:.1%} "
                 f"| rows={coverage_info['rows_scored']}/{coverage_info['rows_total']} "
-                f"| APS={aps:.3f} | AUROC={auroc:.3f}"
+                f"| APS={aps:.3f} | AUROC={auroc:.3f} | ES={enrichment_score:.3f}"
             ),
         )
         _emit_log(logger, f"    Tool: {tool_id} | wrote scatter/report")
@@ -867,6 +962,7 @@ def evaluate_joined_dataframe(
             "coverage": coverage_info["coverage"],
         })
         dataset_plots[f"{tool_id}_scatter"] = str(scatter_png)
+        dataset_plots[f"{tool_id}_gsea_enrichment"] = str(gsea_png)
 
     heatmap_png = dataset_plots_dir / "algorithms_vs_genes_heatmap.png"
     _plot_algorithms_vs_genes_heatmap(
