@@ -154,6 +154,59 @@ def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
             stale_report.unlink()
 
 
+def write_run_overview(
+    out_dir,
+    *,
+    config_path,
+    dataset_outputs,
+    tool_ids,
+    metric_tables,
+    combined_outputs,
+):
+    lines = [
+        "# FuNmiRBench Run Overview",
+        "",
+        f"- config: `{config_path}`",
+        f"- run_dir: `{out_dir}`",
+        f"- datasets: `{len(dataset_outputs)}`",
+        f"- predictors: `{', '.join(tool_ids)}`",
+        "",
+        "## Layout",
+        "- `datasets/<dataset_id>/joined.tsv`: joined DE + predictor score table for one dataset",
+        "- `datasets/<dataset_id>/plots/`: per-dataset visual outputs",
+        "- `datasets/<dataset_id>/reports/`: per-dataset Markdown/PDF reports and correlation TSVs",
+        "- `tables/per_experiment/`: metric tables across datasets, one row per experiment",
+        "- `tables/combined/`: cross-dataset predictor summary table",
+        "- `plots/combined/`: cross-dataset comparison plots",
+        "- `summary.json`: machine-readable run summary",
+        "",
+        "## Datasets",
+    ]
+    for item in dataset_outputs:
+        lines.extend(
+            [
+                (
+                    f"- `{item['dataset_id']}`"
+                    f" | miRNA `{item['mirna']}`"
+                    f" | cell line `{item['cell_line']}`"
+                    f" | joined `{item['joined_tsv']}`"
+                )
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "## Key Outputs",
+            f"- per-experiment tables: `{metric_tables}`",
+            f"- combined outputs: `{combined_outputs}`",
+            "",
+        ]
+    )
+    overview_path = out_dir / "OVERVIEW.md"
+    overview_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return overview_path
+
+
 def run_benchmark(config_path):
     config_path = config_path.expanduser().resolve()
     logger.info(f"Config: {config_path}")
@@ -206,12 +259,20 @@ def run_benchmark(config_path):
     logger.info(f"Results root: {out_root}")
     logger.info(f"Run output dir: {out_dir}")
 
-    joined_dir = out_dir / "joined"
+    datasets_dir = out_dir / "datasets"
     plots_dir = out_dir / "plots"
     combined_plots_dir = plots_dir / "combined"
-    reports_dir = out_dir / "reports"
     tables_dir = out_dir / "tables"
-    for path in (joined_dir, plots_dir, combined_plots_dir, reports_dir, tables_dir):
+    per_experiment_tables_dir = tables_dir / "per_experiment"
+    combined_tables_dir = tables_dir / "combined"
+    for path in (
+        datasets_dir,
+        plots_dir,
+        combined_plots_dir,
+        tables_dir,
+        per_experiment_tables_dir,
+        combined_tables_dir,
+    ):
         path.mkdir(parents=True, exist_ok=True)
 
     tool_ids = list(predictions)
@@ -226,10 +287,17 @@ def run_benchmark(config_path):
 
     for meta in experiments:
         logger.info(f"Dataset: {meta.id} | {meta.miRNA} | {meta.cell_line}")
-        clear_dataset_outputs(meta.id, plots_dir, reports_dir)
+        dataset_dir = datasets_dir / meta.id
+        if dataset_dir.exists():
+            shutil.rmtree(dataset_dir)
+        dataset_plots_dir = dataset_dir / "plots"
+        dataset_reports_dir = dataset_dir / "reports"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        dataset_plots_dir.mkdir(parents=True, exist_ok=True)
+        dataset_reports_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"  Joining predictions for {meta.id}...")
         joined, predictor_output_paths = build_joined(meta, tool_ids, predictions, root)
-        joined_path = joined_dir / f"{meta.id}.tsv"
+        joined_path = dataset_dir / "joined.tsv"
         joined_path.parent.mkdir(parents=True, exist_ok=True)
         joined.to_csv(joined_path, sep="\t", index=False)
         logger.info(f"  Wrote joined table: {joined_path}")
@@ -238,8 +306,8 @@ def run_benchmark(config_path):
         logger.info(f"  Evaluating metrics and plots for {meta.id}...")
         evaluation = evaluate_joined_dataframe(
             joined,
-            plots_dir=plots_dir,
-            reports_dir=reports_dir,
+            plots_dir=dataset_plots_dir,
+            reports_dir=dataset_reports_dir,
             fdr_threshold=fdr_threshold,
             abs_logfc_threshold=abs_logfc_threshold,
             predictor_top_fraction=float(eval_cfg.get("predictor_top_fraction", 0.10)),
@@ -263,6 +331,7 @@ def run_benchmark(config_path):
                 "geo_accession": meta.geo_accession,
                 "de_table_path": str(meta.full_path),
                 "joined_tsv": str(joined_path),
+                "dataset_dir": str(dataset_dir),
                 "predictor_output_paths": predictor_output_paths,
                 "plots": evaluation["plots"],
                 "predictor_correlation_tsv": evaluation["predictor_correlation_tsv"],
@@ -271,16 +340,24 @@ def run_benchmark(config_path):
         logger.info(f"  Finished {meta.id}")
 
     logger.info("Writing metric tables...")
-    metric_tables = write_metric_tables(metric_rows, tables_dir, logger=logger.info)
+    metric_tables = write_metric_tables(metric_rows, per_experiment_tables_dir, logger=logger.info)
     logger.info("Writing cross-dataset summaries...")
     combined_outputs = write_cross_dataset_summaries(
         metric_rows,
-        tables_dir,
+        combined_tables_dir,
         combined_plots_dir,
         joined_frames=joined_frames,
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
         logger=logger.info,
+    )
+    overview_path = write_run_overview(
+        out_dir,
+        config_path=config_path,
+        dataset_outputs=dataset_outputs,
+        tool_ids=tool_ids,
+        metric_tables=metric_tables,
+        combined_outputs=combined_outputs,
     )
 
     summary = {
@@ -291,6 +368,7 @@ def run_benchmark(config_path):
         "tags": config.get("tags", []),
         "dataset_ids": [meta.id for meta in experiments],
         "tool_ids": tool_ids,
+        "overview": str(overview_path),
         "metric_tables": metric_tables,
         "cross_dataset_outputs": combined_outputs,
         "datasets": dataset_outputs,

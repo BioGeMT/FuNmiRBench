@@ -102,10 +102,10 @@ def test_example_end_to_end(tmp_path):
     )
 
     stale_run_dir = out_root / "legacy_run"
-    stale_plot = stale_run_dir / "plots" / "GSE109725_OE_miR_204_5p" / "mock_score_vs_logFC.png"
+    stale_plot = stale_run_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "mock_score_vs_logFC.png"
     stale_plot.parent.mkdir(parents=True, exist_ok=True)
     stale_plot.write_text("stale", encoding="utf-8")
-    stale_report = stale_run_dir / "reports" / "GSE109725_OE_miR_204_5p__mock_evaluation_report.md"
+    stale_report = stale_run_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__mock_evaluation_report.md"
     stale_report.parent.mkdir(parents=True, exist_ok=True)
     stale_report.write_text("stale", encoding="utf-8")
 
@@ -120,22 +120,23 @@ def test_example_end_to_end(tmp_path):
     out_dir = summary_paths[0].parent
 
     assert (out_dir / "summary.json").is_file()
-    assert (out_dir / "tables" / "coverage_per_experiment.tsv").is_file()
-    assert (out_dir / "tables" / "aps_per_experiment.tsv").is_file()
-    assert (out_dir / "tables" / "pr_auc_per_experiment.tsv").is_file()
-    assert (out_dir / "tables" / "cross_dataset_predictor_summary.tsv").is_file()
+    assert (out_dir / "OVERVIEW.md").is_file()
+    assert (out_dir / "tables" / "per_experiment" / "coverage_per_experiment.tsv").is_file()
+    assert (out_dir / "tables" / "per_experiment" / "aps_per_experiment.tsv").is_file()
+    assert (out_dir / "tables" / "per_experiment" / "pr_auc_per_experiment.tsv").is_file()
+    assert (out_dir / "tables" / "combined" / "cross_dataset_predictor_summary.tsv").is_file()
     assert (
-        out_dir / "reports" / "GSE109725_OE_miR_204_5p__predictor_1_evaluation_report.md"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__predictor_1_evaluation_report.md"
     ).is_file()
     assert (
-        out_dir / "reports" / "GSE109725_OE_miR_204_5p__predictor_1_evaluation_report.pdf"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__predictor_1_evaluation_report.pdf"
     ).is_file()
 
-    joined_files = sorted((out_dir / "joined").glob("*.tsv"))
-    assert [path.name for path in joined_files] == [
-        "GSE109725_OE_miR_204_5p.tsv",
-        "GSE118315_KO_miR_124_3p.tsv",
-        "GSE210778_OE_miR_375_3p.tsv",
+    joined_files = sorted((out_dir / "datasets").glob("*/joined.tsv"))
+    assert [path.parent.name for path in joined_files] == [
+        "GSE109725_OE_miR_204_5p",
+        "GSE118315_KO_miR_124_3p",
+        "GSE210778_OE_miR_375_3p",
     ]
 
     summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
@@ -143,6 +144,7 @@ def test_example_end_to_end(tmp_path):
     assert summary["out_dir"] == str(out_dir)
     assert summary["run_dir_name"] == out_dir.name
     assert summary["tags"] == ["demo", "end_to_end"]
+    assert summary["overview"].endswith("OVERVIEW.md")
     assert "cross_dataset_outputs" in summary
     assert summary["cross_dataset_outputs"]["tables"]["cross_dataset_predictor_summary"].endswith(
         "cross_dataset_predictor_summary.tsv"
@@ -157,13 +159,13 @@ def test_example_end_to_end(tmp_path):
     }
     assert summary["tool_ids"] == ["predictor_1", "predictor_2"]
 
-    plots = list((out_dir / "plots").rglob("*.png"))
+    plots = list(out_dir.rglob("*.png"))
     assert len(plots) == 31
     assert (
-        out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "predictor_1_score_vs_logFC.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_1_score_vs_logFC.png"
     ).is_file()
     assert (
-        out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "predictor_1_gsea_enrichment.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_1_gsea_enrichment.png"
     ).is_file()
     assert (
         out_dir / "plots" / "combined" / "cross_dataset_metric_heatmap.png"
@@ -178,31 +180,31 @@ def test_example_end_to_end(tmp_path):
         out_dir / "plots" / "combined" / "positive_background_rank_distributions.png"
     ).is_file()
     assert (
-        out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "top_10pct_positive_heatmap.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "top_10pct_positive_heatmap.png"
     ).is_file()
     assert (
-        out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "predictor_pr_curves.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_pr_curves.png"
     ).is_file()
     assert (
-        out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "predictor_roc_curves.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_roc_curves.png"
     ).is_file()
     assert not (
-        out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "predictor_1_pr_curve.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_1_pr_curve.png"
     ).exists()
     assert not (
-        out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "predictor_2_roc_curve.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_2_roc_curve.png"
     ).exists()
     assert stale_plot.exists()
     assert stale_report.exists()
 
-    aps_lines = (out_dir / "tables" / "aps_per_experiment.tsv").read_text(
+    aps_lines = (out_dir / "tables" / "per_experiment" / "aps_per_experiment.tsv").read_text(
         encoding="utf-8"
     ).strip().splitlines()
     assert len(aps_lines) == 4
     header = aps_lines[0].split("\t")
     assert "predictor_1" in header
     assert "predictor_2" in header
-    coverage_lines = (out_dir / "tables" / "coverage_per_experiment.tsv").read_text(
+    coverage_lines = (out_dir / "tables" / "per_experiment" / "coverage_per_experiment.tsv").read_text(
         encoding="utf-8"
     ).strip().splitlines()
     assert len(coverage_lines) == 4
@@ -300,6 +302,6 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
 
     assert out_dir.parent == results_dir.resolve()
     assert sync_calls == [(["data/experiments/processed/18745741/demo.tsv"], tmp_path, None, 120, False)]
-    joined = pd.read_csv(out_dir / "joined" / "T001.tsv", sep="\t")
+    joined = pd.read_csv(out_dir / "datasets" / "T001" / "joined.tsv", sep="\t")
     assert joined["gene_id"].tolist() == ["ENSG1"]
     assert joined["score_predictor_1"].tolist() == [0.9]

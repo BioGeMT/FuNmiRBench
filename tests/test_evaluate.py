@@ -170,13 +170,13 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
     assert "top_10pct_positive_heatmap" in result["plots"]
     assert "mock_pr_curve" not in result["plots"]
     assert "mock_roc_curve" not in result["plots"]
-    assert (tmp_path / "plots" / "D001" / "mock_score_vs_logFC.png").is_file()
-    assert (tmp_path / "plots" / "D001" / "mock_gsea_enrichment.png").is_file()
-    assert (tmp_path / "plots" / "D001" / "predictor_pr_curves.png").is_file()
-    assert (tmp_path / "plots" / "D001" / "predictor_roc_curves.png").is_file()
-    assert (tmp_path / "plots" / "D001" / "top_10pct_positive_heatmap.png").is_file()
-    assert not (tmp_path / "plots" / "D001" / "mock_pr_curve.png").exists()
-    assert not (tmp_path / "plots" / "D001" / "mock_roc_curve.png").exists()
+    assert (tmp_path / "plots" / "mock_score_vs_logFC.png").is_file()
+    assert (tmp_path / "plots" / "mock_gsea_enrichment.png").is_file()
+    assert (tmp_path / "plots" / "predictor_pr_curves.png").is_file()
+    assert (tmp_path / "plots" / "predictor_roc_curves.png").is_file()
+    assert (tmp_path / "plots" / "top_10pct_positive_heatmap.png").is_file()
+    assert not (tmp_path / "plots" / "mock_pr_curve.png").exists()
+    assert not (tmp_path / "plots" / "mock_roc_curve.png").exists()
 
 
 def test_evaluate_uses_only_existing_pairs_and_reports_coverage(tmp_path):

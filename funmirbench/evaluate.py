@@ -871,7 +871,7 @@ def evaluate_joined_dataframe(
     mirna = mirna or (
         str(joined["mirna"].iloc[0]) if "mirna" in joined.columns else None
     )
-    dataset_plots_dir = plots_dir / dataset_id
+    dataset_plots_dir = plots_dir
     dataset_plots_dir.mkdir(parents=True, exist_ok=True)
     tool_ids = [_tool_id_from_score_col(sc) for sc in score_cols]
     rank_cols = []

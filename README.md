@@ -273,11 +273,13 @@ After a benchmark run, `results/` contains one new run folder, for example:
 
 Inside each run folder you get:
 
-- `joined/`: joined DE + predictor score tables
-- `tables/`: per-experiment metric tables plus a cross-dataset predictor summary table
-- `plots/<dataset_id>/`: per-dataset plots
+- `OVERVIEW.md`: human-readable guide to the run contents
+- `datasets/<dataset_id>/joined.tsv`: joined DE + predictor score table for that dataset
+- `datasets/<dataset_id>/plots/`: per-dataset plots
+- `datasets/<dataset_id>/reports/`: per-dataset Markdown/PDF reports and correlation TSVs
+- `tables/per_experiment/`: per-experiment metric tables
+- `tables/combined/`: cross-dataset predictor summary table
 - `plots/combined/`: cross-dataset comparison plots across the selected experiments
-- `reports/`: per-predictor Markdown reports, matching PDF reports, and predictor-correlation TSVs
 - `summary.json`: run summary
 
 When 2 or more predictors are selected, each dataset gets:
