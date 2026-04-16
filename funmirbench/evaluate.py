@@ -435,6 +435,113 @@ def _plot_algorithms_vs_genes_heatmap(
     _save_figure(fig, out_path)
 
 
+def _plot_top_positive_heatmap(
+    joined, *, rank_cols, tool_ids, dataset_id, out_path,
+    fdr_threshold, abs_logfc_threshold, positive_fraction,
+):
+    work = joined[["gene_id", "logFC", "FDR", *rank_cols]].copy()
+    work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
+    work["logFC"] = work["logFC"].astype(float)
+    work["FDR"] = work["FDR"].astype(float)
+    work["abs_logFC"] = work["logFC"].abs()
+    work["is_positive"] = (
+        (work["FDR"] < fdr_threshold) & (work["abs_logFC"] > abs_logfc_threshold)
+    ).astype(int)
+    work = work[work["is_positive"] == 1].copy()
+    if work.empty:
+        return False
+
+    work = work.sort_values(["FDR", "abs_logFC"], ascending=[True, False]).reset_index(drop=True)
+    rows_to_keep = max(1, int(math.ceil(len(work) * positive_fraction)))
+    work = work.head(rows_to_keep).copy()
+
+    rank_frame = pd.DataFrame(
+        {
+            tool_id: work[rank_col].astype(float)
+            for tool_id, rank_col in zip(tool_ids, rank_cols)
+        }
+    )
+    max_abs_logfc = max(float(work["abs_logFC"].max()), 1.0)
+    figure_height = max(4.2, min(9.0, 0.22 * len(work)))
+    figure_width = max(10.5, 5.2 + len(tool_ids) * 1.0)
+    fig, axes = plt.subplots(
+        1, 2, figsize=(figure_width, figure_height),
+        gridspec_kw={"width_ratios": [0.7, max(2.8, len(tool_ids) * 1.25)]},
+    )
+    for axis in axes:
+        axis.set_facecolor("white")
+        axis.spines["top"].set_visible(False)
+        axis.spines["right"].set_visible(False)
+        axis.spines["left"].set_visible(False)
+        axis.spines["bottom"].set_visible(False)
+        axis.tick_params(length=0, labelsize=8)
+
+    logfc_image = axes[0].imshow(
+        work["logFC"].to_numpy().reshape(-1, 1),
+        aspect="auto",
+        cmap="coolwarm",
+        norm=TwoSlopeNorm(vmin=-max_abs_logfc, vcenter=0.0, vmax=max_abs_logfc),
+    )
+    axes[0].set_title("logFC", fontsize=10, fontweight="semibold")
+    axes[0].set_xticks([0])
+    axes[0].set_xticklabels(["logFC"], rotation=90)
+
+    score_cmap = SCORE_CMAP.with_extremes(bad=MISSING_COLOR)
+    heat = axes[1].imshow(
+        np.ma.masked_invalid(rank_frame.to_numpy(dtype=float)),
+        aspect="auto",
+        cmap=score_cmap,
+        vmin=0,
+        vmax=1,
+    )
+    axes[1].set_title("Predictor scores", fontsize=10, fontweight="semibold")
+    axes[1].set_xticks(range(len(tool_ids)))
+    axes[1].set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+
+    labels = work["gene_id"].tolist()
+    for axis in axes:
+        axis.set_yticks(range(len(labels)))
+        axis.set_yticklabels(labels, fontsize=7)
+
+    axes[0].set_ylabel("top positive genes", fontsize=10, color="#3C4858")
+    fig.suptitle(
+        f"Top {int(positive_fraction * 100)}% of benchmark positives",
+        x=0.08,
+        y=0.995,
+        ha="left",
+        fontsize=12,
+        fontweight="semibold",
+    )
+    fig.text(
+        0.08,
+        0.972,
+        (
+            f"{_dataset_caption(dataset_id)}  |  {len(work):,} positive genes selected by FDR and effect size"
+            "  |  predictor colors show global rank percentile"
+        ),
+        fontsize=8.6,
+        color=NEUTRAL_COLOR,
+    )
+    fig.colorbar(
+        logfc_image,
+        ax=axes[0],
+        orientation="horizontal",
+        fraction=0.08,
+        pad=0.08,
+        label="logFC",
+    )
+    fig.colorbar(
+        heat,
+        ax=axes[1],
+        orientation="horizontal",
+        fraction=0.05,
+        pad=0.08,
+        label="global rank percentile",
+    )
+    _save_figure(fig, out_path)
+    return True
+
+
 def _plot_predictor_correlation_heatmap(
     joined, *, rank_cols, tool_ids, dataset_id, out_path, top_fraction,
 ):
@@ -769,6 +876,21 @@ def evaluate_joined_dataframe(
     )
     dataset_plots["algorithms_vs_genes_heatmap"] = str(heatmap_png)
     _emit_log(logger, f"    Dataset: {dataset_id} | wrote gene-level heatmap")
+
+    top_positive_heatmap_png = dataset_plots_dir / "top_10pct_positive_heatmap.png"
+    wrote_top_positive_heatmap = _plot_top_positive_heatmap(
+        joined,
+        rank_cols=rank_cols,
+        tool_ids=tool_ids,
+        dataset_id=dataset_id,
+        out_path=top_positive_heatmap_png,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        positive_fraction=0.10,
+    )
+    if wrote_top_positive_heatmap:
+        dataset_plots["top_10pct_positive_heatmap"] = str(top_positive_heatmap_png)
+        _emit_log(logger, f"    Dataset: {dataset_id} | wrote top-positive heatmap")
 
     if len(score_cols) >= 2:
         comparison_pr_png = dataset_plots_dir / "predictor_pr_curves.png"

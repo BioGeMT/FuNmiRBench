@@ -150,9 +150,12 @@ def test_example_end_to_end(tmp_path):
     assert summary["tool_ids"] == ["predictor_1", "predictor_2"]
 
     plots = list((out_dir / "plots").rglob("*.png"))
-    assert len(plots) == 18
+    assert len(plots) == 21
     assert (
         out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "predictor_1_score_vs_logFC.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "top_10pct_positive_heatmap.png"
     ).is_file()
     assert (
         out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "predictor_pr_curves.png"
