@@ -116,13 +116,14 @@ def test_evaluate_uses_only_existing_pairs_and_reports_coverage(tmp_path):
     assert metric_row["rows_missing_score"] == 2
     assert metric_row["coverage"] == pytest.approx(0.6)
 
-    report_text = (
-        tmp_path / "reports" / "D001__sparse_evaluation_report.txt"
-    ).read_text(encoding="utf-8")
-    assert "rows_total: 5" in report_text
-    assert "rows_scored: 3" in report_text
-    assert "rows_missing_score: 2" in report_text
-    assert "coverage: 0.600000" in report_text
+    report_md = tmp_path / "reports" / "D001__sparse_evaluation_report.md"
+    report_pdf = tmp_path / "reports" / "D001__sparse_evaluation_report.pdf"
+    report_text = report_md.read_text(encoding="utf-8")
+    assert report_pdf.is_file()
+    assert "rows_total: `5`" in report_text
+    assert "rows_scored: `3`" in report_text
+    assert "rows_missing_score: `2`" in report_text
+    assert "coverage: `0.600000`" in report_text
 
 
 def test_evaluate_uses_supplied_logger(tmp_path):

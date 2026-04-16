@@ -2,10 +2,12 @@
 
 import math
 import pathlib
+import textwrap
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import ListedColormap, TwoSlopeNorm
 from sklearn.metrics import (
     auc,
@@ -477,40 +479,171 @@ def _plot_predictor_correlation_heatmap(
     return matrix
 
 
+def _build_tool_report_markdown(
+    *, dataset_id, mirna, cell_line, perturbation, geo_accession,
+    de_table_path, joined_tsv,
+    tool_id, predictor_output_path, metrics, coverage_info, scatter_png,
+):
+    lines = [
+        f"# Evaluation Report: {dataset_id} | {_tool_label(tool_id)}",
+        "",
+        "## Dataset",
+        f"- dataset_id: `{dataset_id}`",
+        f"- mirna: `{mirna or 'NA'}`",
+        f"- cell_line: `{cell_line or 'NA'}`",
+        f"- perturbation: `{perturbation or 'NA'}`",
+        f"- geo_accession: `{geo_accession or 'NA'}`",
+        "",
+        "## Inputs",
+        f"- de_table_path: `{de_table_path or 'NA'}`",
+        f"- joined_tsv: `{joined_tsv or 'NA'}`",
+        f"- tool_id: `{tool_id}`",
+        f"- predictor_output_path: `{predictor_output_path or 'NA'}`",
+        "",
+        "## Coverage",
+        f"- rows_total: `{int(coverage_info['rows_total'])}`",
+        f"- rows_scored: `{int(coverage_info['rows_scored'])}`",
+        f"- rows_missing_score: `{int(coverage_info['rows_missing_score'])}`",
+        f"- coverage: `{coverage_info['coverage']:.6f}`",
+        "",
+        "## Metrics",
+        f"- rows_used: `{int(metrics['rows_used'])}`",
+        f"- positives: `{int(metrics['positives'])}`",
+        f"- negatives: `{int(metrics['negatives'])}`",
+        f"- pearson: `{metrics['pearson']:.6f}`",
+        f"- spearman: `{metrics['spearman']:.6f}`",
+        f"- aps: `{metrics['aps']:.6f}`",
+        f"- pr_auc: `{metrics['pr_auc']:.6f}`",
+        f"- auroc: `{metrics['auroc']:.6f}`",
+        "",
+        "## Plots",
+        f"- scatter: `{scatter_png}`",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _render_markdown_pdf(markdown_text, *, pdf_path, title, scatter_png=None):
+    def iter_lines():
+        for raw_line in markdown_text.splitlines():
+            if raw_line.startswith("# "):
+                yield {"text": raw_line[2:], "kind": "h1"}
+                continue
+            if raw_line.startswith("## "):
+                yield {"text": raw_line[3:], "kind": "h2"}
+                continue
+            if raw_line.startswith("- "):
+                wrapped = textwrap.wrap(raw_line[2:], width=90) or [""]
+                for index, chunk in enumerate(wrapped):
+                    prefix = "- " if index == 0 else "  "
+                    yield {"text": prefix + chunk, "kind": "body"}
+                continue
+            if not raw_line.strip():
+                yield {"text": "", "kind": "blank"}
+                continue
+            for chunk in textwrap.wrap(raw_line, width=92) or [""]:
+                yield {"text": chunk, "kind": "body"}
+
+    style_map = {
+        "h1": {"fontsize": 16, "weight": "bold", "color": "#17324D", "gap": 0.060},
+        "h2": {"fontsize": 12, "weight": "bold", "color": "#2F5D8C", "gap": 0.042},
+        "body": {"fontsize": 9.5, "weight": "normal", "color": "#22303C", "gap": 0.026},
+        "blank": {"fontsize": 9.5, "weight": "normal", "color": "#22303C", "gap": 0.018},
+    }
+
+    with PdfPages(pdf_path) as pdf:
+        fig = None
+        ax = None
+        y = 0.0
+
+        def new_page():
+            page_fig, page_ax = plt.subplots(figsize=(8.27, 11.69))
+            page_ax.axis("off")
+            page_fig.patch.set_facecolor("white")
+            page_ax.text(
+                0.06,
+                0.975,
+                title,
+                fontsize=8.5,
+                color=NEUTRAL_COLOR,
+                va="top",
+                ha="left",
+            )
+            return page_fig, page_ax, 0.93
+
+        for item in iter_lines():
+            style = style_map[item["kind"]]
+            if fig is None or y - style["gap"] < 0.06:
+                if fig is not None:
+                    pdf.savefig(fig, bbox_inches="tight")
+                    plt.close(fig)
+                fig, ax, y = new_page()
+            if item["text"]:
+                ax.text(
+                    0.06,
+                    y,
+                    item["text"],
+                    fontsize=style["fontsize"],
+                    fontweight=style["weight"],
+                    color=style["color"],
+                    va="top",
+                    ha="left",
+                    family="DejaVu Sans",
+                )
+            y -= style["gap"]
+
+        if fig is None:
+            fig, ax, y = new_page()
+        pdf.savefig(fig, bbox_inches="tight")
+        plt.close(fig)
+
+        if scatter_png is not None and pathlib.Path(scatter_png).is_file():
+            image = plt.imread(scatter_png)
+            fig, ax = plt.subplots(figsize=(8.27, 11.69))
+            ax.axis("off")
+            fig.patch.set_facecolor("white")
+            ax.text(
+                0.06,
+                0.975,
+                f"{title} | Scatter plot",
+                fontsize=12,
+                fontweight="bold",
+                color="#17324D",
+                va="top",
+                ha="left",
+            )
+            ax.imshow(image)
+            ax.set_position([0.08, 0.08, 0.84, 0.82])
+            pdf.savefig(fig, bbox_inches="tight")
+            plt.close(fig)
+
+
 def _write_tool_report(
     *, dataset_id, mirna, cell_line, perturbation, geo_accession,
     de_table_path, joined_tsv,
-    tool_id, predictor_output_path, metrics, out_path, coverage_info, scatter_png,
+    tool_id, predictor_output_path, metrics, markdown_path, pdf_path, coverage_info, scatter_png,
 ):
-    lines = [
-        f"dataset_id: {dataset_id}",
-        f"mirna: {mirna or 'NA'}",
-        f"cell_line: {cell_line or 'NA'}",
-        f"perturbation: {perturbation or 'NA'}",
-        f"geo_accession: {geo_accession or 'NA'}",
-        f"de_table_path: {de_table_path or 'NA'}",
-        f"joined_tsv: {joined_tsv or 'NA'}",
-        f"tool_id: {tool_id}",
-        f"predictor_output_path: {predictor_output_path or 'NA'}",
-        f"rows_total: {int(coverage_info['rows_total'])}",
-        f"rows_scored: {int(coverage_info['rows_scored'])}",
-        f"rows_missing_score: {int(coverage_info['rows_missing_score'])}",
-        f"coverage: {coverage_info['coverage']:.6f}",
-        "",
-        "metrics:",
-        f"  rows_used: {int(metrics['rows_used'])}",
-        f"  positives: {int(metrics['positives'])}",
-        f"  negatives: {int(metrics['negatives'])}",
-        f"  pearson: {metrics['pearson']:.6f}",
-        f"  spearman: {metrics['spearman']:.6f}",
-        f"  aps: {metrics['aps']:.6f}",
-        f"  pr_auc: {metrics['pr_auc']:.6f}",
-        f"  auroc: {metrics['auroc']:.6f}",
-        "",
-        "plots:",
-        f"  scatter: {scatter_png}",
-    ]
-    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    markdown_text = _build_tool_report_markdown(
+        dataset_id=dataset_id,
+        mirna=mirna,
+        cell_line=cell_line,
+        perturbation=perturbation,
+        geo_accession=geo_accession,
+        de_table_path=de_table_path,
+        joined_tsv=joined_tsv,
+        tool_id=tool_id,
+        predictor_output_path=predictor_output_path,
+        metrics=metrics,
+        coverage_info=coverage_info,
+        scatter_png=scatter_png,
+    )
+    markdown_path.write_text(markdown_text + "\n", encoding="utf-8")
+    _render_markdown_pdf(
+        markdown_text,
+        pdf_path=pdf_path,
+        title=f"{dataset_id} | {_tool_label(tool_id)}",
+        scatter_png=scatter_png,
+    )
 
 
 def evaluate_joined_dataframe(
@@ -563,7 +696,8 @@ def evaluate_joined_dataframe(
         pr_auc, aps = _compute_pr_metrics(scored["is_positive"], scored[score_col])
         auroc = _compute_auroc(scored["is_positive"], scored[score_col])
 
-        report_txt = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.txt"
+        report_md = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.md"
+        report_pdf = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.pdf"
         metrics = {
             "rows_total": float(coverage_info["rows_total"]),
             "rows_used": float(len(scored)),
@@ -580,7 +714,7 @@ def evaluate_joined_dataframe(
             de_table_path=de_table_path, joined_tsv=joined_tsv,
             tool_id=tool_id,
             predictor_output_path=(predictor_output_paths or {}).get(tool_id),
-            metrics=metrics, out_path=report_txt,
+            metrics=metrics, markdown_path=report_md, pdf_path=report_pdf,
             coverage_info=coverage_info, scatter_png=scatter_png,
         )
         _emit_log(

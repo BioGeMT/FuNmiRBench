@@ -105,7 +105,7 @@ def test_example_end_to_end(tmp_path):
     stale_plot = stale_run_dir / "plots" / "GSE109725_OE_miR_204_5p" / "mock_score_vs_logFC.png"
     stale_plot.parent.mkdir(parents=True, exist_ok=True)
     stale_plot.write_text("stale", encoding="utf-8")
-    stale_report = stale_run_dir / "reports" / "GSE109725_OE_miR_204_5p__mock_evaluation_report.txt"
+    stale_report = stale_run_dir / "reports" / "GSE109725_OE_miR_204_5p__mock_evaluation_report.md"
     stale_report.parent.mkdir(parents=True, exist_ok=True)
     stale_report.write_text("stale", encoding="utf-8")
 
@@ -123,6 +123,12 @@ def test_example_end_to_end(tmp_path):
     assert (out_dir / "tables" / "coverage_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "aps_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "pr_auc_per_experiment.tsv").is_file()
+    assert (
+        out_dir / "reports" / "GSE109725_OE_miR_204_5p__predictor_1_evaluation_report.md"
+    ).is_file()
+    assert (
+        out_dir / "reports" / "GSE109725_OE_miR_204_5p__predictor_1_evaluation_report.pdf"
+    ).is_file()
 
     joined_files = sorted((out_dir / "joined").glob("*.tsv"))
     assert [path.name for path in joined_files] == [

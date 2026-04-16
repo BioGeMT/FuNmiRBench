@@ -274,7 +274,7 @@ Inside each run folder you get:
 - `joined/`: joined DE + predictor score tables
 - `tables/`: APS, PR-AUC, AUROC, and Spearman summary tables
 - `plots/<dataset_id>/`: per-dataset plots
-- `reports/`: per-predictor text reports and predictor-correlation TSVs
+- `reports/`: per-predictor Markdown reports, matching PDF reports, and predictor-correlation TSVs
 - `summary.json`: run summary
 
 When 2 or more predictors are selected, each dataset gets:
