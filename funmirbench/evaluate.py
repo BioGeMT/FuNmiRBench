@@ -18,6 +18,7 @@ from sklearn.metrics import (
 )
 
 SCORE_PREFIX = "score_"
+GLOBAL_RANK_PREFIX = "global_rank_"
 FIGURE_DPI = 300
 NEGATIVE_COLOR = "#B8C4D6"
 POSITIVE_COLOR = "#D04E4E"
@@ -79,20 +80,25 @@ def _safe_neglog10(series):
     return -clipped.map(math.log10)
 
 
-def _normalize_scores(series):
+def _rank_scale_scores(series):
     values = series.astype(float)
-    lo, hi = values.min(skipna=True), values.max(skipna=True)
-    if pd.isna(lo) or pd.isna(hi):
+    ranks = values.rank(method="dense", ascending=True)
+    max_rank = ranks.max(skipna=True)
+    if pd.isna(max_rank):
         return pd.Series(float("nan"), index=series.index)
-    if hi == lo:
-        return pd.Series(0.0, index=series.index)
-    return (values - lo) / (hi - lo)
+    if float(max_rank) <= 1.0:
+        return pd.Series(1.0, index=series.index, dtype=float)
+    return (ranks - 1.0) / (float(max_rank) - 1.0)
 
 
 def _tool_id_from_score_col(score_col):
     if score_col.startswith(SCORE_PREFIX):
         return score_col[len(SCORE_PREFIX):]
     return score_col
+
+
+def _rank_col_for_tool(tool_id):
+    return f"{GLOBAL_RANK_PREFIX}{tool_id}"
 
 
 def _top_fraction_mask(series, fraction):
@@ -318,10 +324,10 @@ def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
 
 
 def _plot_algorithms_vs_genes_heatmap(
-    joined, *, score_cols, tool_ids, dataset_id, out_path,
+    joined, *, score_cols, rank_cols, tool_ids, dataset_id, out_path,
     fdr_threshold, abs_logfc_threshold,
 ):
-    work = joined[["gene_id", "logFC", "FDR", *score_cols]].copy()
+    work = joined[["gene_id", "logFC", "FDR", *score_cols, *rank_cols]].copy()
     work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
     work["logFC"] = work["logFC"].astype(float)
     work["FDR"] = work["FDR"].astype(float)
@@ -333,9 +339,12 @@ def _plot_algorithms_vs_genes_heatmap(
         ["is_positive", "FDR", "abs_logFC"], ascending=[False, True, False],
     ).reset_index(drop=True)
 
-    normalized = pd.DataFrame({
-        sc: _normalize_scores(work[sc]) for sc in score_cols
-    })
+    rank_frame = pd.DataFrame(
+        {
+            tool_id: work[rank_col].astype(float)
+            for tool_id, rank_col in zip(tool_ids, rank_cols)
+        }
+    )
 
     max_abs_logfc = max(float(work["abs_logFC"].max()), 1.0)
     figure_height = max(5.6, min(12, 0.025 * len(work)))
@@ -369,7 +378,7 @@ def _plot_algorithms_vs_genes_heatmap(
 
     score_cmap = SCORE_CMAP.with_extremes(bad=MISSING_COLOR)
     heat = axes[2].imshow(
-        np.ma.masked_invalid(normalized.to_numpy(dtype=float)),
+        np.ma.masked_invalid(rank_frame.to_numpy(dtype=float)),
         aspect="auto",
         cmap=score_cmap,
         vmin=0,
@@ -421,29 +430,29 @@ def _plot_algorithms_vs_genes_heatmap(
         orientation="horizontal",
         fraction=0.05,
         pad=0.08,
-        label="normalized score",
+        label="global rank percentile",
     )
     _save_figure(fig, out_path)
 
 
 def _plot_predictor_correlation_heatmap(
-    joined, *, score_cols, tool_ids, dataset_id, out_path, top_fraction,
+    joined, *, rank_cols, tool_ids, dataset_id, out_path, top_fraction,
 ):
-    normalized = {
-        tid: _normalize_scores(joined[sc])
-        for tid, sc in zip(tool_ids, score_cols)
+    ranked = {
+        tid: joined[rank_col].astype(float)
+        for tid, rank_col in zip(tool_ids, rank_cols)
     }
-    top_masks = {tid: _top_fraction_mask(normalized[tid], top_fraction) for tid in tool_ids}
+    top_masks = {tid: _top_fraction_mask(ranked[tid], top_fraction) for tid in tool_ids}
 
     matrix = pd.DataFrame(index=tool_ids, columns=tool_ids, dtype=float)
     for a in tool_ids:
         for b in tool_ids:
-            pair_mask = normalized[a].notna() & normalized[b].notna()
+            pair_mask = ranked[a].notna() & ranked[b].notna()
             union_mask = pair_mask & (top_masks[a] | top_masks[b])
             if int(union_mask.sum()) < 2:
                 corr = 1.0 if a == b else float("nan")
             else:
-                corr = float(normalized[a][union_mask].corr(normalized[b][union_mask], method="spearman"))
+                corr = float(ranked[a][union_mask].corr(ranked[b][union_mask], method="spearman"))
             matrix.loc[a, b] = corr
 
     fig, ax = plt.subplots(
@@ -671,6 +680,13 @@ def evaluate_joined_dataframe(
     dataset_plots_dir = plots_dir / dataset_id
     dataset_plots_dir.mkdir(parents=True, exist_ok=True)
     tool_ids = [_tool_id_from_score_col(sc) for sc in score_cols]
+    rank_cols = []
+    for score_col, tool_id in zip(score_cols, tool_ids):
+        rank_col = _rank_col_for_tool(tool_id)
+        if rank_col not in joined.columns:
+            joined = joined.copy()
+            joined[rank_col] = _rank_scale_scores(joined[score_col])
+        rank_cols.append(rank_col)
 
     metric_rows = []
     dataset_plots = {}
@@ -747,7 +763,7 @@ def evaluate_joined_dataframe(
 
     heatmap_png = dataset_plots_dir / "algorithms_vs_genes_heatmap.png"
     _plot_algorithms_vs_genes_heatmap(
-        joined, score_cols=score_cols, tool_ids=tool_ids,
+        joined, score_cols=score_cols, rank_cols=rank_cols, tool_ids=tool_ids,
         dataset_id=dataset_id, out_path=heatmap_png,
         fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
     )
@@ -774,7 +790,7 @@ def evaluate_joined_dataframe(
         corr_png = dataset_plots_dir / "predictor_correlation_heatmap.png"
         corr_tsv = reports_dir / f"{dataset_id}__predictor_correlation.tsv"
         corr_matrix = _plot_predictor_correlation_heatmap(
-            joined, score_cols=score_cols, tool_ids=tool_ids,
+            joined, rank_cols=rank_cols, tool_ids=tool_ids,
             dataset_id=dataset_id, out_path=corr_png,
             top_fraction=predictor_top_fraction,
         )

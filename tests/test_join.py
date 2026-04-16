@@ -98,6 +98,7 @@ class TestBuildJoined:
         joined, paths = build_joined(meta, ["mock"], predictions, tmp_path)
         assert len(joined) == 3
         assert "score_mock" in joined.columns
+        assert "global_rank_mock" in joined.columns
         assert pd.isna(joined[joined["gene_id"] == "ENSG003"]["score_mock"].iloc[0])
 
     def test_duplicate_tool_scores_keep_strongest(self, tmp_path):
@@ -120,6 +121,8 @@ class TestBuildJoined:
         joined, _ = build_joined(meta, ["mock"], predictions, tmp_path)
         scored = joined.set_index("gene_id")["score_mock"].to_dict()
         assert scored["ENSG001"] == 0.9
+        ranked = joined.set_index("gene_id")["global_rank_mock"].to_dict()
+        assert ranked["ENSG001"] == 1.0
 
     def test_lower_is_stronger_scores_are_inverted(self, tmp_path):
         _write(tmp_path / "de.tsv", (
@@ -147,6 +150,9 @@ class TestBuildJoined:
         scored = joined.set_index("gene_id")["score_targetscan"].to_dict()
         assert scored["ENSG001"] == 0.9
         assert scored["ENSG002"] == 0.1
+        ranked = joined.set_index("gene_id")["global_rank_targetscan"].to_dict()
+        assert ranked["ENSG001"] == 1.0
+        assert ranked["ENSG002"] == 0.0
 
     def test_invalid_score_direction_raises(self, tmp_path):
         _write(tmp_path / "de.tsv", (
@@ -194,3 +200,31 @@ class TestBuildJoined:
         }
         joined, _ = build_joined(meta, ["targetscan"], predictions, tmp_path)
         assert joined.loc[0, "score_targetscan"] == 0.9
+        assert joined.loc[0, "global_rank_targetscan"] == 1.0
+
+    def test_tied_scores_get_same_global_rank(self, tmp_path):
+        _write(tmp_path / "de.tsv", (
+            "gene_id\tlogFC\tFDR\n"
+            "ENSG001\t2.0\t0.001\n"
+            "ENSG002\t-1.0\t0.05\n"
+            "ENSG003\t0.5\t0.20\n"
+        ))
+        _write(tmp_path / "scores.tsv", (
+            "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+            "ENSG900\tGENEX\t\thsa-miR-other\t0.2\n"
+            "ENSG001\tGENE1\t\thsa-miR-1\t0.8\n"
+            "ENSG002\tGENE2\t\thsa-miR-1\t0.8\n"
+            "ENSG003\tGENE3\t\thsa-miR-1\t0.4\n"
+            "ENSG901\tGENEY\t\thsa-miR-other\t1.0\n"
+        ))
+        meta = DatasetMeta(
+            id="T010", miRNA="hsa-miR-1", cell_line="HeLa",
+            tissue="cervix", perturbation="OE", organism="Homo sapiens",
+            geo_accession="GSE010", data_path="de.tsv", root=tmp_path,
+        )
+        predictions = {"mock": {"predictor_output_path": "scores.tsv"}}
+        joined, _ = build_joined(meta, ["mock"], predictions, tmp_path)
+        ranked = joined.set_index("gene_id")["global_rank_mock"].to_dict()
+        assert ranked["ENSG001"] == ranked["ENSG002"]
+        assert ranked["ENSG001"] == pytest.approx(2.0 / 3.0)
+        assert ranked["ENSG003"] == pytest.approx(1.0 / 3.0)
