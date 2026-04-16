@@ -13,7 +13,11 @@ import pandas as pd
 import yaml
 
 from funmirbench import DatasetMeta
-from funmirbench.evaluate import evaluate_joined_dataframe, write_metric_tables
+from funmirbench.evaluate import (
+    evaluate_joined_dataframe,
+    write_cross_dataset_summaries,
+    write_metric_tables,
+)
 from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
 from funmirbench.logger import parse_log_level, setup_logging
@@ -204,14 +208,18 @@ def run_benchmark(config_path):
 
     joined_dir = out_dir / "joined"
     plots_dir = out_dir / "plots"
+    combined_plots_dir = plots_dir / "combined"
     reports_dir = out_dir / "reports"
     tables_dir = out_dir / "tables"
-    for path in (joined_dir, plots_dir, reports_dir, tables_dir):
+    for path in (joined_dir, plots_dir, combined_plots_dir, reports_dir, tables_dir):
         path.mkdir(parents=True, exist_ok=True)
 
     tool_ids = list(predictions)
     metric_rows = []
     dataset_outputs = []
+    joined_frames = []
+    fdr_threshold = float(eval_cfg.get("fdr_threshold", 0.05))
+    abs_logfc_threshold = float(eval_cfg.get("abs_logfc_threshold", 1.0))
 
     logger.info(f"Experiments: {len(experiments)}")
     logger.info(f"Predictors:  {tool_ids}")
@@ -225,14 +233,15 @@ def run_benchmark(config_path):
         joined_path.parent.mkdir(parents=True, exist_ok=True)
         joined.to_csv(joined_path, sep="\t", index=False)
         logger.info(f"  Wrote joined table: {joined_path}")
+        joined_frames.append(joined.copy())
 
         logger.info(f"  Evaluating metrics and plots for {meta.id}...")
         evaluation = evaluate_joined_dataframe(
             joined,
             plots_dir=plots_dir,
             reports_dir=reports_dir,
-            fdr_threshold=float(eval_cfg.get("fdr_threshold", 0.05)),
-            abs_logfc_threshold=float(eval_cfg.get("abs_logfc_threshold", 1.0)),
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
             predictor_top_fraction=float(eval_cfg.get("predictor_top_fraction", 0.10)),
             dataset_id=meta.id,
             mirna=meta.miRNA,
@@ -263,6 +272,16 @@ def run_benchmark(config_path):
 
     logger.info("Writing metric tables...")
     metric_tables = write_metric_tables(metric_rows, tables_dir, logger=logger.info)
+    logger.info("Writing cross-dataset summaries...")
+    combined_outputs = write_cross_dataset_summaries(
+        metric_rows,
+        tables_dir,
+        combined_plots_dir,
+        joined_frames=joined_frames,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        logger=logger.info,
+    )
 
     summary = {
         "config": str(config_path),
@@ -273,6 +292,7 @@ def run_benchmark(config_path):
         "dataset_ids": [meta.id for meta in experiments],
         "tool_ids": tool_ids,
         "metric_tables": metric_tables,
+        "cross_dataset_outputs": combined_outputs,
         "datasets": dataset_outputs,
     }
     summary_path = out_dir / "summary.json"

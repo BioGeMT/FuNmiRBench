@@ -274,8 +274,9 @@ After a benchmark run, `results/` contains one new run folder, for example:
 Inside each run folder you get:
 
 - `joined/`: joined DE + predictor score tables
-- `tables/`: APS, PR-AUC, AUROC, and Spearman summary tables
+- `tables/`: per-experiment metric tables plus a cross-dataset predictor summary table
 - `plots/<dataset_id>/`: per-dataset plots
+- `plots/combined/`: cross-dataset comparison plots across the selected experiments
 - `reports/`: per-predictor Markdown reports, matching PDF reports, and predictor-correlation TSVs
 - `summary.json`: run summary
 

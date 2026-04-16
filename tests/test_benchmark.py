@@ -123,6 +123,7 @@ def test_example_end_to_end(tmp_path):
     assert (out_dir / "tables" / "coverage_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "aps_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "pr_auc_per_experiment.tsv").is_file()
+    assert (out_dir / "tables" / "cross_dataset_predictor_summary.tsv").is_file()
     assert (
         out_dir / "reports" / "GSE109725_OE_miR_204_5p__predictor_1_evaluation_report.md"
     ).is_file()
@@ -142,6 +143,13 @@ def test_example_end_to_end(tmp_path):
     assert summary["out_dir"] == str(out_dir)
     assert summary["run_dir_name"] == out_dir.name
     assert summary["tags"] == ["demo", "end_to_end"]
+    assert "cross_dataset_outputs" in summary
+    assert summary["cross_dataset_outputs"]["tables"]["cross_dataset_predictor_summary"].endswith(
+        "cross_dataset_predictor_summary.tsv"
+    )
+    assert summary["cross_dataset_outputs"]["plots"]["coverage_vs_performance"].endswith(
+        "coverage_vs_performance.png"
+    )
     assert set(summary["dataset_ids"]) == {
         "GSE109725_OE_miR_204_5p",
         "GSE210778_OE_miR_375_3p",
@@ -150,12 +158,24 @@ def test_example_end_to_end(tmp_path):
     assert summary["tool_ids"] == ["predictor_1", "predictor_2"]
 
     plots = list((out_dir / "plots").rglob("*.png"))
-    assert len(plots) == 27
+    assert len(plots) == 31
     assert (
         out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "predictor_1_score_vs_logFC.png"
     ).is_file()
     assert (
         out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "predictor_1_gsea_enrichment.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "combined" / "cross_dataset_metric_heatmap.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "combined" / "cross_dataset_metric_distributions.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "combined" / "coverage_vs_performance.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "combined" / "positive_background_rank_distributions.png"
     ).is_file()
     assert (
         out_dir / "plots" / "GSE109725_OE_miR_204_5p" / "top_10pct_positive_heatmap.png"
@@ -269,6 +289,11 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
         lambda metric_rows, tables_dir, logger=None: {
             "aps_per_experiment": str(tables_dir / "aps.tsv")
         },
+    )
+    monkeypatch.setattr(
+        benchmark,
+        "write_cross_dataset_summaries",
+        lambda metric_rows, tables_dir, plots_dir, **kwargs: {"tables": {}, "plots": {}},
     )
 
     out_dir = benchmark.run_benchmark(config)

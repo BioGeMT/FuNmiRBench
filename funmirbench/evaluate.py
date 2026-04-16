@@ -1053,3 +1053,283 @@ def write_metric_tables(metric_rows, tables_dir, *, logger=None):
         out_paths[metric_name] = str(out_path)
         _emit_log(logger, f"  Wrote {metric_name} table: {out_path}")
     return out_paths
+
+
+def _plot_cross_dataset_metric_heatmap(summary_df, *, metric_names, out_path):
+    tool_ids = summary_df["tool_id"].tolist()
+    matrix = summary_df[[f"{metric_name}_mean" for metric_name in metric_names]].to_numpy(dtype=float).T
+
+    fig, ax = plt.subplots(
+        figsize=(max(5.6, len(tool_ids) * 1.25), max(4.8, len(metric_names) * 1.0))
+    )
+    image = ax.imshow(matrix, cmap="YlGnBu", vmin=0, vmax=1, aspect="auto")
+    ax.set_xticks(range(len(tool_ids)))
+    ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+    ax.set_yticks(range(len(metric_names)))
+    ax.set_yticklabels([metric_name.upper() for metric_name in metric_names])
+    ax.set_title(
+        "Cross-dataset mean metric summary",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    ax.set_facecolor("white")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+    ax.tick_params(length=0, labelsize=9)
+    for row_index, metric_name in enumerate(metric_names):
+        for col_index, _tool_id in enumerate(tool_ids):
+            value = summary_df.iloc[col_index][f"{metric_name}_mean"]
+            color = "white" if value >= 0.55 else "#22303C"
+            ax.text(col_index, row_index, f"{value:.2f}", ha="center", va="center", color=color, fontsize=9)
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="mean value")
+    _save_figure(fig, out_path)
+
+
+def _plot_cross_dataset_metric_distributions(metrics_df, *, metric_names, out_path):
+    fig, axes = plt.subplots(
+        len(metric_names),
+        1,
+        figsize=(7.2, max(7.2, len(metric_names) * 2.1)),
+        sharex=False,
+        gridspec_kw={"hspace": 0.4},
+    )
+    if len(metric_names) == 1:
+        axes = [axes]
+
+    tool_ids = list(metrics_df["tool_id"].drop_duplicates())
+    positions = np.arange(len(tool_ids), dtype=float)
+
+    for metric_index, (ax, metric_name) in enumerate(zip(axes, metric_names)):
+        _style_axes(ax, grid_axis="y")
+        data = []
+        for tool_id in tool_ids:
+            values = metrics_df.loc[metrics_df["tool_id"] == tool_id, metric_name].dropna().astype(float).tolist()
+            data.append(values)
+        box = ax.boxplot(
+            data,
+            positions=positions,
+            widths=0.55,
+            patch_artist=True,
+            showfliers=False,
+        )
+        for patch, color in zip(box["boxes"], CURVE_COLORS * ((len(tool_ids) // len(CURVE_COLORS)) + 1)):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.35)
+            patch.set_edgecolor(color)
+        for median in box["medians"]:
+            median.set_color("#22303C")
+            median.set_linewidth(1.4)
+        for whisker in box["whiskers"]:
+            whisker.set_color("#7A8798")
+        for cap in box["caps"]:
+            cap.set_color("#7A8798")
+
+        for tool_index, values in enumerate(data):
+            if not values:
+                continue
+            jitter = np.linspace(-0.09, 0.09, num=len(values)) if len(values) > 1 else np.array([0.0])
+            ax.scatter(
+                np.full(len(values), positions[tool_index]) + jitter,
+                values,
+                s=18,
+                alpha=0.75,
+                color=CURVE_COLORS[tool_index % len(CURVE_COLORS)],
+                edgecolors="white",
+                linewidths=0.3,
+                zorder=3,
+            )
+
+        ax.set_ylim(0, 1.02)
+        ax.set_ylabel(metric_name.upper(), fontsize=10)
+        ax.set_xticks(positions)
+        ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+
+    axes[0].set_title(
+        "Cross-dataset metric distributions",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    _save_figure(fig, out_path)
+
+
+def _plot_coverage_vs_performance(summary_df, *, out_path):
+    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.8), sharex=True, sharey=False)
+    metric_specs = [("aps_mean", "Mean APS"), ("auroc_mean", "Mean AUROC")]
+    coverage = summary_df["coverage_mean"].astype(float).to_numpy()
+
+    for ax, (metric_col, metric_label) in zip(axes, metric_specs):
+        _style_axes(ax, grid_axis="both")
+        values = summary_df[metric_col].astype(float).to_numpy()
+        for index, tool_id in enumerate(summary_df["tool_id"].tolist()):
+            color = CURVE_COLORS[index % len(CURVE_COLORS)]
+            ax.scatter(
+                coverage[index],
+                values[index],
+                s=80,
+                color=color,
+                edgecolors="white",
+                linewidths=0.5,
+                zorder=3,
+            )
+            ax.text(
+                coverage[index] + 0.01,
+                values[index],
+                _tool_label(tool_id),
+                fontsize=8.5,
+                color="#22303C",
+                va="center",
+            )
+        ax.set_xlim(0, 1.02)
+        ax.set_ylim(0, 1.02)
+        ax.set_xlabel("Mean coverage", fontsize=10)
+        ax.set_ylabel(metric_label, fontsize=10)
+    axes[0].set_title(
+        "Coverage vs performance",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    _save_figure(fig, out_path)
+
+
+def _plot_rank_class_distributions(joined_frames, *, out_path, fdr_threshold, abs_logfc_threshold):
+    combined = pd.concat(joined_frames, ignore_index=True)
+    rank_cols = sorted(col for col in combined.columns if col.startswith(GLOBAL_RANK_PREFIX))
+    if not rank_cols:
+        return False
+
+    work = combined[["logFC", "FDR", *rank_cols]].copy()
+    work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
+    if work.empty:
+        return False
+    work["logFC"] = work["logFC"].astype(float)
+    work["FDR"] = work["FDR"].astype(float)
+    work["abs_logFC"] = work["logFC"].abs()
+    work["is_positive"] = (
+        (work["FDR"] < fdr_threshold) & (work["abs_logFC"] > abs_logfc_threshold)
+    ).astype(int)
+
+    tool_ids = [_tool_id_from_score_col(rank_col.replace(GLOBAL_RANK_PREFIX, SCORE_PREFIX, 1)) for rank_col in rank_cols]
+    positive_data = [work.loc[work["is_positive"] == 1, rank_col].dropna().astype(float).tolist() for rank_col in rank_cols]
+    background_data = [work.loc[work["is_positive"] == 0, rank_col].dropna().astype(float).tolist() for rank_col in rank_cols]
+    if not any(positive_data) or not any(background_data):
+        return False
+
+    fig, axes = plt.subplots(2, 1, figsize=(8.6, 7.2), sharex=True, gridspec_kw={"hspace": 0.25})
+    panel_specs = [
+        (axes[0], positive_data, "GT positives"),
+        (axes[1], background_data, "Background genes"),
+    ]
+    positions = np.arange(len(tool_ids), dtype=float)
+    colors = [CURVE_COLORS[index % len(CURVE_COLORS)] for index in range(len(tool_ids))]
+
+    for ax, panel_data, panel_title in panel_specs:
+        _style_axes(ax, grid_axis="y")
+        box = ax.boxplot(
+            panel_data,
+            positions=positions,
+            widths=0.55,
+            patch_artist=True,
+            showfliers=False,
+        )
+        for patch, color in zip(box["boxes"], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.35)
+            patch.set_edgecolor(color)
+        for median in box["medians"]:
+            median.set_color("#22303C")
+            median.set_linewidth(1.4)
+        for whisker in box["whiskers"]:
+            whisker.set_color("#7A8798")
+        for cap in box["caps"]:
+            cap.set_color("#7A8798")
+        ax.set_ylim(0, 1.02)
+        ax.set_ylabel("Global rank", fontsize=10)
+        ax.set_title(panel_title, fontsize=10.5, fontweight="semibold", loc="left", pad=10)
+
+    axes[1].set_xticks(positions)
+    axes[1].set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+    axes[0].set_title(
+        "Positive vs background rank distributions",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    _save_figure(fig, out_path)
+    return True
+
+
+def write_cross_dataset_summaries(
+    metric_rows,
+    tables_dir,
+    plots_dir,
+    *,
+    joined_frames=None,
+    fdr_threshold=0.05,
+    abs_logfc_threshold=1.0,
+    logger=None,
+):
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    metrics_df = pd.DataFrame(metric_rows)
+    if metrics_df.empty:
+        return {
+            "tables": {},
+            "plots": {},
+        }
+
+    metric_names = ["coverage", "aps", "pr_auc", "spearman", "auroc"]
+    summary = metrics_df.groupby("tool_id")[metric_names].agg(["count", "mean", "median", "std", "min", "max"])
+    summary.columns = [f"{metric_name}_{stat_name}" for metric_name, stat_name in summary.columns]
+    summary = summary.reset_index()
+    summary_path = tables_dir / "cross_dataset_predictor_summary.tsv"
+    summary.to_csv(summary_path, sep="\t", index=False)
+    _emit_log(logger, f"  Wrote cross-dataset summary table: {summary_path}")
+
+    heatmap_path = plots_dir / "cross_dataset_metric_heatmap.png"
+    _plot_cross_dataset_metric_heatmap(summary, metric_names=metric_names, out_path=heatmap_path)
+    _emit_log(logger, f"  Wrote cross-dataset metric heatmap: {heatmap_path}")
+
+    distributions_path = plots_dir / "cross_dataset_metric_distributions.png"
+    _plot_cross_dataset_metric_distributions(metrics_df, metric_names=metric_names, out_path=distributions_path)
+    _emit_log(logger, f"  Wrote cross-dataset metric distributions: {distributions_path}")
+
+    coverage_scatter_path = plots_dir / "coverage_vs_performance.png"
+    _plot_coverage_vs_performance(summary, out_path=coverage_scatter_path)
+    _emit_log(logger, f"  Wrote coverage vs performance plot: {coverage_scatter_path}")
+
+    rank_distribution_path = plots_dir / "positive_background_rank_distributions.png"
+    wrote_rank_distributions = False
+    if joined_frames:
+        wrote_rank_distributions = _plot_rank_class_distributions(
+            joined_frames,
+            out_path=rank_distribution_path,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
+        )
+        if wrote_rank_distributions:
+            _emit_log(logger, f"  Wrote rank distribution plot: {rank_distribution_path}")
+
+    return {
+        "tables": {
+            "cross_dataset_predictor_summary": str(summary_path),
+        },
+        "plots": {
+            "cross_dataset_metric_heatmap": str(heatmap_path),
+            "cross_dataset_metric_distributions": str(distributions_path),
+            "coverage_vs_performance": str(coverage_scatter_path),
+            **(
+                {"positive_background_rank_distributions": str(rank_distribution_path)}
+                if wrote_rank_distributions
+                else {}
+            ),
+        },
+    }

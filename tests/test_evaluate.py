@@ -3,7 +3,11 @@
 import pandas as pd
 import pytest
 
-from funmirbench.evaluate import evaluate_joined_dataframe, write_metric_tables
+from funmirbench.evaluate import (
+    evaluate_joined_dataframe,
+    write_cross_dataset_summaries,
+    write_metric_tables,
+)
 
 
 def test_write_metric_tables_keeps_rows_with_missing_ids(tmp_path):
@@ -35,6 +39,86 @@ def test_write_metric_tables_keeps_rows_with_missing_ids(tmp_path):
     ).splitlines()
     assert len(coverage_lines) == 2
     assert coverage_lines[1].endswith("0.75")
+
+
+def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
+    joined_frames = [
+        pd.DataFrame(
+            {
+                "dataset_id": ["D001", "D001", "D001"],
+                "gene_id": ["ENSG1", "ENSG2", "ENSG3"],
+                "logFC": [2.0, 0.1, -1.5],
+                "FDR": [0.01, 0.6, 0.02],
+                "global_rank_mock": [0.9, 0.3, 0.7],
+                "global_rank_cheating": [0.98, 0.2, 0.8],
+            }
+        ),
+        pd.DataFrame(
+            {
+                "dataset_id": ["D002", "D002", "D002"],
+                "gene_id": ["ENSG4", "ENSG5", "ENSG6"],
+                "logFC": [1.8, -0.2, -1.7],
+                "FDR": [0.03, 0.4, 0.01],
+                "global_rank_mock": [0.8, 0.4, 0.6],
+                "global_rank_cheating": [0.96, 0.1, 0.75],
+            }
+        ),
+    ]
+    outputs = write_cross_dataset_summaries(
+        [
+            {
+                "dataset_id": "D001",
+                "mirna": "mir-1",
+                "cell_line": "HeLa",
+                "perturbation": "OE",
+                "geo_accession": "GSE1",
+                "tool_id": "mock",
+                "coverage": 0.8,
+                "aps": 0.7,
+                "pr_auc": 0.68,
+                "spearman": 0.4,
+                "auroc": 0.77,
+            },
+            {
+                "dataset_id": "D002",
+                "mirna": "mir-2",
+                "cell_line": "A549",
+                "perturbation": "KO",
+                "geo_accession": "GSE2",
+                "tool_id": "mock",
+                "coverage": 0.6,
+                "aps": 0.5,
+                "pr_auc": 0.48,
+                "spearman": 0.2,
+                "auroc": 0.65,
+            },
+            {
+                "dataset_id": "D001",
+                "mirna": "mir-1",
+                "cell_line": "HeLa",
+                "perturbation": "OE",
+                "geo_accession": "GSE1",
+                "tool_id": "cheating",
+                "coverage": 1.0,
+                "aps": 0.95,
+                "pr_auc": 0.94,
+                "spearman": 0.85,
+                "auroc": 0.98,
+            },
+        ],
+        tmp_path / "tables",
+        tmp_path / "plots",
+        joined_frames=joined_frames,
+    )
+    assert (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").is_file()
+    assert (tmp_path / "plots" / "cross_dataset_metric_heatmap.png").is_file()
+    assert (tmp_path / "plots" / "cross_dataset_metric_distributions.png").is_file()
+    assert (tmp_path / "plots" / "coverage_vs_performance.png").is_file()
+    assert (tmp_path / "plots" / "positive_background_rank_distributions.png").is_file()
+    summary_text = (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").read_text(encoding="utf-8")
+    assert "aps_mean" in summary_text
+    assert outputs["tables"]["cross_dataset_predictor_summary"].endswith("cross_dataset_predictor_summary.tsv")
+    assert outputs["plots"]["coverage_vs_performance"].endswith("coverage_vs_performance.png")
 
 
 def test_evaluate_rejects_single_class_labels(tmp_path):
