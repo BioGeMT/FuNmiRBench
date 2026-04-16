@@ -199,8 +199,8 @@ def run_benchmark(config_path):
     while out_dir.exists():
         out_dir = out_root / f"{run_dir_name}__r{suffix}"
         suffix += 1
-    log(f"Results root: {out_root}")
-    log(f"Run output dir: {out_dir}")
+    logger.info(f"Results root: {out_root}")
+    logger.info(f"Run output dir: {out_dir}")
 
     joined_dir = out_dir / "joined"
     plots_dir = out_dir / "plots"
@@ -222,6 +222,7 @@ def run_benchmark(config_path):
         logger.info(f"  Joining predictions for {meta.id}...")
         joined, predictor_output_paths = build_joined(meta, tool_ids, predictions, root)
         joined_path = joined_dir / f"{meta.id}.tsv"
+        joined_path.parent.mkdir(parents=True, exist_ok=True)
         joined.to_csv(joined_path, sep="\t", index=False)
         logger.info(f"  Wrote joined table: {joined_path}")
 
@@ -241,6 +242,7 @@ def run_benchmark(config_path):
             de_table_path=str(meta.full_path),
             joined_tsv=joined_path,
             predictor_output_paths=predictor_output_paths,
+            logger=logger.info,
         )
         metric_rows.extend(evaluation["metric_rows"])
         dataset_outputs.append(
@@ -260,7 +262,7 @@ def run_benchmark(config_path):
         logger.info(f"  Finished {meta.id}")
 
     logger.info("Writing metric tables...")
-    metric_tables = write_metric_tables(metric_rows, tables_dir)
+    metric_tables = write_metric_tables(metric_rows, tables_dir, logger=logger.info)
 
     summary = {
         "config": str(config_path),

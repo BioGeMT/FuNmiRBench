@@ -4,6 +4,7 @@ import math
 import pathlib
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from matplotlib.colors import ListedColormap, TwoSlopeNorm
 from sklearn.metrics import (
@@ -24,6 +25,7 @@ SCORE_CMAP = ListedColormap(
     ["#F6F7FB", "#C5D7EE", "#7FA8D8", "#2F5D8C", "#17324D"]
 )
 GT_CMAP = ListedColormap(["#EEF1F6", "#243B53"])
+MISSING_COLOR = "#EEF2F7"
 CURVE_COLORS = [
     "#1F77B4",
     "#D1495B",
@@ -34,6 +36,11 @@ CURVE_COLORS = [
 ]
 
 
+def _emit_log(logger, message):
+    if logger is not None:
+        logger(message)
+
+
 def _tool_label(tool_id):
     return str(tool_id).replace("_", " ")
 
@@ -42,6 +49,10 @@ def _dataset_heading(dataset_id, *, suffix=None):
     if suffix:
         return f"{dataset_id} | {suffix}"
     return str(dataset_id)
+
+
+def _dataset_caption(dataset_id):
+    return str(dataset_id).replace("_", " ")
 
 
 def _style_axes(ax, *, grid_axis="y"):
@@ -83,8 +94,11 @@ def _tool_id_from_score_col(score_col):
 
 
 def _top_fraction_mask(series, fraction):
-    threshold = series.quantile(1.0 - fraction)
-    return series >= threshold
+    valid = series.notna()
+    if not bool(valid.any()):
+        return pd.Series(False, index=series.index)
+    threshold = series[valid].quantile(1.0 - fraction)
+    return valid & (series >= threshold)
 
 
 def _prepare_scored_frame(joined, *, score_col, fdr_threshold, abs_logfc_threshold):
@@ -104,8 +118,15 @@ def _prepare_scored_frame(joined, *, score_col, fdr_threshold, abs_logfc_thresho
     if keep.empty:
         raise ValueError(f"No usable rows remain for {score_col}.")
 
-    filled_zero_count = int(keep[score_col].isna().sum())
-    keep[score_col] = keep[score_col].fillna(0.0).astype(float)
+    total_rows = int(len(keep))
+    missing_score_count = int(keep[score_col].isna().sum())
+    keep = keep[keep[score_col].notna()].copy()
+    if keep.empty:
+        raise ValueError(f"No scored rows remain for {score_col}.")
+
+    rows_scored = int(len(keep))
+    coverage = float(rows_scored / total_rows) if total_rows else float("nan")
+    keep[score_col] = keep[score_col].astype(float)
     keep["logFC"] = keep["logFC"].astype(float)
     keep["FDR"] = keep["FDR"].astype(float)
     keep["abs_logFC"] = keep["logFC"].abs()
@@ -119,13 +140,19 @@ def _prepare_scored_frame(joined, *, score_col, fdr_threshold, abs_logfc_thresho
         raise ValueError(f"No positives remain for {score_col}.")
     if negatives == 0:
         raise ValueError(f"No negatives remain for {score_col}.")
-    return keep, filled_zero_count
+    coverage_info = {
+        "rows_total": total_rows,
+        "rows_scored": rows_scored,
+        "rows_missing_score": missing_score_count,
+        "coverage": coverage,
+    }
+    return keep, coverage_info
 
 
 def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_path):
     pearson = float(df[score_col].corr(df["logFC"], method="pearson"))
     spearman = float(df[score_col].corr(df["logFC"], method="spearman"))
-    fig, ax = plt.subplots(figsize=(7.4, 5.2))
+    fig, ax = plt.subplots(figsize=(7.2, 5.0))
     positive_mask = df["is_positive"].astype(bool)
     negatives = df.loc[~positive_mask]
     positives = df.loc[positive_mask]
@@ -161,19 +188,22 @@ def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_pa
     ax.set_xlabel(f"{_tool_label(tool_id)} score", fontsize=10)
     ax.set_ylabel("logFC", fontsize=10)
     ax.set_title(
-        _dataset_heading(dataset_id, suffix=f"{_tool_label(tool_id)} score vs logFC"),
-        fontsize=12,
+        f"{_tool_label(tool_id)} score vs logFC",
+        fontsize=11,
         fontweight="semibold",
         loc="left",
+        pad=14,
     )
-    ax.text(
-        0.01,
-        1.02,
-        f"n={len(df):,} genes | positives={int(positive_mask.sum()):,}",
-        transform=ax.transAxes,
+    fig.text(
+        0.125,
+        0.955,
+        (
+            f"{_dataset_caption(dataset_id)}"
+            f"  |  n={len(df):,} genes"
+            f"  |  positives={int(positive_mask.sum()):,}"
+        ),
         fontsize=9,
         color=NEUTRAL_COLOR,
-        va="bottom",
     )
     ax.text(
         0.99,
@@ -204,38 +234,38 @@ def _compute_auroc(y_true, y_score):
 def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
     fig, ax = plt.subplots(figsize=(6.4, 5.1))
     _style_axes(ax, grid_axis="both")
-    baseline = None
     for index, item in enumerate(comparisons):
         precision, recall, _ = precision_recall_curve(item["y_true"], item["y_score"])
         pr_auc = auc(recall, precision)
-        if baseline is None:
-            baseline = float(pd.Series(item["y_true"]).mean())
         ax.plot(
             recall,
             precision,
-            label=f"{_tool_label(item['tool_id'])} ({pr_auc:.3f})",
+            label=(
+                f"{_tool_label(item['tool_id'])} "
+                f"({pr_auc:.3f}, cov {item['coverage']:.0%})"
+            ),
             linewidth=2.2,
             color=CURVE_COLORS[index % len(CURVE_COLORS)],
-        )
-    if baseline is not None:
-        ax.axhline(
-            baseline,
-            linestyle="--",
-            linewidth=1.4,
-            color=NEUTRAL_COLOR,
-            label=f"random ({baseline:.3f})",
         )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
     ax.set_xlabel("Recall", fontsize=10)
     ax.set_ylabel("Precision", fontsize=10)
     ax.set_title(
-        _dataset_heading(dataset_id, suffix="precision-recall comparison"),
-        fontsize=12,
+        "Precision-recall comparison",
+        fontsize=11,
         fontweight="semibold",
         loc="left",
+        pad=14,
     )
-    ax.legend(frameon=False, fontsize=9, loc="lower left")
+    fig.text(0.125, 0.955, _dataset_caption(dataset_id), fontsize=9, color=NEUTRAL_COLOR)
+    ax.legend(
+        frameon=False,
+        fontsize=8.8,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
     _save_figure(fig, out_path)
 
 
@@ -248,7 +278,10 @@ def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
         ax.plot(
             fpr,
             tpr,
-            label=f"{_tool_label(item['tool_id'])} ({auroc:.3f})",
+            label=(
+                f"{_tool_label(item['tool_id'])} "
+                f"({auroc:.3f}, cov {item['coverage']:.0%})"
+            ),
             linewidth=2.2,
             color=CURVE_COLORS[index % len(CURVE_COLORS)],
         )
@@ -265,12 +298,20 @@ def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
     ax.set_xlabel("False positive rate", fontsize=10)
     ax.set_ylabel("True positive rate", fontsize=10)
     ax.set_title(
-        _dataset_heading(dataset_id, suffix="ROC comparison"),
-        fontsize=12,
+        "ROC comparison",
+        fontsize=11,
         fontweight="semibold",
         loc="left",
+        pad=14,
     )
-    ax.legend(frameon=False, fontsize=9, loc="lower right")
+    fig.text(0.125, 0.955, _dataset_caption(dataset_id), fontsize=9, color=NEUTRAL_COLOR)
+    ax.legend(
+        frameon=False,
+        fontsize=8.8,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
     _save_figure(fig, out_path)
 
 
@@ -291,15 +332,15 @@ def _plot_algorithms_vs_genes_heatmap(
     ).reset_index(drop=True)
 
     normalized = pd.DataFrame({
-        sc: _normalize_scores(work[sc]).fillna(0.0) for sc in score_cols
+        sc: _normalize_scores(work[sc]) for sc in score_cols
     })
 
     max_abs_logfc = max(float(work["abs_logFC"].max()), 1.0)
-    figure_height = max(6, min(22, 0.16 * len(work)))
-    figure_width = max(8, 3 + len(tool_ids))
+    figure_height = max(5.6, min(12, 0.025 * len(work)))
+    figure_width = max(10.5, 5.2 + len(tool_ids) * 1.0)
     fig, axes = plt.subplots(
         1, 3, figsize=(figure_width, figure_height),
-        gridspec_kw={"width_ratios": [0.4, 0.5, max(2, len(tool_ids))]},
+        gridspec_kw={"width_ratios": [0.5, 0.6, max(2.8, len(tool_ids) * 1.25)]},
     )
     for axis in axes:
         axis.set_facecolor("white")
@@ -324,7 +365,14 @@ def _plot_algorithms_vs_genes_heatmap(
     axes[1].set_xticks([0])
     axes[1].set_xticklabels(["logFC"], rotation=90)
 
-    heat = axes[2].imshow(normalized.to_numpy(), aspect="auto", cmap=SCORE_CMAP, vmin=0, vmax=1)
+    score_cmap = SCORE_CMAP.with_extremes(bad=MISSING_COLOR)
+    heat = axes[2].imshow(
+        np.ma.masked_invalid(normalized.to_numpy(dtype=float)),
+        aspect="auto",
+        cmap=score_cmap,
+        vmin=0,
+        vmax=1,
+    )
     axes[2].set_title("Predictor scores", fontsize=10, fontweight="semibold")
     axes[2].set_xticks(range(len(tool_ids)))
     axes[2].set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
@@ -340,21 +388,39 @@ def _plot_algorithms_vs_genes_heatmap(
 
     axes[0].set_ylabel("genes", fontsize=10, color="#3C4858")
     fig.suptitle(
-        _dataset_heading(dataset_id, suffix="gene-level benchmarking overview"),
-        x=0.06,
+        "Gene-level benchmarking overview",
+        x=0.08,
+        y=0.995,
         ha="left",
-        fontsize=13,
+        fontsize=12,
         fontweight="semibold",
     )
     fig.text(
-        0.06,
-        0.965,
-        f"{len(work):,} genes ordered by benchmark ground truth and effect size",
-        fontsize=9,
+        0.08,
+        0.972,
+        (
+            f"{_dataset_caption(dataset_id)}  |  {len(work):,} genes ordered by benchmark ground truth and effect size"
+            "  |  blank cells indicate missing predictor pairs"
+        ),
+        fontsize=8.6,
         color=NEUTRAL_COLOR,
     )
-    fig.colorbar(logfc_image, ax=axes[1], fraction=0.06, pad=0.04, label="logFC")
-    fig.colorbar(heat, ax=axes[2], fraction=0.03, pad=0.02, label="normalized score")
+    fig.colorbar(
+        logfc_image,
+        ax=axes[1],
+        orientation="horizontal",
+        fraction=0.08,
+        pad=0.08,
+        label="logFC",
+    )
+    fig.colorbar(
+        heat,
+        ax=axes[2],
+        orientation="horizontal",
+        fraction=0.05,
+        pad=0.08,
+        label="normalized score",
+    )
     _save_figure(fig, out_path)
 
 
@@ -362,7 +428,7 @@ def _plot_predictor_correlation_heatmap(
     joined, *, score_cols, tool_ids, dataset_id, out_path, top_fraction,
 ):
     normalized = {
-        tid: _normalize_scores(joined[sc]).fillna(0.0)
+        tid: _normalize_scores(joined[sc])
         for tid, sc in zip(tool_ids, score_cols)
     }
     top_masks = {tid: _top_fraction_mask(normalized[tid], top_fraction) for tid in tool_ids}
@@ -370,7 +436,8 @@ def _plot_predictor_correlation_heatmap(
     matrix = pd.DataFrame(index=tool_ids, columns=tool_ids, dtype=float)
     for a in tool_ids:
         for b in tool_ids:
-            union_mask = top_masks[a] | top_masks[b]
+            pair_mask = normalized[a].notna() & normalized[b].notna()
+            union_mask = pair_mask & (top_masks[a] | top_masks[b])
             if int(union_mask.sum()) < 2:
                 corr = 1.0 if a == b else float("nan")
             else:
@@ -386,11 +453,13 @@ def _plot_predictor_correlation_heatmap(
     ax.set_yticks(range(len(tool_ids)))
     ax.set_yticklabels([_tool_label(tool_id) for tool_id in tool_ids])
     ax.set_title(
-        _dataset_heading(dataset_id, suffix=f"predictor agreement (top {int(top_fraction * 100)}%)"),
-        fontsize=12,
+        f"Predictor agreement (top {int(top_fraction * 100)}%)",
+        fontsize=11,
         fontweight="semibold",
         loc="left",
+        pad=14,
     )
+    fig.text(0.125, 0.955, _dataset_caption(dataset_id), fontsize=9, color=NEUTRAL_COLOR)
     ax.set_facecolor("white")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -411,7 +480,7 @@ def _plot_predictor_correlation_heatmap(
 def _write_tool_report(
     *, dataset_id, mirna, cell_line, perturbation, geo_accession,
     de_table_path, joined_tsv,
-    tool_id, predictor_output_path, metrics, out_path, filled_zero_count, scatter_png,
+    tool_id, predictor_output_path, metrics, out_path, coverage_info, scatter_png,
 ):
     lines = [
         f"dataset_id: {dataset_id}",
@@ -423,7 +492,10 @@ def _write_tool_report(
         f"joined_tsv: {joined_tsv or 'NA'}",
         f"tool_id: {tool_id}",
         f"predictor_output_path: {predictor_output_path or 'NA'}",
-        f"filled_missing_scores_with_zero: {filled_zero_count}",
+        f"rows_total: {int(coverage_info['rows_total'])}",
+        f"rows_scored: {int(coverage_info['rows_scored'])}",
+        f"rows_missing_score: {int(coverage_info['rows_missing_score'])}",
+        f"coverage: {coverage_info['coverage']:.6f}",
         "",
         "metrics:",
         f"  rows_used: {int(metrics['rows_used'])}",
@@ -448,6 +520,7 @@ def evaluate_joined_dataframe(
     perturbation=None, geo_accession=None,
     de_table_path=None, joined_tsv=None,
     predictor_output_paths=None,
+    logger=None,
 ):
     plots_dir.mkdir(parents=True, exist_ok=True)
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -471,8 +544,11 @@ def evaluate_joined_dataframe(
     predictor_correlation_tsv = None
     comparisons = []
 
+    _emit_log(logger, f"    Evaluation start: {dataset_id} | tools={tool_ids}")
+
     for score_col, tool_id in zip(score_cols, tool_ids):
-        scored, filled_zero_count = _prepare_scored_frame(
+        _emit_log(logger, f"    Tool: {tool_id} | preparing scored pairs")
+        scored, coverage_info = _prepare_scored_frame(
             joined, score_col=score_col,
             fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
         )
@@ -489,9 +565,12 @@ def evaluate_joined_dataframe(
 
         report_txt = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.txt"
         metrics = {
+            "rows_total": float(coverage_info["rows_total"]),
             "rows_used": float(len(scored)),
             "positives": float(scored["is_positive"].sum()),
             "negatives": float(len(scored) - int(scored["is_positive"].sum())),
+            "rows_missing_score": float(coverage_info["rows_missing_score"]),
+            "coverage": float(coverage_info["coverage"]),
             "pearson": pearson, "spearman": spearman,
             "aps": aps, "pr_auc": pr_auc, "auroc": auroc,
         }
@@ -502,19 +581,33 @@ def evaluate_joined_dataframe(
             tool_id=tool_id,
             predictor_output_path=(predictor_output_paths or {}).get(tool_id),
             metrics=metrics, out_path=report_txt,
-            filled_zero_count=filled_zero_count, scatter_png=scatter_png,
+            coverage_info=coverage_info, scatter_png=scatter_png,
         )
+        _emit_log(
+            logger,
+            (
+                f"    Tool: {tool_id} | coverage={coverage_info['coverage']:.1%} "
+                f"| rows={coverage_info['rows_scored']}/{coverage_info['rows_total']} "
+                f"| APS={aps:.3f} | AUROC={auroc:.3f}"
+            ),
+        )
+        _emit_log(logger, f"    Tool: {tool_id} | wrote scatter/report")
 
         metric_rows.append({
             "dataset_id": dataset_id, "mirna": mirna, "cell_line": cell_line,
             "perturbation": perturbation, "geo_accession": geo_accession,
             "tool_id": tool_id,
+            "rows_total": coverage_info["rows_total"],
+            "rows_scored": coverage_info["rows_scored"],
+            "rows_missing_score": coverage_info["rows_missing_score"],
+            "coverage": coverage_info["coverage"],
             "aps": aps, "spearman": spearman, "auroc": auroc, "pr_auc": pr_auc,
         })
         comparisons.append({
             "tool_id": tool_id,
             "y_true": scored["is_positive"],
             "y_score": scored[score_col],
+            "coverage": coverage_info["coverage"],
         })
         dataset_plots[f"{tool_id}_scatter"] = str(scatter_png)
 
@@ -525,6 +618,7 @@ def evaluate_joined_dataframe(
         fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
     )
     dataset_plots["algorithms_vs_genes_heatmap"] = str(heatmap_png)
+    _emit_log(logger, f"    Dataset: {dataset_id} | wrote gene-level heatmap")
 
     if len(score_cols) >= 2:
         comparison_pr_png = dataset_plots_dir / "predictor_pr_curves.png"
@@ -541,6 +635,7 @@ def evaluate_joined_dataframe(
         )
         dataset_plots["predictor_pr_curves"] = str(comparison_pr_png)
         dataset_plots["predictor_roc_curves"] = str(comparison_roc_png)
+        _emit_log(logger, f"    Dataset: {dataset_id} | wrote PR/ROC comparison plots")
 
         corr_png = dataset_plots_dir / "predictor_correlation_heatmap.png"
         corr_tsv = reports_dir / f"{dataset_id}__predictor_correlation.tsv"
@@ -552,6 +647,9 @@ def evaluate_joined_dataframe(
         corr_matrix.to_csv(corr_tsv, sep="\t")
         dataset_plots["predictor_correlation_heatmap"] = str(corr_png)
         predictor_correlation_tsv = str(corr_tsv)
+        _emit_log(logger, f"    Dataset: {dataset_id} | wrote predictor correlation outputs")
+
+    _emit_log(logger, f"    Evaluation complete: {dataset_id}")
 
     return {
         "metric_rows": metric_rows,
@@ -562,7 +660,7 @@ def evaluate_joined_dataframe(
     }
 
 
-def write_metric_tables(metric_rows, tables_dir):
+def write_metric_tables(metric_rows, tables_dir, *, logger=None):
     tables_dir.mkdir(parents=True, exist_ok=True)
     metrics_df = pd.DataFrame(metric_rows)
     if metrics_df.empty:
@@ -572,6 +670,7 @@ def write_metric_tables(metric_rows, tables_dir):
     metrics_df[id_cols] = metrics_df[id_cols].fillna("NA")
     out_paths = {}
     for metric_name, filename in [
+        ("coverage", "coverage_per_experiment.tsv"),
         ("aps", "aps_per_experiment.tsv"),
         ("pr_auc", "pr_auc_per_experiment.tsv"),
         ("spearman", "spearman_per_experiment.tsv"),
@@ -584,4 +683,5 @@ def write_metric_tables(metric_rows, tables_dir):
         out_path = tables_dir / filename
         wide.to_csv(out_path, sep="\t", index=False)
         out_paths[metric_name] = str(out_path)
+        _emit_log(logger, f"  Wrote {metric_name} table: {out_path}")
     return out_paths

@@ -120,6 +120,7 @@ def test_example_end_to_end(tmp_path):
     out_dir = summary_paths[0].parent
 
     assert (out_dir / "summary.json").is_file()
+    assert (out_dir / "tables" / "coverage_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "aps_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "pr_auc_per_experiment.tsv").is_file()
 
@@ -169,6 +170,10 @@ def test_example_end_to_end(tmp_path):
     header = aps_lines[0].split("\t")
     assert "predictor_1" in header
     assert "predictor_2" in header
+    coverage_lines = (out_dir / "tables" / "coverage_per_experiment.tsv").read_text(
+        encoding="utf-8"
+    ).strip().splitlines()
+    assert len(coverage_lines) == 4
 
 
 def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
@@ -249,13 +254,15 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
     monkeypatch.setattr(
         benchmark,
         "write_metric_tables",
-        lambda metric_rows, tables_dir: {"aps_per_experiment": str(tables_dir / "aps.tsv")},
+        lambda metric_rows, tables_dir, logger=None: {
+            "aps_per_experiment": str(tables_dir / "aps.tsv")
+        },
     )
 
     out_dir = benchmark.run_benchmark(config)
 
-    assert out_dir == results_dir.resolve()
+    assert out_dir.parent == results_dir.resolve()
     assert sync_calls == [(["data/experiments/processed/18745741/demo.tsv"], tmp_path, None, 120, False)]
-    joined = pd.read_csv(results_dir / "joined" / "T001.tsv", sep="\t")
+    joined = pd.read_csv(out_dir / "joined" / "T001.tsv", sep="\t")
     assert joined["gene_id"].tolist() == ["ENSG1"]
     assert joined["score_predictor_1"].tolist() == [0.9]

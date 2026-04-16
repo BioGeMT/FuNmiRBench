@@ -222,6 +222,11 @@ If you want to prefetch the full curated experiment cache yourself, you can also
 uv run funmirbench-experiments-store
 ```
 
+During evaluation, each predictor is scored only on miRNA-gene pairs that exist in that
+predictor's standardized file. Missing pairs are not filled with zero for metrics. Each run writes
+coverage information to `tables/coverage_per_experiment.tsv`, and the per-predictor text reports
+also record total rows, scored rows, missing rows, and coverage.
+
 YAML paths can be:
 
 - absolute paths
