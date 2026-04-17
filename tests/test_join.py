@@ -229,3 +229,25 @@ class TestBuildJoined:
         assert ranked["ENSG001"] == ranked["ENSG002"]
         assert ranked["ENSG001"] == pytest.approx(2.0 / 3.0)
         assert ranked["ENSG003"] == pytest.approx(1.0 / 3.0)
+
+    def test_dataset_aware_scores_filter_by_dataset_id(self, tmp_path):
+        _write(tmp_path / "de.tsv", (
+            "gene_id\tlogFC\tFDR\n"
+            "ENSG001\t2.0\t0.001\n"
+            "ENSG002\t-1.0\t0.05\n"
+        ))
+        _write(tmp_path / "scores.tsv", (
+            "Dataset_ID\tEnsembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+            "T011\tENSG001\tGENE1\t\thsa-miR-1\t0.9\n"
+            "OTHER\tENSG002\tGENE2\t\thsa-miR-1\t0.8\n"
+        ))
+        meta = DatasetMeta(
+            id="T011", miRNA="hsa-miR-1", cell_line="HeLa",
+            tissue="cervix", perturbation="OE", organism="Homo sapiens",
+            geo_accession="GSE011", data_path="de.tsv", root=tmp_path,
+        )
+        predictions = {"mock": {"predictor_output_path": "scores.tsv"}}
+        joined, _ = build_joined(meta, ["mock"], predictions, tmp_path)
+        scored = joined.set_index("gene_id")["score_mock"].to_dict()
+        assert scored["ENSG001"] == 0.9
+        assert pd.isna(scored["ENSG002"])

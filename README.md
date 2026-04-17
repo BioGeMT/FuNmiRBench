@@ -189,11 +189,13 @@ uv run pipelines/standardized_predictors/cheating/pipeline.py
 This creates:
 
 - `data/predictions/mock/mock_standardized.tsv`
+- `data/predictions/mock/mock_3000_standardized.tsv`
 - `data/predictions/cheating/cheating_standardized.tsv`
 
 The built-in demo predictors are intentionally different:
 
-- `mock`: deterministic random baseline scores over the available miRNA-gene pairs
+- `predictor_1`: deterministic random baseline over the full available miRNA-gene pairs
+- `predictor_1_3000`: deterministic random baseline capped at 3000 genes per dataset
 - `cheating`: demo-only directional scores informed by the benchmark DE tables
 
 The demo predictors already have registry rows in `metadata/predictions_info.tsv`.
@@ -250,7 +252,7 @@ experiments:
   id: [GSE109725_OE_miR_204_5p, GSE118315_KO_miR_124_3p, GSE210778_OE_miR_375_3p]
 
 predictors:
-  tool_id: [predictor_1, predictor_2]
+  tool_id: [predictor_1, predictor_1_3000, predictor_2, targetscan]
 
 evaluation:
   fdr_threshold: 0.05

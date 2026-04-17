@@ -47,6 +47,7 @@ def load_tool_scores(
     tool_id: str,
     tool_meta: dict,
     root: Path,
+    dataset_id: str,
     mirna: str,
     col_name: str,
     rank_col_name: str,
@@ -77,6 +78,8 @@ def load_tool_scores(
             f"Unsupported score_direction {score_direction!r} for tool {tool_id!r}."
         )
     df[rank_col_name] = _compute_global_rank_percentile(df[score_col])
+    if "Dataset_ID" in df.columns:
+        df = df[df["Dataset_ID"].astype(str) == str(dataset_id)].copy()
     df = df[df[mirna_col].astype(str) == mirna].copy()
     if min_score is not None:
         df = df[df[score_col] >= float(min_score)].copy()
@@ -100,6 +103,7 @@ def build_joined(meta, tool_ids, predictions, root, min_score: float | None = No
             tool_id,
             predictions[tool_id],
             root,
+            meta.id,
             meta.miRNA,
             f"score_{tool_id}",
             f"global_rank_{tool_id}",
