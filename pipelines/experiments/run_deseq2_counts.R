@@ -75,7 +75,7 @@ dds <- DESeq(dds)
 res <- results(dds, contrast = c("condition", "treated", "control"))
 
 out <- data.frame(
-  gene_id = rownames(res),
+  gene_id = sub("\\.[0-9]+$", "", rownames(res)),
   logFC = res$log2FoldChange,
   PValue = res$pvalue,
   FDR = res$padj,
