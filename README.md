@@ -191,6 +191,11 @@ This creates:
 - `data/predictions/mock/mock_standardized.tsv`
 - `data/predictions/cheating/cheating_standardized.tsv`
 
+The built-in demo predictors are intentionally different:
+
+- `mock`: deterministic random baseline scores over the available miRNA-gene pairs
+- `cheating`: demo-only directional scores informed by the benchmark DE tables
+
 The demo predictors already have registry rows in `metadata/predictions_info.tsv`.
 
 ### 4. Run The Benchmark
@@ -273,7 +278,8 @@ After a benchmark run, `results/` contains one new run folder, for example:
 
 Inside each run folder you get:
 
-- `OVERVIEW.md`: human-readable guide to the run contents
+- `README.md`: human-readable run guide and quick-start map for the output folder
+- `REPORT.pdf`: main run-level PDF report with explanations and selected combined plots
 - `datasets/<dataset_id>/joined.tsv`: joined DE + predictor score table for that dataset
 - `datasets/<dataset_id>/plots/`: per-dataset plots
 - `datasets/<dataset_id>/reports/`: per-dataset Markdown/PDF reports and correlation TSVs

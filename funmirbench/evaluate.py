@@ -80,6 +80,57 @@ def _safe_neglog10(series):
     return -clipped.map(math.log10)
 
 
+def _normalize_perturbation(value):
+    text = str(value or "").strip().upper()
+    if text in {"", "NAN", "NONE", "<NA>"}:
+        return ""
+    return text
+
+
+def _infer_perturbation_from_dataset_id(value):
+    dataset_id = str(value or "").upper()
+    for perturbation in ("OE", "KO", "KD"):
+        if f"_{perturbation}_" in dataset_id:
+            return perturbation
+    return ""
+
+
+def _resolve_perturbation_series(df, *, perturbation=None):
+    fallback = _normalize_perturbation(perturbation)
+    if "perturbation" in df.columns:
+        resolved = df["perturbation"].astype(str).map(_normalize_perturbation)
+    elif "dataset_id" in df.columns:
+        resolved = df["dataset_id"].astype(str).map(_infer_perturbation_from_dataset_id)
+    else:
+        resolved = pd.Series("", index=df.index, dtype="object")
+    if fallback:
+        resolved = resolved.where(resolved != "", fallback)
+    return resolved.fillna("")
+
+
+def _expected_effect_from_logfc(logfc, perturbations):
+    expected_effect = logfc.abs().astype(float)
+    oe_mask = perturbations == "OE"
+    ko_mask = perturbations.isin(["KO", "KD"])
+    expected_effect.loc[oe_mask] = -logfc.loc[oe_mask]
+    expected_effect.loc[ko_mask] = logfc.loc[ko_mask]
+    return expected_effect
+
+
+def _annotate_ground_truth(df, *, perturbation=None):
+    out = df.copy()
+    out["logFC"] = out["logFC"].astype(float)
+    out["FDR"] = out["FDR"].astype(float)
+    out["abs_logFC"] = out["logFC"].abs()
+    out["neglog10_FDR"] = _safe_neglog10(out["FDR"])
+    out["resolved_perturbation"] = _resolve_perturbation_series(out, perturbation=perturbation)
+    out["expected_effect"] = _expected_effect_from_logfc(
+        out["logFC"],
+        out["resolved_perturbation"],
+    )
+    return out
+
+
 def _rank_scale_scores(series):
     values = series.astype(float)
     ranks = values.rank(method="dense", ascending=True)
@@ -109,14 +160,16 @@ def _top_fraction_mask(series, fraction):
     return valid & (series >= threshold)
 
 
-def _prepare_scored_frame(joined, *, score_col, fdr_threshold, abs_logfc_threshold):
+def _prepare_scored_frame(
+    joined, *, score_col, fdr_threshold, abs_logfc_threshold, perturbation=None,
+):
     required_cols = {"gene_id", "logFC", "FDR", score_col}
     missing = [col for col in required_cols if col not in joined.columns]
     if missing:
         raise ValueError(f"Joined table missing required columns: {missing}")
 
     keep_cols = ["gene_id", "logFC", "FDR", score_col]
-    for optional in ("dataset_id", "mirna", "PValue"):
+    for optional in ("dataset_id", "mirna", "perturbation", "PValue"):
         if optional in joined.columns:
             keep_cols.append(optional)
 
@@ -135,12 +188,9 @@ def _prepare_scored_frame(joined, *, score_col, fdr_threshold, abs_logfc_thresho
     rows_scored = int(len(keep))
     coverage = float(rows_scored / total_rows) if total_rows else float("nan")
     keep[score_col] = keep[score_col].astype(float)
-    keep["logFC"] = keep["logFC"].astype(float)
-    keep["FDR"] = keep["FDR"].astype(float)
-    keep["abs_logFC"] = keep["logFC"].abs()
-    keep["neglog10_FDR"] = _safe_neglog10(keep["FDR"])
+    keep = _annotate_ground_truth(keep, perturbation=perturbation)
     keep["is_positive"] = (
-        (keep["FDR"] < fdr_threshold) & (keep["abs_logFC"] > abs_logfc_threshold)
+        (keep["FDR"] < fdr_threshold) & (keep["expected_effect"] > abs_logfc_threshold)
     ).astype(int)
     positives = int(keep["is_positive"].sum())
     negatives = int(len(keep) - positives)
@@ -158,8 +208,8 @@ def _prepare_scored_frame(joined, *, score_col, fdr_threshold, abs_logfc_thresho
 
 
 def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_path):
-    pearson = float(df[score_col].corr(df["logFC"], method="pearson"))
-    spearman = float(df[score_col].corr(df["logFC"], method="spearman"))
+    pearson = float(df[score_col].corr(df["expected_effect"], method="pearson"))
+    spearman = float(df[score_col].corr(df["expected_effect"], method="spearman"))
     fig, ax = plt.subplots(figsize=(7.2, 5.0))
     positive_mask = df["is_positive"].astype(bool)
     negatives = df.loc[~positive_mask]
@@ -168,7 +218,7 @@ def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_pa
     _style_axes(ax, grid_axis="both")
     ax.scatter(
         negatives[score_col],
-        negatives["logFC"],
+        negatives["expected_effect"],
         s=18,
         alpha=0.55,
         color=NEGATIVE_COLOR,
@@ -178,7 +228,7 @@ def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_pa
     )
     ax.scatter(
         positives[score_col],
-        positives["logFC"],
+        positives["expected_effect"],
         s=28,
         alpha=0.9,
         color=POSITIVE_COLOR,
@@ -194,9 +244,9 @@ def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_pa
     if score_min <= 0.0 <= score_max:
         ax.axvline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle=":", alpha=0.75)
     ax.set_xlabel(f"{_tool_label(tool_id)} score", fontsize=10)
-    ax.set_ylabel("logFC", fontsize=10)
+    ax.set_ylabel("Expected target effect", fontsize=10)
     ax.set_title(
-        f"{_tool_label(tool_id)} score vs logFC",
+        f"{_tool_label(tool_id)} score vs expected effect",
         fontsize=11,
         fontweight="semibold",
         loc="left",
@@ -410,20 +460,67 @@ def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
     _save_figure(fig, out_path)
 
 
+def _plot_predictor_gsea_curves(comparisons, *, dataset_id, out_path):
+    fig, ax = plt.subplots(figsize=(6.8, 5.2))
+    _style_axes(ax, grid_axis="both")
+    for index, item in enumerate(comparisons):
+        ordered = (
+            pd.DataFrame({"y_true": item["y_true"], "y_score": item["y_score"]})
+            .sort_values(["y_score"], ascending=[False])
+            .reset_index(drop=True)
+        )
+        hits = ordered["y_true"].astype(int).to_numpy(dtype=int)
+        total_hits = int(hits.sum())
+        total_misses = int(len(hits) - total_hits)
+        if total_hits == 0 or total_misses == 0:
+            continue
+        hit_step = 1.0 / total_hits
+        miss_step = 1.0 / total_misses
+        running_es = np.cumsum(np.where(hits == 1, hit_step, -miss_step))
+        es = float(running_es.max())
+        min_es = float(running_es.min())
+        if abs(min_es) > abs(es):
+            es = min_es
+        ax.plot(
+            np.arange(1, len(ordered) + 1),
+            running_es,
+            label=f"{_tool_label(item['tool_id'])} (ES {es:.3f})",
+            linewidth=2.1,
+            color=CURVE_COLORS[index % len(CURVE_COLORS)],
+        )
+    ax.axhline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle="--", alpha=0.8)
+    ax.set_xlabel("Ranked genes", fontsize=10)
+    ax.set_ylabel("Running ES", fontsize=10)
+    ax.set_title(
+        "GSEA comparison",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(0.125, 0.955, _dataset_caption(dataset_id), fontsize=9, color=NEUTRAL_COLOR)
+    ax.legend(
+        frameon=False,
+        fontsize=8.8,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    _save_figure(fig, out_path)
+
+
 def _plot_algorithms_vs_genes_heatmap(
     joined, *, score_cols, rank_cols, tool_ids, dataset_id, out_path,
-    fdr_threshold, abs_logfc_threshold,
+    fdr_threshold, abs_logfc_threshold, perturbation=None,
 ):
     work = joined[["gene_id", "logFC", "FDR", *score_cols, *rank_cols]].copy()
     work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
-    work["logFC"] = work["logFC"].astype(float)
-    work["FDR"] = work["FDR"].astype(float)
-    work["abs_logFC"] = work["logFC"].abs()
+    work = _annotate_ground_truth(work, perturbation=perturbation)
     work["is_positive"] = (
-        (work["FDR"] < fdr_threshold) & (work["abs_logFC"] > abs_logfc_threshold)
+        (work["FDR"] < fdr_threshold) & (work["expected_effect"] > abs_logfc_threshold)
     ).astype(int)
     work = work.sort_values(
-        ["is_positive", "FDR", "abs_logFC"], ascending=[False, True, False],
+        ["is_positive", "FDR", "expected_effect"], ascending=[False, True, False],
     ).reset_index(drop=True)
 
     rank_frame = pd.DataFrame(
@@ -497,7 +594,7 @@ def _plot_algorithms_vs_genes_heatmap(
         0.08,
         0.972,
         (
-            f"{_dataset_caption(dataset_id)}  |  {len(work):,} genes ordered by benchmark ground truth and effect size"
+            f"{_dataset_caption(dataset_id)}  |  {len(work):,} genes ordered by benchmark ground truth and expected effect"
             "  |  blank cells indicate missing predictor pairs"
         ),
         fontsize=8.6,
@@ -524,21 +621,19 @@ def _plot_algorithms_vs_genes_heatmap(
 
 def _plot_top_positive_heatmap(
     joined, *, rank_cols, tool_ids, dataset_id, out_path,
-    fdr_threshold, abs_logfc_threshold, positive_fraction,
+    fdr_threshold, abs_logfc_threshold, positive_fraction, perturbation=None,
 ):
     work = joined[["gene_id", "logFC", "FDR", *rank_cols]].copy()
     work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
-    work["logFC"] = work["logFC"].astype(float)
-    work["FDR"] = work["FDR"].astype(float)
-    work["abs_logFC"] = work["logFC"].abs()
+    work = _annotate_ground_truth(work, perturbation=perturbation)
     work["is_positive"] = (
-        (work["FDR"] < fdr_threshold) & (work["abs_logFC"] > abs_logfc_threshold)
+        (work["FDR"] < fdr_threshold) & (work["expected_effect"] > abs_logfc_threshold)
     ).astype(int)
     work = work[work["is_positive"] == 1].copy()
     if work.empty:
         return False
 
-    work = work.sort_values(["FDR", "abs_logFC"], ascending=[True, False]).reset_index(drop=True)
+    work = work.sort_values(["FDR", "expected_effect"], ascending=[True, False]).reset_index(drop=True)
     rows_to_keep = max(1, int(math.ceil(len(work) * positive_fraction)))
     work = work.head(rows_to_keep).copy()
 
@@ -603,7 +698,7 @@ def _plot_top_positive_heatmap(
         0.08,
         0.972,
         (
-            f"{_dataset_caption(dataset_id)}  |  {len(work):,} positive genes selected by FDR and effect size"
+            f"{_dataset_caption(dataset_id)}  |  {len(work):,} positive genes selected by FDR and expected effect"
             "  |  predictor colors show global rank percentile"
         ),
         fontsize=8.6,
@@ -642,11 +737,15 @@ def _plot_predictor_correlation_heatmap(
     for a in tool_ids:
         for b in tool_ids:
             pair_mask = ranked[a].notna() & ranked[b].notna()
-            union_mask = pair_mask & (top_masks[a] | top_masks[b])
-            if int(union_mask.sum()) < 2:
+            shared_top_mask = pair_mask & top_masks[a] & top_masks[b]
+            if int(shared_top_mask.sum()) < 2:
                 corr = 1.0 if a == b else float("nan")
             else:
-                corr = float(ranked[a][union_mask].corr(ranked[b][union_mask], method="spearman"))
+                corr = float(
+                    ranked[a][shared_top_mask].corr(
+                        ranked[b][shared_top_mask], method="spearman"
+                    )
+                )
             matrix.loc[a, b] = corr
 
     fig, ax = plt.subplots(
@@ -658,7 +757,7 @@ def _plot_predictor_correlation_heatmap(
     ax.set_yticks(range(len(tool_ids)))
     ax.set_yticklabels([_tool_label(tool_id) for tool_id in tool_ids])
     ax.set_title(
-        f"Predictor agreement (top {int(top_fraction * 100)}%)",
+        f"Predictor agreement (shared top {int(top_fraction * 100)}%)",
         fontsize=11,
         fontweight="semibold",
         loc="left",
@@ -894,6 +993,7 @@ def evaluate_joined_dataframe(
         scored, coverage_info = _prepare_scored_frame(
             joined, score_col=score_col,
             fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
+            perturbation=perturbation,
         )
         scatter_png = dataset_plots_dir / f"{tool_id}_score_vs_logFC.png"
         gsea_png = dataset_plots_dir / f"{tool_id}_gsea_enrichment.png"
@@ -969,6 +1069,7 @@ def evaluate_joined_dataframe(
         joined, score_cols=score_cols, rank_cols=rank_cols, tool_ids=tool_ids,
         dataset_id=dataset_id, out_path=heatmap_png,
         fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
+        perturbation=perturbation,
     )
     dataset_plots["algorithms_vs_genes_heatmap"] = str(heatmap_png)
     _emit_log(logger, f"    Dataset: {dataset_id} | wrote gene-level heatmap")
@@ -983,6 +1084,7 @@ def evaluate_joined_dataframe(
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
         positive_fraction=0.10,
+        perturbation=perturbation,
     )
     if wrote_top_positive_heatmap:
         dataset_plots["top_10pct_positive_heatmap"] = str(top_positive_heatmap_png)
@@ -991,6 +1093,7 @@ def evaluate_joined_dataframe(
     if len(score_cols) >= 2:
         comparison_pr_png = dataset_plots_dir / "predictor_pr_curves.png"
         comparison_roc_png = dataset_plots_dir / "predictor_roc_curves.png"
+        comparison_gsea_png = dataset_plots_dir / "predictor_gsea_curves.png"
         _plot_predictor_pr_curves(
             comparisons,
             dataset_id=dataset_id,
@@ -1001,9 +1104,15 @@ def evaluate_joined_dataframe(
             dataset_id=dataset_id,
             out_path=comparison_roc_png,
         )
+        _plot_predictor_gsea_curves(
+            comparisons,
+            dataset_id=dataset_id,
+            out_path=comparison_gsea_png,
+        )
         dataset_plots["predictor_pr_curves"] = str(comparison_pr_png)
         dataset_plots["predictor_roc_curves"] = str(comparison_roc_png)
-        _emit_log(logger, f"    Dataset: {dataset_id} | wrote PR/ROC comparison plots")
+        dataset_plots["predictor_gsea_curves"] = str(comparison_gsea_png)
+        _emit_log(logger, f"    Dataset: {dataset_id} | wrote PR/ROC/GSEA comparison plots")
 
         corr_png = dataset_plots_dir / "predictor_correlation_heatmap.png"
         corr_tsv = reports_dir / f"{dataset_id}__predictor_correlation.tsv"
@@ -1205,15 +1314,17 @@ def _plot_rank_class_distributions(joined_frames, *, out_path, fdr_threshold, ab
     if not rank_cols:
         return False
 
-    work = combined[["logFC", "FDR", *rank_cols]].copy()
+    keep_cols = ["logFC", "FDR", *rank_cols]
+    for optional in ("dataset_id", "perturbation"):
+        if optional in combined.columns:
+            keep_cols.append(optional)
+    work = combined[keep_cols].copy()
     work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
     if work.empty:
         return False
-    work["logFC"] = work["logFC"].astype(float)
-    work["FDR"] = work["FDR"].astype(float)
-    work["abs_logFC"] = work["logFC"].abs()
+    work = _annotate_ground_truth(work)
     work["is_positive"] = (
-        (work["FDR"] < fdr_threshold) & (work["abs_logFC"] > abs_logfc_threshold)
+        (work["FDR"] < fdr_threshold) & (work["expected_effect"] > abs_logfc_threshold)
     ).astype(int)
 
     tool_ids = [_tool_id_from_score_col(rank_col.replace(GLOBAL_RANK_PREFIX, SCORE_PREFIX, 1)) for rank_col in rank_cols]

@@ -7,10 +7,13 @@ import logging
 import pathlib
 import re
 import shutil
+import textwrap
 import urllib.parse
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import yaml
+from matplotlib.backends.backend_pdf import PdfPages
 
 from funmirbench import DatasetMeta
 from funmirbench.evaluate import (
@@ -154,7 +157,7 @@ def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
             stale_report.unlink()
 
 
-def write_run_overview(
+def write_run_readme(
     out_dir,
     *,
     config_path,
@@ -162,14 +165,33 @@ def write_run_overview(
     tool_ids,
     metric_tables,
     combined_outputs,
+    fdr_threshold,
+    abs_logfc_threshold,
+    predictor_top_fraction,
 ):
     lines = [
-        "# FuNmiRBench Run Overview",
+        "# FuNmiRBench Run README",
         "",
-        f"- config: `{config_path}`",
-        f"- run_dir: `{out_dir}`",
-        f"- datasets: `{len(dataset_outputs)}`",
-        f"- predictors: `{', '.join(tool_ids)}`",
+        "## Summary",
+        f"- Config: `{config_path}`",
+        f"- Run directory: `{out_dir}`",
+        f"- Datasets: `{len(dataset_outputs)}`",
+        f"- Predictors: `{', '.join(tool_ids)}`",
+        "",
+        "## Evaluation Settings",
+        (
+            f"- GT positive threshold: `FDR < {fdr_threshold}` and perturbation-aware effect "
+            f"`> {abs_logfc_threshold}` (`-logFC` for OE, `+logFC` for KO/KD)"
+        ),
+        f"- Predictor agreement top fraction: `{predictor_top_fraction:.0%}`",
+        "- Score handling: predictors are first aligned so that higher always means stronger",
+        "- Ranking for comparison plots: global tie-aware dense ranking over each predictor's full standardized file",
+        "",
+        "## Where To Start",
+        "- Read `REPORT.pdf` for the main run-level summary with combined plots and explanatory notes",
+        "- Open `tables/combined/cross_dataset_predictor_summary.tsv` for the compact numeric cross-dataset summary",
+        "- Browse `plots/combined/` for cross-dataset comparison figures",
+        "- Browse `datasets/<dataset_id>/` for dataset-specific tables, plots, and reports",
         "",
         "## Layout",
         "- `datasets/<dataset_id>/joined.tsv`: joined DE + predictor score table for one dataset",
@@ -202,9 +224,152 @@ def write_run_overview(
             "",
         ]
     )
-    overview_path = out_dir / "OVERVIEW.md"
-    overview_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return overview_path
+    readme_path = out_dir / "README.md"
+    readme_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return readme_path
+
+
+def write_run_pdf_report(
+    out_dir,
+    *,
+    config_path,
+    dataset_outputs,
+    tool_ids,
+    metric_tables,
+    combined_outputs,
+    fdr_threshold,
+    abs_logfc_threshold,
+    predictor_top_fraction,
+):
+    report_path = out_dir / "REPORT.pdf"
+    text_lines = [
+        "# FuNmiRBench Run Report",
+        "",
+        "## Run Summary",
+        f"- Config: {config_path}",
+        f"- Run directory: {out_dir}",
+        f"- Datasets: {len(dataset_outputs)}",
+        f"- Predictors: {', '.join(tool_ids)}",
+        "",
+        "## Evaluation Settings",
+        (
+            f"- GT positives were defined as FDR < {fdr_threshold} and perturbation-aware effect "
+            f"> {abs_logfc_threshold} (-logFC for OE, +logFC for KO/KD)"
+        ),
+        f"- Predictor-correlation top fraction: {predictor_top_fraction:.0%}",
+        "- Predictor scores were aligned to a common higher-is-stronger direction before evaluation",
+        "- Cross-predictor comparison plots use a global tie-aware dense ranking computed over each predictor's full standardized file",
+        "",
+        "## Output Guide",
+        f"- Per-experiment metric tables: {metric_tables}",
+        f"- Cross-dataset outputs: {combined_outputs}",
+        "- Dataset-specific outputs live under datasets/<dataset_id>/",
+        "",
+        "## Datasets",
+    ]
+    for item in dataset_outputs:
+        text_lines.append(
+            f"- {item['dataset_id']} | miRNA {item['mirna']} | cell line {item['cell_line']} | perturbation {item['perturbation']}"
+        )
+
+    style_map = {
+        "h1": {"fontsize": 17, "weight": "bold", "color": "#17324D", "gap": 0.060},
+        "h2": {"fontsize": 12, "weight": "bold", "color": "#2F5D8C", "gap": 0.042},
+        "body": {"fontsize": 9.5, "weight": "normal", "color": "#22303C", "gap": 0.026},
+        "blank": {"fontsize": 9.5, "weight": "normal", "color": "#22303C", "gap": 0.018},
+    }
+
+    def iter_lines():
+        for raw_line in text_lines:
+            if raw_line.startswith("# "):
+                yield {"text": raw_line[2:], "kind": "h1"}
+                continue
+            if raw_line.startswith("## "):
+                yield {"text": raw_line[3:], "kind": "h2"}
+                continue
+            if raw_line.startswith("- "):
+                wrapped = textwrap.wrap(raw_line[2:], width=92) or [""]
+                for index, chunk in enumerate(wrapped):
+                    prefix = "- " if index == 0 else "  "
+                    yield {"text": prefix + chunk, "kind": "body"}
+                continue
+            if not raw_line.strip():
+                yield {"text": "", "kind": "blank"}
+                continue
+            for chunk in textwrap.wrap(raw_line, width=94) or [""]:
+                yield {"text": chunk, "kind": "body"}
+
+    with PdfPages(report_path) as pdf:
+        fig = None
+        ax = None
+        y = 0.0
+
+        def new_text_page():
+            page_fig, page_ax = plt.subplots(figsize=(8.27, 11.69))
+            page_ax.axis("off")
+            page_fig.patch.set_facecolor("white")
+            return page_fig, page_ax, 0.95
+
+        for item in iter_lines():
+            style = style_map[item["kind"]]
+            if fig is None or y - style["gap"] < 0.06:
+                if fig is not None:
+                    pdf.savefig(fig, bbox_inches="tight")
+                    plt.close(fig)
+                fig, ax, y = new_text_page()
+            if item["text"]:
+                ax.text(
+                    0.06,
+                    y,
+                    item["text"],
+                    fontsize=style["fontsize"],
+                    fontweight=style["weight"],
+                    color=style["color"],
+                    va="top",
+                    ha="left",
+                    family="DejaVu Sans",
+                )
+            y -= style["gap"]
+
+        if fig is None:
+            fig, ax, y = new_text_page()
+        pdf.savefig(fig, bbox_inches="tight")
+        plt.close(fig)
+
+        plot_items = []
+        for key in [
+            "cross_dataset_metric_heatmap",
+            "cross_dataset_metric_distributions",
+            "coverage_vs_performance",
+            "positive_background_rank_distributions",
+        ]:
+            path = combined_outputs.get("plots", {}).get(key)
+            if path:
+                plot_items.append((key, pathlib.Path(path)))
+
+        for key, path in plot_items:
+            if not path.is_file():
+                continue
+            image = plt.imread(path)
+            fig, ax = plt.subplots(figsize=(8.27, 11.69))
+            ax.axis("off")
+            fig.patch.set_facecolor("white")
+            ax.text(
+                0.06,
+                0.975,
+                key.replace("_", " ").title(),
+                fontsize=12,
+                fontweight="bold",
+                color="#17324D",
+                va="top",
+                ha="left",
+            )
+            ax.imshow(image)
+            ax.set_position([0.08, 0.08, 0.84, 0.82])
+            pdf.savefig(fig, bbox_inches="tight")
+            plt.close(fig)
+
+    return report_path
 
 
 def run_benchmark(config_path):
@@ -351,13 +516,27 @@ def run_benchmark(config_path):
         abs_logfc_threshold=abs_logfc_threshold,
         logger=logger.info,
     )
-    overview_path = write_run_overview(
+    readme_path = write_run_readme(
         out_dir,
         config_path=config_path,
         dataset_outputs=dataset_outputs,
         tool_ids=tool_ids,
         metric_tables=metric_tables,
         combined_outputs=combined_outputs,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        predictor_top_fraction=float(eval_cfg.get("predictor_top_fraction", 0.10)),
+    )
+    report_path = write_run_pdf_report(
+        out_dir,
+        config_path=config_path,
+        dataset_outputs=dataset_outputs,
+        tool_ids=tool_ids,
+        metric_tables=metric_tables,
+        combined_outputs=combined_outputs,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        predictor_top_fraction=float(eval_cfg.get("predictor_top_fraction", 0.10)),
     )
 
     summary = {
@@ -368,7 +547,8 @@ def run_benchmark(config_path):
         "tags": config.get("tags", []),
         "dataset_ids": [meta.id for meta in experiments],
         "tool_ids": tool_ids,
-        "overview": str(overview_path),
+        "readme": str(readme_path),
+        "report_pdf": str(report_path),
         "metric_tables": metric_tables,
         "cross_dataset_outputs": combined_outputs,
         "datasets": dataset_outputs,

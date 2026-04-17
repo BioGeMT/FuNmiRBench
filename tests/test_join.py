@@ -29,9 +29,10 @@ class TestLoadExperimentTable:
             geo_accession="GSE000", data_path="de.tsv", root=tmp_path,
         )
         out = load_experiment_table(meta)
-        assert list(out.columns) == ["dataset_id", "mirna", "gene_id", "logFC", "FDR", "PValue"]
+        assert list(out.columns) == ["dataset_id", "mirna", "perturbation", "gene_id", "logFC", "FDR", "PValue"]
         assert len(out) == 2
         assert out["dataset_id"].iloc[0] == "T001"
+        assert out["perturbation"].iloc[0] == "OE"
 
     def test_index_genes(self, tmp_path):
         de_path = tmp_path / "de.tsv"

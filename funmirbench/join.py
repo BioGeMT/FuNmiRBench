@@ -39,6 +39,7 @@ def load_experiment_table(meta: DatasetMeta) -> pd.DataFrame:
     out = de[keep].copy()
     out.insert(0, "mirna", meta.miRNA)
     out.insert(0, "dataset_id", meta.id)
+    out.insert(2, "perturbation", meta.perturbation)
     return out
 
 

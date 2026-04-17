@@ -120,7 +120,8 @@ def test_example_end_to_end(tmp_path):
     out_dir = summary_paths[0].parent
 
     assert (out_dir / "summary.json").is_file()
-    assert (out_dir / "OVERVIEW.md").is_file()
+    assert (out_dir / "README.md").is_file()
+    assert (out_dir / "REPORT.pdf").is_file()
     assert (out_dir / "tables" / "per_experiment" / "coverage_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "per_experiment" / "aps_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "per_experiment" / "pr_auc_per_experiment.tsv").is_file()
@@ -144,7 +145,8 @@ def test_example_end_to_end(tmp_path):
     assert summary["out_dir"] == str(out_dir)
     assert summary["run_dir_name"] == out_dir.name
     assert summary["tags"] == ["demo", "end_to_end"]
-    assert summary["overview"].endswith("OVERVIEW.md")
+    assert summary["readme"].endswith("README.md")
+    assert summary["report_pdf"].endswith("REPORT.pdf")
     assert "cross_dataset_outputs" in summary
     assert summary["cross_dataset_outputs"]["tables"]["cross_dataset_predictor_summary"].endswith(
         "cross_dataset_predictor_summary.tsv"
@@ -160,7 +162,7 @@ def test_example_end_to_end(tmp_path):
     assert summary["tool_ids"] == ["predictor_1", "predictor_2"]
 
     plots = list(out_dir.rglob("*.png"))
-    assert len(plots) == 31
+    assert len(plots) == 34
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_1_score_vs_logFC.png"
     ).is_file()
@@ -187,6 +189,9 @@ def test_example_end_to_end(tmp_path):
     ).is_file()
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_roc_curves.png"
+    ).is_file()
+    assert (
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_gsea_curves.png"
     ).is_file()
     assert not (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_1_pr_curve.png"

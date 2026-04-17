@@ -143,6 +143,31 @@ def test_evaluate_rejects_single_class_labels(tmp_path):
         )
 
 
+def test_evaluate_uses_perturbation_aware_gt_labels(tmp_path):
+    joined = pd.DataFrame(
+        {
+            "dataset_id": ["D001", "D001"],
+            "mirna": ["hsa-miR-demo", "hsa-miR-demo"],
+            "perturbation": ["OE", "OE"],
+            "gene_id": ["ENSG1", "ENSG2"],
+            "logFC": [-2.0, 2.0],
+            "FDR": [0.01, 0.01],
+            "score_mock": [0.9, 0.1],
+        }
+    )
+    result = evaluate_joined_dataframe(
+        joined,
+        plots_dir=tmp_path / "plots",
+        reports_dir=tmp_path / "reports",
+        fdr_threshold=0.05,
+        abs_logfc_threshold=1.0,
+        predictor_top_fraction=0.10,
+        perturbation="OE",
+    )
+    assert result["metric_rows"][0]["aps"] == pytest.approx(1.0)
+    assert result["metric_rows"][0]["auroc"] == pytest.approx(1.0)
+
+
 def test_evaluate_writes_combined_comparison_plots(tmp_path):
     joined = pd.DataFrame(
         {
@@ -167,6 +192,7 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
     assert "mock_gsea_enrichment" in result["plots"]
     assert "predictor_pr_curves" in result["plots"]
     assert "predictor_roc_curves" in result["plots"]
+    assert "predictor_gsea_curves" in result["plots"]
     assert "top_10pct_positive_heatmap" in result["plots"]
     assert "mock_pr_curve" not in result["plots"]
     assert "mock_roc_curve" not in result["plots"]
@@ -174,6 +200,7 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
     assert (tmp_path / "plots" / "mock_gsea_enrichment.png").is_file()
     assert (tmp_path / "plots" / "predictor_pr_curves.png").is_file()
     assert (tmp_path / "plots" / "predictor_roc_curves.png").is_file()
+    assert (tmp_path / "plots" / "predictor_gsea_curves.png").is_file()
     assert (tmp_path / "plots" / "top_10pct_positive_heatmap.png").is_file()
     assert not (tmp_path / "plots" / "mock_pr_curve.png").exists()
     assert not (tmp_path / "plots" / "mock_roc_curve.png").exists()
@@ -238,5 +265,5 @@ def test_evaluate_uses_supplied_logger(tmp_path):
     )
     assert any("Evaluation start: D001" in message for message in messages)
     assert any("Tool: mock | coverage=" in message for message in messages)
-    assert any("wrote PR/ROC comparison plots" in message for message in messages)
+    assert any("wrote PR/ROC/GSEA comparison plots" in message for message in messages)
     assert any("Evaluation complete: D001" in message for message in messages)

@@ -20,6 +20,15 @@ DEMO_DATASET_IDS = [
 ]
 
 
+def _expected_effect_from_logfc(logfc, perturbation):
+    perturbation = str(perturbation or "").strip().upper()
+    if perturbation == "OE":
+        return -logfc
+    if perturbation in {"KO", "KD"}:
+        return logfc
+    return logfc.abs()
+
+
 def _resolve_table_path(root, value):
     path = pathlib.Path(value)
     if not path.is_absolute():
@@ -70,18 +79,12 @@ def build_cheating_scores(
         keep["logFC"] = keep["logFC"].astype(float)
         keep["FDR"] = keep["FDR"].astype(float)
         keep = keep[keep["FDR"] > 0].copy()
-        expected_effect = (
-            -keep["logFC"]
-            if experiment_type == "OE"
-            else keep["logFC"]
-            if experiment_type == "KO"
-            else keep["logFC"].abs()
-        )
+        expected_effect = _expected_effect_from_logfc(keep["logFC"], experiment_type)
         effect_signal = expected_effect.clip(lower=0.0, upper=3.0) / 3.0
         significance_signal = (-keep["FDR"].map(math.log10)).clip(lower=0.0, upper=6.0) / 6.0
         keep["directional_signal"] = 0.70 * effect_signal + 0.30 * significance_signal
         keep["is_positive"] = (
-            (keep["FDR"] < fdr_threshold) & (keep["logFC"].abs() > abs_logfc_threshold)
+            (keep["FDR"] < fdr_threshold) & (expected_effect > abs_logfc_threshold)
         ).astype(int)
 
         for gene_id, directional_signal, is_positive in zip(
