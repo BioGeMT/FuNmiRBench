@@ -123,6 +123,7 @@ def test_example_end_to_end(tmp_path):
     assert (out_dir / "README.md").is_file()
     assert (out_dir / "REPORT.pdf").is_file()
     assert (out_dir / "tables" / "per_experiment" / "coverage_per_experiment.tsv").is_file()
+    assert (out_dir / "tables" / "per_experiment" / "positive_coverage_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "per_experiment" / "aps_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "per_experiment" / "pr_auc_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "combined" / "cross_dataset_predictor_summary.tsv").is_file()
@@ -154,6 +155,9 @@ def test_example_end_to_end(tmp_path):
     assert summary["cross_dataset_outputs"]["plots"]["coverage_vs_performance"].endswith(
         "coverage_vs_performance.png"
     )
+    assert summary["cross_dataset_outputs"]["plots"]["positive_coverage_vs_performance"].endswith(
+        "positive_coverage_vs_performance.png"
+    )
     assert set(summary["dataset_ids"]) == {
         "GSE109725_OE_miR_204_5p",
         "GSE210778_OE_miR_375_3p",
@@ -162,12 +166,18 @@ def test_example_end_to_end(tmp_path):
     assert summary["tool_ids"] == ["predictor_1", "predictor_2"]
 
     plots = list(out_dir.rglob("*.png"))
-    assert len(plots) == 34
+    assert len(plots) == 41
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_1_score_vs_logFC.png"
     ).is_file()
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_1_gsea_enrichment.png"
+    ).is_file()
+    assert (
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_1_pr_curve.png"
+    ).is_file()
+    assert (
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_2_pr_curve.png"
     ).is_file()
     assert (
         out_dir / "plots" / "combined" / "cross_dataset_metric_heatmap.png"
@@ -177,6 +187,9 @@ def test_example_end_to_end(tmp_path):
     ).is_file()
     assert (
         out_dir / "plots" / "combined" / "coverage_vs_performance.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "combined" / "positive_coverage_vs_performance.png"
     ).is_file()
     assert (
         out_dir / "plots" / "combined" / "positive_background_rank_distributions.png"
@@ -194,9 +207,6 @@ def test_example_end_to_end(tmp_path):
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_gsea_curves.png"
     ).is_file()
     assert not (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_1_pr_curve.png"
-    ).exists()
-    assert not (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_2_roc_curve.png"
     ).exists()
     assert stale_plot.exists()
@@ -213,6 +223,10 @@ def test_example_end_to_end(tmp_path):
         encoding="utf-8"
     ).strip().splitlines()
     assert len(coverage_lines) == 4
+    positive_coverage_lines = (
+        out_dir / "tables" / "per_experiment" / "positive_coverage_per_experiment.tsv"
+    ).read_text(encoding="utf-8").strip().splitlines()
+    assert len(positive_coverage_lines) == 4
 
 
 def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):

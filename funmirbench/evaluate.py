@@ -181,6 +181,12 @@ def _prepare_scored_frame(
 
     total_rows = int(len(keep))
     missing_score_count = int(keep[score_col].isna().sum())
+    keep = _annotate_ground_truth(keep, perturbation=perturbation)
+    keep["is_positive"] = (
+        (keep["FDR"] < fdr_threshold) & (keep["expected_effect"] > abs_logfc_threshold)
+    ).astype(int)
+    positives_total = int(keep["is_positive"].sum())
+
     keep = keep[keep[score_col].notna()].copy()
     if keep.empty:
         raise ValueError(f"No scored rows remain for {score_col}.")
@@ -188,21 +194,21 @@ def _prepare_scored_frame(
     rows_scored = int(len(keep))
     coverage = float(rows_scored / total_rows) if total_rows else float("nan")
     keep[score_col] = keep[score_col].astype(float)
-    keep = _annotate_ground_truth(keep, perturbation=perturbation)
-    keep["is_positive"] = (
-        (keep["FDR"] < fdr_threshold) & (keep["expected_effect"] > abs_logfc_threshold)
-    ).astype(int)
     positives = int(keep["is_positive"].sum())
     negatives = int(len(keep) - positives)
     if positives == 0:
         raise ValueError(f"No positives remain for {score_col}.")
     if negatives == 0:
         raise ValueError(f"No negatives remain for {score_col}.")
+    positive_coverage = float(positives / positives_total) if positives_total else float("nan")
     coverage_info = {
         "rows_total": total_rows,
         "rows_scored": rows_scored,
         "rows_missing_score": missing_score_count,
         "coverage": coverage,
+        "positives_total": positives_total,
+        "positives_scored": positives,
+        "positive_coverage": positive_coverage,
     }
     return keep, coverage_info
 
@@ -376,34 +382,100 @@ def _compute_auroc(y_true, y_score):
     return float(roc_auc_score(y_true, y_score))
 
 
+def _plot_single_predictor_pr_curve(item, *, dataset_id, out_path):
+    precision, recall, _ = precision_recall_curve(item["y_true"], item["y_score"])
+    pr_auc = auc(recall, precision)
+    baseline = float(item["y_true"].mean())
+
+    fig, ax = plt.subplots(figsize=(6.1, 4.9))
+    _style_axes(ax, grid_axis="both")
+    ax.plot(
+        recall,
+        precision,
+        linewidth=2.2,
+        color=CURVE_COLORS[0],
+        label=f"PR-AUC {pr_auc:.3f}",
+    )
+    ax.axhline(
+        baseline,
+        linestyle="--",
+        linewidth=1.4,
+        color=NEUTRAL_COLOR,
+        label=f"baseline {baseline:.3f}",
+    )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("Recall", fontsize=10)
+    ax.set_ylabel("Precision", fontsize=10)
+    ax.set_title(
+        f"{_tool_label(item['tool_id'])} precision-recall",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        (
+            f"{_dataset_caption(dataset_id)}"
+            f"  |  n={len(item['y_true']):,}"
+            f"  |  positives={int(item['y_true'].sum()):,}"
+            f"  |  cov={item['coverage']:.0%}"
+        ),
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(frameon=False, fontsize=8.8, loc="upper right")
+    _save_figure(fig, out_path)
+
+
 def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
     fig, ax = plt.subplots(figsize=(6.4, 5.1))
     _style_axes(ax, grid_axis="both")
+    baseline = None
     for index, item in enumerate(comparisons):
         precision, recall, _ = precision_recall_curve(item["y_true"], item["y_score"])
         pr_auc = auc(recall, precision)
+        if baseline is None:
+            baseline = float(item["y_true"].mean())
         ax.plot(
             recall,
             precision,
             label=(
                 f"{_tool_label(item['tool_id'])} "
-                f"({pr_auc:.3f}, cov {item['coverage']:.0%})"
+                f"({pr_auc:.3f})"
             ),
             linewidth=2.2,
             color=CURVE_COLORS[index % len(CURVE_COLORS)],
+        )
+    if baseline is not None:
+        ax.axhline(
+            baseline,
+            linestyle="--",
+            linewidth=1.4,
+            color=NEUTRAL_COLOR,
+            label=f"baseline ({baseline:.3f})",
         )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
     ax.set_xlabel("Recall", fontsize=10)
     ax.set_ylabel("Precision", fontsize=10)
     ax.set_title(
-        "Precision-recall comparison",
+        "Precision-recall comparison (common scored pairs)",
         fontsize=11,
         fontweight="semibold",
         loc="left",
         pad=14,
     )
-    fig.text(0.125, 0.955, _dataset_caption(dataset_id), fontsize=9, color=NEUTRAL_COLOR)
+    comparison_size = len(comparisons[0]["y_true"]) if comparisons else 0
+    fig.text(
+        0.125,
+        0.955,
+        f"{_dataset_caption(dataset_id)}  |  common n={comparison_size:,}",
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
     ax.legend(
         frameon=False,
         fontsize=8.8,
@@ -412,6 +484,42 @@ def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
         borderaxespad=0.0,
     )
     _save_figure(fig, out_path)
+
+
+def _prepare_common_scored_frame(
+    joined, *, score_cols, fdr_threshold, abs_logfc_threshold, perturbation=None,
+):
+    required_cols = {"gene_id", "logFC", "FDR", *score_cols}
+    missing = [col for col in required_cols if col not in joined.columns]
+    if missing:
+        raise ValueError(f"Joined table missing required columns: {missing}")
+
+    keep_cols = ["gene_id", "logFC", "FDR", *score_cols]
+    for optional in ("dataset_id", "mirna", "perturbation", "PValue"):
+        if optional in joined.columns:
+            keep_cols.append(optional)
+
+    keep = joined[keep_cols].copy()
+    keep = keep[keep["logFC"].notna() & keep["FDR"].notna()].copy()
+    keep = keep[keep["FDR"].astype(float) > 0].copy()
+    if keep.empty:
+        raise ValueError("No usable rows remain for common PR comparison.")
+
+    keep = _annotate_ground_truth(keep, perturbation=perturbation)
+    keep["is_positive"] = (
+        (keep["FDR"] < fdr_threshold) & (keep["expected_effect"] > abs_logfc_threshold)
+    ).astype(int)
+    keep = keep.dropna(subset=score_cols).copy()
+    if keep.empty:
+        raise ValueError("No common scored rows remain for PR comparison.")
+
+    positives = int(keep["is_positive"].sum())
+    negatives = int(len(keep) - positives)
+    if positives == 0 or negatives == 0:
+        raise ValueError("Common PR comparison needs both positives and negatives.")
+    for score_col in score_cols:
+        keep[score_col] = keep[score_col].astype(float)
+    return keep
 
 
 def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
@@ -807,6 +915,9 @@ def _build_tool_report_markdown(
         f"- rows_scored: `{int(coverage_info['rows_scored'])}`",
         f"- rows_missing_score: `{int(coverage_info['rows_missing_score'])}`",
         f"- coverage: `{coverage_info['coverage']:.6f}`",
+        f"- positives_total: `{int(coverage_info['positives_total'])}`",
+        f"- positives_scored: `{int(coverage_info['positives_scored'])}`",
+        f"- positive_coverage: `{coverage_info['positive_coverage']:.6f}`",
         "",
         "## Metrics",
         f"- rows_used: `{int(metrics['rows_used'])}`",
@@ -997,6 +1108,7 @@ def evaluate_joined_dataframe(
         )
         scatter_png = dataset_plots_dir / f"{tool_id}_score_vs_logFC.png"
         gsea_png = dataset_plots_dir / f"{tool_id}_gsea_enrichment.png"
+        pr_curve_png = dataset_plots_dir / f"{tool_id}_pr_curve.png"
         pearson, spearman = _plot_scatter_with_correlation(
             scored,
             score_col=score_col,
@@ -1013,6 +1125,16 @@ def evaluate_joined_dataframe(
         )
         pr_auc, aps = _compute_pr_metrics(scored["is_positive"], scored[score_col])
         auroc = _compute_auroc(scored["is_positive"], scored[score_col])
+        _plot_single_predictor_pr_curve(
+            {
+                "tool_id": tool_id,
+                "y_true": scored["is_positive"],
+                "y_score": scored[score_col],
+                "coverage": coverage_info["coverage"],
+            },
+            dataset_id=dataset_id,
+            out_path=pr_curve_png,
+        )
 
         report_md = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.md"
         report_pdf = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.pdf"
@@ -1023,6 +1145,9 @@ def evaluate_joined_dataframe(
             "negatives": float(len(scored) - int(scored["is_positive"].sum())),
             "rows_missing_score": float(coverage_info["rows_missing_score"]),
             "coverage": float(coverage_info["coverage"]),
+            "positives_total": float(coverage_info["positives_total"]),
+            "positives_scored": float(coverage_info["positives_scored"]),
+            "positive_coverage": float(coverage_info["positive_coverage"]),
             "pearson": pearson, "spearman": spearman,
             "aps": aps, "pr_auc": pr_auc, "auroc": auroc,
         }
@@ -1039,6 +1164,7 @@ def evaluate_joined_dataframe(
             logger,
             (
                 f"    Tool: {tool_id} | coverage={coverage_info['coverage']:.1%} "
+                f"| positive_cov={coverage_info['positive_coverage']:.1%} "
                 f"| rows={coverage_info['rows_scored']}/{coverage_info['rows_total']} "
                 f"| APS={aps:.3f} | AUROC={auroc:.3f} | ES={enrichment_score:.3f}"
             ),
@@ -1053,6 +1179,7 @@ def evaluate_joined_dataframe(
             "rows_scored": coverage_info["rows_scored"],
             "rows_missing_score": coverage_info["rows_missing_score"],
             "coverage": coverage_info["coverage"],
+            "positive_coverage": coverage_info["positive_coverage"],
             "aps": aps, "spearman": spearman, "auroc": auroc, "pr_auc": pr_auc,
         })
         comparisons.append({
@@ -1063,6 +1190,7 @@ def evaluate_joined_dataframe(
         })
         dataset_plots[f"{tool_id}_scatter"] = str(scatter_png)
         dataset_plots[f"{tool_id}_gsea_enrichment"] = str(gsea_png)
+        dataset_plots[f"{tool_id}_pr_curve"] = str(pr_curve_png)
 
     heatmap_png = dataset_plots_dir / "algorithms_vs_genes_heatmap.png"
     _plot_algorithms_vs_genes_heatmap(
@@ -1094,8 +1222,24 @@ def evaluate_joined_dataframe(
         comparison_pr_png = dataset_plots_dir / "predictor_pr_curves.png"
         comparison_roc_png = dataset_plots_dir / "predictor_roc_curves.png"
         comparison_gsea_png = dataset_plots_dir / "predictor_gsea_curves.png"
+        common_pr = _prepare_common_scored_frame(
+            joined,
+            score_cols=score_cols,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
+            perturbation=perturbation,
+        )
+        common_pr_comparisons = [
+            {
+                "tool_id": tool_id,
+                "y_true": common_pr["is_positive"],
+                "y_score": common_pr[score_col],
+                "coverage": float(len(common_pr) / len(joined)) if len(joined) else float("nan"),
+            }
+            for score_col, tool_id in zip(score_cols, tool_ids)
+        ]
         _plot_predictor_pr_curves(
-            comparisons,
+            common_pr_comparisons,
             dataset_id=dataset_id,
             out_path=comparison_pr_png,
         )
@@ -1148,6 +1292,7 @@ def write_metric_tables(metric_rows, tables_dir, *, logger=None):
     out_paths = {}
     for metric_name, filename in [
         ("coverage", "coverage_per_experiment.tsv"),
+        ("positive_coverage", "positive_coverage_per_experiment.tsv"),
         ("aps", "aps_per_experiment.tsv"),
         ("pr_auc", "pr_auc_per_experiment.tsv"),
         ("spearman", "spearman_per_experiment.tsv"),
@@ -1267,10 +1412,10 @@ def _plot_cross_dataset_metric_distributions(metrics_df, *, metric_names, out_pa
     _save_figure(fig, out_path)
 
 
-def _plot_coverage_vs_performance(summary_df, *, out_path):
+def _plot_metric_vs_performance(summary_df, *, x_metric_col, x_label, title, out_path):
     fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.8), sharex=True, sharey=False)
     metric_specs = [("aps_mean", "Mean APS"), ("auroc_mean", "Mean AUROC")]
-    coverage = summary_df["coverage_mean"].astype(float).to_numpy()
+    x_values = summary_df[x_metric_col].astype(float).to_numpy()
 
     for ax, (metric_col, metric_label) in zip(axes, metric_specs):
         _style_axes(ax, grid_axis="both")
@@ -1278,7 +1423,7 @@ def _plot_coverage_vs_performance(summary_df, *, out_path):
         for index, tool_id in enumerate(summary_df["tool_id"].tolist()):
             color = CURVE_COLORS[index % len(CURVE_COLORS)]
             ax.scatter(
-                coverage[index],
+                x_values[index],
                 values[index],
                 s=80,
                 color=color,
@@ -1287,7 +1432,7 @@ def _plot_coverage_vs_performance(summary_df, *, out_path):
                 zorder=3,
             )
             ax.text(
-                coverage[index] + 0.01,
+                x_values[index] + 0.01,
                 values[index],
                 _tool_label(tool_id),
                 fontsize=8.5,
@@ -1296,16 +1441,36 @@ def _plot_coverage_vs_performance(summary_df, *, out_path):
             )
         ax.set_xlim(0, 1.02)
         ax.set_ylim(0, 1.02)
-        ax.set_xlabel("Mean coverage", fontsize=10)
+        ax.set_xlabel(x_label, fontsize=10)
         ax.set_ylabel(metric_label, fontsize=10)
     axes[0].set_title(
-        "Coverage vs performance",
+        title,
         fontsize=11,
         fontweight="semibold",
         loc="left",
         pad=14,
     )
     _save_figure(fig, out_path)
+
+
+def _plot_coverage_vs_performance(summary_df, *, out_path):
+    _plot_metric_vs_performance(
+        summary_df,
+        x_metric_col="coverage_mean",
+        x_label="Mean coverage",
+        title="Coverage vs performance",
+        out_path=out_path,
+    )
+
+
+def _plot_positive_coverage_vs_performance(summary_df, *, out_path):
+    _plot_metric_vs_performance(
+        summary_df,
+        x_metric_col="positive_coverage_mean",
+        x_label="Mean positive coverage",
+        title="Positive coverage vs performance",
+        out_path=out_path,
+    )
 
 
 def _plot_rank_class_distributions(joined_frames, *, out_path, fdr_threshold, abs_logfc_threshold):
@@ -1397,7 +1562,7 @@ def write_cross_dataset_summaries(
             "plots": {},
         }
 
-    metric_names = ["coverage", "aps", "pr_auc", "spearman", "auroc"]
+    metric_names = ["coverage", "positive_coverage", "aps", "pr_auc", "spearman", "auroc"]
     summary = metrics_df.groupby("tool_id")[metric_names].agg(["count", "mean", "median", "std", "min", "max"])
     summary.columns = [f"{metric_name}_{stat_name}" for metric_name, stat_name in summary.columns]
     summary = summary.reset_index()
@@ -1416,6 +1581,13 @@ def write_cross_dataset_summaries(
     coverage_scatter_path = plots_dir / "coverage_vs_performance.png"
     _plot_coverage_vs_performance(summary, out_path=coverage_scatter_path)
     _emit_log(logger, f"  Wrote coverage vs performance plot: {coverage_scatter_path}")
+
+    positive_coverage_scatter_path = plots_dir / "positive_coverage_vs_performance.png"
+    _plot_positive_coverage_vs_performance(summary, out_path=positive_coverage_scatter_path)
+    _emit_log(
+        logger,
+        f"  Wrote positive coverage vs performance plot: {positive_coverage_scatter_path}",
+    )
 
     rank_distribution_path = plots_dir / "positive_background_rank_distributions.png"
     wrote_rank_distributions = False
@@ -1437,6 +1609,7 @@ def write_cross_dataset_summaries(
             "cross_dataset_metric_heatmap": str(heatmap_path),
             "cross_dataset_metric_distributions": str(distributions_path),
             "coverage_vs_performance": str(coverage_scatter_path),
+            "positive_coverage_vs_performance": str(positive_coverage_scatter_path),
             **(
                 {"positive_background_rank_distributions": str(rank_distribution_path)}
                 if wrote_rank_distributions

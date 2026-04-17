@@ -21,6 +21,7 @@ def test_write_metric_tables_keeps_rows_with_missing_ids(tmp_path):
                 "geo_accession": None,
                 "tool_id": "mock",
                 "coverage": 0.75,
+                "positive_coverage": 0.5,
                 "aps": 0.75,
                 "pr_auc": 0.70,
                 "spearman": 0.40,
@@ -29,7 +30,7 @@ def test_write_metric_tables_keeps_rows_with_missing_ids(tmp_path):
         ],
         tmp_path,
     )
-    assert set(metric_tables) == {"coverage", "aps", "pr_auc", "spearman", "auroc"}
+    assert set(metric_tables) == {"coverage", "positive_coverage", "aps", "pr_auc", "spearman", "auroc"}
     aps_lines = (tmp_path / "aps_per_experiment.tsv").read_text(encoding="utf-8").splitlines()
     assert len(aps_lines) == 2
     assert "D001" in aps_lines[1]
@@ -39,6 +40,11 @@ def test_write_metric_tables_keeps_rows_with_missing_ids(tmp_path):
     ).splitlines()
     assert len(coverage_lines) == 2
     assert coverage_lines[1].endswith("0.75")
+    positive_coverage_lines = (tmp_path / "positive_coverage_per_experiment.tsv").read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert len(positive_coverage_lines) == 2
+    assert positive_coverage_lines[1].endswith("0.5")
 
 
 def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
@@ -74,6 +80,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
                 "geo_accession": "GSE1",
                 "tool_id": "mock",
                 "coverage": 0.8,
+                "positive_coverage": 0.5,
                 "aps": 0.7,
                 "pr_auc": 0.68,
                 "spearman": 0.4,
@@ -87,6 +94,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
                 "geo_accession": "GSE2",
                 "tool_id": "mock",
                 "coverage": 0.6,
+                "positive_coverage": 0.25,
                 "aps": 0.5,
                 "pr_auc": 0.48,
                 "spearman": 0.2,
@@ -100,6 +108,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
                 "geo_accession": "GSE1",
                 "tool_id": "cheating",
                 "coverage": 1.0,
+                "positive_coverage": 1.0,
                 "aps": 0.95,
                 "pr_auc": 0.94,
                 "spearman": 0.85,
@@ -114,11 +123,15 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
     assert (tmp_path / "plots" / "cross_dataset_metric_heatmap.png").is_file()
     assert (tmp_path / "plots" / "cross_dataset_metric_distributions.png").is_file()
     assert (tmp_path / "plots" / "coverage_vs_performance.png").is_file()
+    assert (tmp_path / "plots" / "positive_coverage_vs_performance.png").is_file()
     assert (tmp_path / "plots" / "positive_background_rank_distributions.png").is_file()
     summary_text = (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").read_text(encoding="utf-8")
     assert "aps_mean" in summary_text
     assert outputs["tables"]["cross_dataset_predictor_summary"].endswith("cross_dataset_predictor_summary.tsv")
     assert outputs["plots"]["coverage_vs_performance"].endswith("coverage_vs_performance.png")
+    assert outputs["plots"]["positive_coverage_vs_performance"].endswith(
+        "positive_coverage_vs_performance.png"
+    )
 
 
 def test_evaluate_rejects_single_class_labels(tmp_path):
@@ -190,19 +203,21 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
     )
     assert "mock_scatter" in result["plots"]
     assert "mock_gsea_enrichment" in result["plots"]
+    assert "mock_pr_curve" in result["plots"]
+    assert "cheating_pr_curve" in result["plots"]
     assert "predictor_pr_curves" in result["plots"]
     assert "predictor_roc_curves" in result["plots"]
     assert "predictor_gsea_curves" in result["plots"]
     assert "top_10pct_positive_heatmap" in result["plots"]
-    assert "mock_pr_curve" not in result["plots"]
     assert "mock_roc_curve" not in result["plots"]
     assert (tmp_path / "plots" / "mock_score_vs_logFC.png").is_file()
     assert (tmp_path / "plots" / "mock_gsea_enrichment.png").is_file()
+    assert (tmp_path / "plots" / "mock_pr_curve.png").is_file()
+    assert (tmp_path / "plots" / "cheating_pr_curve.png").is_file()
     assert (tmp_path / "plots" / "predictor_pr_curves.png").is_file()
     assert (tmp_path / "plots" / "predictor_roc_curves.png").is_file()
     assert (tmp_path / "plots" / "predictor_gsea_curves.png").is_file()
     assert (tmp_path / "plots" / "top_10pct_positive_heatmap.png").is_file()
-    assert not (tmp_path / "plots" / "mock_pr_curve.png").exists()
     assert not (tmp_path / "plots" / "mock_roc_curve.png").exists()
 
 
@@ -230,6 +245,7 @@ def test_evaluate_uses_only_existing_pairs_and_reports_coverage(tmp_path):
     assert metric_row["rows_scored"] == 3
     assert metric_row["rows_missing_score"] == 2
     assert metric_row["coverage"] == pytest.approx(0.6)
+    assert metric_row["positive_coverage"] == pytest.approx(2.0 / 3.0)
 
     report_md = tmp_path / "reports" / "D001__sparse_evaluation_report.md"
     report_pdf = tmp_path / "reports" / "D001__sparse_evaluation_report.pdf"
@@ -239,6 +255,9 @@ def test_evaluate_uses_only_existing_pairs_and_reports_coverage(tmp_path):
     assert "rows_scored: `3`" in report_text
     assert "rows_missing_score: `2`" in report_text
     assert "coverage: `0.600000`" in report_text
+    assert "positives_total: `3`" in report_text
+    assert "positives_scored: `2`" in report_text
+    assert "positive_coverage: `0.666667`" in report_text
 
 
 def test_evaluate_uses_supplied_logger(tmp_path):
@@ -264,6 +283,6 @@ def test_evaluate_uses_supplied_logger(tmp_path):
         logger=messages.append,
     )
     assert any("Evaluation start: D001" in message for message in messages)
-    assert any("Tool: mock | coverage=" in message for message in messages)
+    assert any("Tool: mock | coverage=" in message and "positive_cov=" in message for message in messages)
     assert any("wrote PR/ROC/GSEA comparison plots" in message for message in messages)
     assert any("Evaluation complete: D001" in message for message in messages)
