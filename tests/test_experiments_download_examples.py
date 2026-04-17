@@ -56,13 +56,13 @@ def test_download_examples_can_fetch_reference_bundle(tmp_path, monkeypatch):
 
     experiments_download_examples.download_examples(["ensembl-v109-refs"], repo=tmp_path)
 
-    fasta_path = tmp_path / "data/experiments/raw/refs/ensembl_v109/Homo_sapiens.GRCh38.cdna.all.fa.gz"
+    fasta_path = tmp_path / "data/experiments/raw/refs/ensembl_v109/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
     gtf_path = tmp_path / "data/experiments/raw/refs/ensembl_v109/Homo_sapiens.GRCh38.109.gtf.gz"
     assert fasta_path.is_file()
     assert gtf_path.is_file()
-    assert fasta_path.read_bytes() == b"content:Homo_sapiens.GRCh38.cdna.all.fa.gz"
+    assert fasta_path.read_bytes() == b"content:Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
     assert gtf_path.read_bytes() == b"content:Homo_sapiens.GRCh38.109.gtf.gz"
     assert seen_urls == [
-        "https://ftp.ensembl.org/pub/release-109/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz",
+        "https://ftp.ensembl.org/pub/release-109/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz",
         "https://ftp.ensembl.org/pub/release-109/gtf/homo_sapiens/Homo_sapiens.GRCh38.109.gtf.gz",
     ]

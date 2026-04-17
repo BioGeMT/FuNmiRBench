@@ -27,7 +27,7 @@ def test_sync_experiment_metadata_from_run_candidates(tmp_path):
         ]
     ).to_csv(registry, sep="\t", index=False)
 
-    candidate = tmp_path / "pipelines" / "geo" / "runs" / "20260329_demo" / "candidate_metadata.tsv"
+    candidate = tmp_path / "pipelines" / "experiments" / "runs" / "20260329_demo" / "candidate_metadata.tsv"
     candidate.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         [

@@ -6,7 +6,6 @@ gse: GSE253003
 source:
   mode: count_matrix
   count_matrix_path: data/experiments/raw/GSE253003/GSE253003_Count.csv.gz
-  count_matrix_url: ""
   gene_id_column: ENSEMBL
 
 comparison:

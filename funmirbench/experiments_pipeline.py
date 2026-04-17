@@ -9,7 +9,6 @@ import logging
 import os
 import pathlib
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -111,68 +110,20 @@ def open_text_auto(path: pathlib.Path):
     return path.open("r", encoding="utf-8")
 
 
-def resolve_existing_source_path(
-    source_cfg: dict, key: str, *, config_path: pathlib.Path, repo: pathlib.Path
-) -> pathlib.Path | None:
-    value = normalize_space(source_cfg.get(key, ""))
-    if not value:
-        return None
-    path = resolve_path(value, root=config_path.parent, repo=repo)
-    if not path.exists():
-        raise ValueError(f"Config source.{key} does not exist: {path}")
-    return path
-
-
-def resolve_or_download_source_artifact(
+def load_local_source_table(
     source_cfg: dict,
     *,
     path_key: str,
-    url_key: str,
     config_path: pathlib.Path,
     repo: pathlib.Path,
-    run_dir: pathlib.Path,
-    force: bool,
-    required: bool,
-) -> tuple[pathlib.Path | None, str]:
+) -> tuple[pd.DataFrame, pathlib.Path]:
     path_value = normalize_space(source_cfg.get(path_key, ""))
-    url_value = normalize_space(source_cfg.get(url_key, ""))
-    if path_value:
-        path = resolve_path(path_value, root=config_path.parent, repo=repo)
-        if not path.exists():
-            raise ValueError(f"Config source.{path_key} does not exist: {path}")
-        return path, ""
-    if url_value:
-        downloads_dir = run_dir / "downloads"
-        downloads_dir.mkdir(parents=True, exist_ok=True)
-        dest = downloads_dir / pathlib.Path(url_value.split("?")[0]).name
-        return cached_download(url_value, dest, force=force), url_value
-    if required:
-        raise ValueError(f"Config must include source.{path_key} or source.{url_key}.")
-    return None, ""
-
-
-def load_source_table(
-    source_cfg: dict,
-    *,
-    path_key: str,
-    url_key: str,
-    run_dir: pathlib.Path,
-    config_path: pathlib.Path,
-    repo: pathlib.Path,
-    force: bool,
-) -> tuple[pd.DataFrame, pathlib.Path, str]:
-    source_path, source_url = resolve_or_download_source_artifact(
-        source_cfg,
-        path_key=path_key,
-        url_key=url_key,
-        run_dir=run_dir,
-        config_path=config_path,
-        repo=repo,
-        force=force,
-        required=True,
-    )
-    assert source_path is not None
-    return read_table_auto(source_path), source_path, source_url
+    if not path_value:
+        raise ValueError(f"Config source.{path_key} is required.")
+    source_path = resolve_path(path_value, root=config_path.parent, repo=repo)
+    if not source_path.exists():
+        raise ValueError(f"Config source.{path_key} does not exist: {source_path}")
+    return read_table_auto(source_path), source_path
 
 
 def candidate_metadata_row(config: dict, *, de_table_rel_path: str) -> dict:
@@ -336,12 +287,12 @@ def run_de_from_counts(
     run_dir: pathlib.Path,
     counts_df: pd.DataFrame,
     counts_source: pathlib.Path,
-    count_matrix_url: str,
     source_mode: str,
     control_cols: list[str],
     treated_cols: list[str],
     control_samples: list[dict],
     treated_samples: list[dict],
+    gene_id_column_override: str | None = None,
     extra_manifest: dict | None = None,
 ) -> dict:
     overlap = sorted(set(control_cols) & set(treated_cols))
@@ -349,7 +300,7 @@ def run_de_from_counts(
         raise ValueError(f"Control and treated groups overlap: {overlap}")
 
     source_cfg = config.get("source", {})
-    gene_id_col = resolve_gene_id_column(source_cfg, counts_df)
+    gene_id_col = gene_id_column_override or resolve_gene_id_column(source_cfg, counts_df)
     mapping_rows = sample_column_mapping_rows("control", control_samples, control_cols) + sample_column_mapping_rows(
         "treated", treated_samples, treated_cols
     )
@@ -385,7 +336,6 @@ def run_de_from_counts(
         "config_path": str(config_path),
         "source_mode": source_mode,
         "runtime": "local",
-        "count_matrix_url": count_matrix_url,
         "count_matrix_source": str(counts_source),
         "count_matrix_rows": int(counts_df.shape[0]),
         "count_matrix_columns": int(counts_df.shape[1]),
@@ -407,31 +357,25 @@ def run_de_from_counts(
 
 
 def normalize_sample_entry(sample: dict, *, group_name: str, root: pathlib.Path, repo: pathlib.Path) -> dict:
-    sample_id = normalize_space(
-        sample.get("sample_id") or sample.get("id") or sample.get("accession") or sample.get("sra_accession", "")
-    )
+    sample_id = normalize_space(sample.get("sample_id") or sample.get("id") or sample.get("accession", ""))
     if not sample_id:
-        raise ValueError(f"Each {group_name} sample must define sample_id or sra_accession.")
+        raise ValueError(f"Each {group_name} sample must define sample_id.")
 
-    reads_1 = ""
-    reads_2 = ""
     reads_1_value = normalize_space(sample.get("reads_1", ""))
     reads_2_value = normalize_space(sample.get("reads_2", ""))
-    sra_accession = normalize_space(sample.get("sra_accession", ""))
+    if not reads_1_value:
+        raise ValueError(f"Sample {sample_id!r} must provide reads_1.")
+    resolved_reads_1 = resolve_path(reads_1_value, root=root, repo=repo)
+    if not resolved_reads_1.exists():
+        raise ValueError(f"reads_1 for sample {sample_id!r} does not exist: {resolved_reads_1}")
+    reads_1 = str(resolved_reads_1)
+    reads_2 = ""
 
-    if reads_1_value:
-        resolved_reads_1 = resolve_path(reads_1_value, root=root, repo=repo)
-        if not resolved_reads_1.exists():
-            raise ValueError(f"reads_1 for sample {sample_id!r} does not exist: {resolved_reads_1}")
-        reads_1 = str(resolved_reads_1)
-
-        if reads_2_value:
-            resolved_reads_2 = resolve_path(reads_2_value, root=root, repo=repo)
-            if not resolved_reads_2.exists():
-                raise ValueError(f"reads_2 for sample {sample_id!r} does not exist: {resolved_reads_2}")
-            reads_2 = str(resolved_reads_2)
-    elif not sra_accession:
-        raise ValueError(f"Sample {sample_id!r} must provide reads_1 or sra_accession.")
+    if reads_2_value:
+        resolved_reads_2 = resolve_path(reads_2_value, root=root, repo=repo)
+        if not resolved_reads_2.exists():
+            raise ValueError(f"reads_2 for sample {sample_id!r} does not exist: {resolved_reads_2}")
+        reads_2 = str(resolved_reads_2)
 
     count_matrix_column = normalize_space(sample.get("count_matrix_column", "")) or sample_id
     return {
@@ -439,7 +383,6 @@ def normalize_sample_entry(sample: dict, *, group_name: str, root: pathlib.Path,
         "group": group_name,
         "reads_1": reads_1,
         "reads_2": reads_2,
-        "sra_accession": sra_accession,
         "count_matrix_column": count_matrix_column,
         "accession": sample_id,
         "title": sample_id,
@@ -487,137 +430,71 @@ def previous_run_dirs_for_dataset(
     return sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True)
 
 
-def find_reusable_reference_assets(
+def find_reusable_star_index(
     *, repo: pathlib.Path, dataset_id: str, current_run_dir: pathlib.Path
-) -> tuple[pathlib.Path | None, pathlib.Path | None]:
-    for run_dir in previous_run_dirs_for_dataset(repo=repo, dataset_id=dataset_id, current_run_dir=current_run_dir):
-        salmon_index = run_dir / "reference" / "salmon_index"
-        tx2gene_tsv = run_dir / "reference" / "tx2gene.tsv"
-        if salmon_index.exists() and any(salmon_index.iterdir()) and tx2gene_tsv.exists():
-            return salmon_index, tx2gene_tsv
-    return None, None
-
-
-def find_reusable_quant_path(
-    *, repo: pathlib.Path, dataset_id: str, current_run_dir: pathlib.Path, sample_id: str
 ) -> pathlib.Path | None:
     for run_dir in previous_run_dirs_for_dataset(repo=repo, dataset_id=dataset_id, current_run_dir=current_run_dir):
-        quant_path = run_dir / "salmon" / sample_id / "quant.sf"
-        if quant_path.exists():
-            return quant_path
+        star_index = run_dir / "reference" / "star_index"
+        if star_index.exists() and any(star_index.iterdir()):
+            return star_index
     return None
 
 
-def salmon_quant_command(
-    *,
-    sample: dict,
-    salmon_index: pathlib.Path,
-    out_dir: pathlib.Path,
-    library_type: str,
-    extra_args: list[str],
-    threads: int,
-) -> list[str]:
-    command = [
-        "salmon",
-        "quant",
-        "-i",
-        str(salmon_index),
-        "-l",
-        library_type,
-        "-o",
-        str(out_dir),
-        "--threads",
-        str(threads),
-    ]
-    reads_1 = sample["reads_1"]
-    reads_2 = sample["reads_2"]
-    if reads_2:
-        command += ["-1", reads_1, "-2", reads_2]
-    else:
-        command += ["-r", reads_1]
-    command.extend(extra_args)
-    return command
+def materialize_reference_file(path: pathlib.Path, *, dest_dir: pathlib.Path) -> pathlib.Path:
+    if path.suffix != ".gz":
+        return path
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    out_path = dest_dir / path.stem
+    if out_path.exists():
+        return out_path
+    with gzip.open(path, "rb") as src, out_path.open("wb") as dst:
+        shutil.copyfileobj(src, dst)
+    return out_path
 
 
-def build_salmon_index(
+def build_star_index(
     *,
     source_cfg: dict,
     repo: pathlib.Path,
     run_dir: pathlib.Path,
-    transcript_fasta: pathlib.Path,
+    genome_fasta: pathlib.Path,
+    gtf_path: pathlib.Path,
 ) -> tuple[pathlib.Path, list[str], pathlib.Path, pathlib.Path]:
-    require_local_binary("salmon")
-    threads = int(source_cfg.get("salmon_threads", default_thread_count(cap=32)))
-    logger.info("Building Salmon index with %s threads...", threads)
-    out_dir = run_dir / "reference" / "salmon_index"
+    require_local_binary("STAR")
+    threads = int(source_cfg.get("star_threads", default_thread_count(cap=32)))
+    logger.info("Building STAR index with %s threads...", threads)
+    out_dir = run_dir / "reference" / "star_index"
     out_dir.parent.mkdir(parents=True, exist_ok=True)
-    extra_args = [str(arg) for arg in source_cfg.get("salmon_index_extra_args", [])]
+    extra_args = [str(arg) for arg in source_cfg.get("star_index_extra_args", [])]
     command = [
-        "salmon",
-        "index",
-        "-t",
-        str(transcript_fasta),
-        "-i",
-        str(out_dir),
-        "--threads",
+        "STAR",
+        "--runMode",
+        "genomeGenerate",
+        "--runThreadN",
         str(threads),
+        "--genomeDir",
+        str(out_dir),
+        "--genomeFastaFiles",
+        str(genome_fasta),
+        "--sjdbGTFfile",
+        str(gtf_path),
         *extra_args,
     ]
-    stdout_path = run_dir / "salmon_index.stdout.txt"
-    stderr_path = run_dir / "salmon_index.stderr.txt"
+    stdout_path = run_dir / "star_index.stdout.txt"
+    stderr_path = run_dir / "star_index.stderr.txt"
     run_logged_command(
         command,
         cwd=repo,
         stdout_path=stdout_path,
         stderr_path=stderr_path,
-        error_label="Salmon index build",
+        error_label="STAR index build",
     )
     if not out_dir.exists() or not any(out_dir.iterdir()):
-        raise ValueError(f"Salmon index build completed but did not create files in {out_dir}")
+        raise ValueError(f"STAR index build completed but did not create files in {out_dir}")
     return out_dir, command, stdout_path, stderr_path
 
 
-def parse_gtf_attributes(text: str) -> dict[str, str]:
-    attributes = {}
-    for part in [item.strip() for item in text.strip().strip(";").split(";") if item.strip()]:
-        match = re.match(r"([A-Za-z0-9_.:-]+)\s+\"([^\"]+)\"", part)
-        if match:
-            attributes[match.group(1)] = match.group(2)
-            continue
-        if "=" in part:
-            key, value = part.split("=", 1)
-            attributes[key.strip()] = value.strip().strip('"')
-            continue
-        bits = part.split(None, 1)
-        if len(bits) == 2:
-            attributes[bits[0]] = bits[1].strip().strip('"')
-    return attributes
-
-
-def generate_tx2gene_from_gtf(gtf_path: pathlib.Path, out_path: pathlib.Path) -> pathlib.Path:
-    mapping = {}
-    with open_text_auto(gtf_path) as handle:
-        for line in handle:
-            if not line or line.startswith("#"):
-                continue
-            fields = line.rstrip("\n").split("\t")
-            if len(fields) < 9:
-                continue
-            attrs = parse_gtf_attributes(fields[8])
-            transcript_id = attrs.get("transcript_id") or attrs.get("transcriptId")
-            gene_id = attrs.get("gene_id") or attrs.get("geneId")
-            if transcript_id and gene_id:
-                mapping[transcript_id] = gene_id
-    if not mapping:
-        raise ValueError(f"Could not derive transcript-to-gene mappings from {gtf_path}")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(
-        [{"transcript_id": transcript_id, "gene_id": gene_id} for transcript_id, gene_id in sorted(mapping.items())]
-    ).to_csv(out_path, sep="\t", index=False)
-    return out_path
-
-
-def prepare_reference_assets(
+def prepare_reads_reference_assets(
     *,
     dataset_id: str,
     source_cfg: dict,
@@ -626,273 +503,297 @@ def prepare_reference_assets(
     run_dir: pathlib.Path,
     force: bool,
 ) -> dict:
-    salmon_index = resolve_existing_source_path(source_cfg, "salmon_index", config_path=config_path, repo=repo)
-    tx2gene_tsv = resolve_existing_source_path(source_cfg, "tx2gene_tsv", config_path=config_path, repo=repo)
-    transcript_fasta_url = ""
-    gtf_url = ""
-    generated = {
-        "generated_salmon_index": False,
-        "generated_tx2gene_tsv": False,
-        "reused_salmon_index": False,
-        "reused_tx2gene_tsv": False,
-    }
-    command_paths = {}
+    genome_fasta_source = normalize_space(source_cfg.get("genome_fasta_path", ""))
+    if not genome_fasta_source:
+        raise ValueError("Config source.genome_fasta_path is required for reads mode.")
+    gtf_source_value = normalize_space(source_cfg.get("gtf_path", ""))
+    if not gtf_source_value:
+        raise ValueError("Config source.gtf_path is required for reads mode.")
+    genome_fasta_input = resolve_path(genome_fasta_source, root=config_path.parent, repo=repo)
+    if not genome_fasta_input.exists():
+        raise ValueError(f"Config source.genome_fasta_path does not exist: {genome_fasta_input}")
+    gtf_input = resolve_path(gtf_source_value, root=config_path.parent, repo=repo)
+    if not gtf_input.exists():
+        raise ValueError(f"Config source.gtf_path does not exist: {gtf_input}")
 
-    transcript_fasta = None
-    if salmon_index is None:
-        reused_salmon_index, reused_tx2gene_tsv = (None, None) if force else find_reusable_reference_assets(
-            repo=repo,
-            dataset_id=dataset_id,
-            current_run_dir=run_dir,
-        )
-        if reused_salmon_index is not None:
-            logger.info("Reusing Salmon index from %s...", reused_salmon_index.parent.parent.name)
-            salmon_index = reused_salmon_index
-            generated["reused_salmon_index"] = True
-            if reused_tx2gene_tsv is not None:
-                tx2gene_tsv = reused_tx2gene_tsv
-                generated["reused_tx2gene_tsv"] = True
-        else:
-            transcript_fasta, transcript_fasta_url = resolve_or_download_source_artifact(
-                source_cfg,
-                path_key="transcript_fasta_path",
-                url_key="transcript_fasta_url",
-                config_path=config_path,
-                repo=repo,
-                run_dir=run_dir,
-                force=force,
-                required=True,
-            )
-            assert transcript_fasta is not None
-            salmon_index, index_command, index_stdout, index_stderr = build_salmon_index(
-                source_cfg=source_cfg,
-                repo=repo,
-                run_dir=run_dir,
-                transcript_fasta=transcript_fasta,
-            )
-            generated["generated_salmon_index"] = True
-            command_paths.update(
-                {
-                    "salmon_index_command": index_command,
-                    "salmon_index_stdout": str(index_stdout),
-                    "salmon_index_stderr": str(index_stderr),
-                }
-            )
+    star_index = None
+    genome_fasta_path = None
+    generated_star_index = False
+    reused_star_index = False
+    command_paths: dict[str, str | list[str]] = {}
 
-    gtf_path = None
-    if tx2gene_tsv is None:
-        gtf_path, gtf_url = resolve_or_download_source_artifact(
-            source_cfg,
-            path_key="gtf_path",
-            url_key="gtf_url",
-            config_path=config_path,
+    materialized_gtf = materialize_reference_file(gtf_input, dest_dir=run_dir / "reference")
+
+    reusable_index = None if force else find_reusable_star_index(
+        repo=repo,
+        dataset_id=dataset_id,
+        current_run_dir=run_dir,
+    )
+    if reusable_index is not None:
+        logger.info("Reusing STAR index from %s...", reusable_index.parent.parent.name)
+        star_index = reusable_index
+        reused_star_index = True
+    else:
+        genome_fasta_path = materialize_reference_file(genome_fasta_input, dest_dir=run_dir / "reference")
+        star_index, command, stdout_path, stderr_path = build_star_index(
+            source_cfg=source_cfg,
             repo=repo,
             run_dir=run_dir,
-            force=force,
-            required=True,
+            genome_fasta=genome_fasta_path,
+            gtf_path=materialized_gtf,
         )
-        assert gtf_path is not None
-        tx2gene_tsv = generate_tx2gene_from_gtf(gtf_path, run_dir / "reference" / "tx2gene.tsv")
-        generated["generated_tx2gene_tsv"] = True
+        generated_star_index = True
+        command_paths.update(
+            {
+                "star_index_command": command,
+                "star_index_stdout": str(stdout_path),
+                "star_index_stderr": str(stderr_path),
+            }
+        )
 
-    assert salmon_index is not None
-    assert tx2gene_tsv is not None
+    assert star_index is not None
     return {
-        "salmon_index": salmon_index,
-        "tx2gene_tsv": tx2gene_tsv,
-        "transcript_fasta": str(transcript_fasta) if transcript_fasta else "",
-        "transcript_fasta_url": transcript_fasta_url,
-        "gtf_path": str(gtf_path) if gtf_path else "",
-        "gtf_url": gtf_url,
-        **generated,
+        "star_index": star_index,
+        "gtf_path": materialized_gtf,
+        "genome_fasta": str(genome_fasta_path) if genome_fasta_path else "",
+        "generated_star_index": generated_star_index,
+        "reused_star_index": reused_star_index,
         **command_paths,
     }
 
 
-def run_salmon_quant(
+def infer_library_layout(samples: list[dict]) -> str:
+    paired_flags = [bool(sample["reads_2"]) for sample in samples]
+    if all(paired_flags):
+        return "paired"
+    if not any(paired_flags):
+        return "single"
+    raise ValueError("Mixed single-end and paired-end samples are not supported in one reads config.")
+
+
+def run_fastqc(
     *,
+    stage_name: str,
     source_cfg: dict,
     repo: pathlib.Path,
     run_dir: pathlib.Path,
     sample: dict,
-    salmon_index: pathlib.Path,
-) -> pathlib.Path:
-    require_local_binary("salmon")
-    threads = int(source_cfg.get("salmon_threads", default_thread_count(cap=32)))
-    logger.info("Running Salmon for sample %s with %s threads...", sample["sample_id"], threads)
-    out_dir = run_dir / "salmon" / sample["sample_id"]
+    reads_1: str,
+    reads_2: str,
+) -> tuple[dict, list[str], pathlib.Path, pathlib.Path]:
+    require_local_binary("fastqc")
+    threads = int(source_cfg.get("fastqc_threads", default_thread_count(cap=16)))
+    out_dir = run_dir / "fastqc" / stage_name / sample["sample_id"]
     out_dir.mkdir(parents=True, exist_ok=True)
-    extra_args = [str(arg) for arg in source_cfg.get("salmon_extra_args", ["--validateMappings"])]
-    library_type = normalize_space(source_cfg.get("library_type", "")) or "A"
-    command = salmon_quant_command(
-        sample=sample,
-        salmon_index=salmon_index,
-        out_dir=out_dir,
-        library_type=library_type,
-        extra_args=extra_args,
-        threads=threads,
-    )
+    inputs = [reads_1]
+    if reads_2:
+        inputs.append(reads_2)
+    command = [
+        "fastqc",
+        "--threads",
+        str(threads),
+        "--outdir",
+        str(out_dir),
+        *inputs,
+    ]
+    stdout_path = run_dir / f"fastqc_{stage_name}_{sample['sample_id']}.stdout.txt"
+    stderr_path = run_dir / f"fastqc_{stage_name}_{sample['sample_id']}.stderr.txt"
     run_logged_command(
         command,
         cwd=repo,
-        stdout_path=run_dir / f"salmon_{sample['sample_id']}.stdout.txt",
-        stderr_path=run_dir / f"salmon_{sample['sample_id']}.stderr.txt",
-        error_label=f"Salmon quantification for sample {sample['sample_id']}",
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        error_label=f"FastQC {stage_name} for sample {sample['sample_id']}",
     )
-    quant_path = out_dir / "quant.sf"
-    if not quant_path.exists():
-        raise ValueError(f"Salmon completed but did not create {quant_path}")
-    return quant_path
+    report_info = {
+        "output_dir": str(out_dir),
+        "html": sorted(str(path) for path in out_dir.glob("*_fastqc.html")),
+        "zip": sorted(str(path) for path in out_dir.glob("*_fastqc.zip")),
+    }
+    return report_info, command, stdout_path, stderr_path
 
 
-def detect_downloaded_fastqs(sample_reads_dir: pathlib.Path, accession: str) -> tuple[pathlib.Path, pathlib.Path | None]:
-    paired_1 = sample_reads_dir / f"{accession}_1.fastq"
-    paired_2 = sample_reads_dir / f"{accession}_2.fastq"
-    single = sample_reads_dir / f"{accession}.fastq"
-    if paired_1.exists() and paired_2.exists():
-        return paired_1, paired_2
-    if single.exists():
-        return single, None
-    fastqs = sorted(sample_reads_dir.glob("*.fastq"))
-    if len(fastqs) == 1:
-        return fastqs[0], None
-    if len(fastqs) == 2:
-        return fastqs[0], fastqs[1]
-    raise ValueError(f"Could not detect FASTQ outputs for {accession} in {sample_reads_dir}")
-
-
-def run_sra_download(
+def run_fastp(
     *,
     source_cfg: dict,
     repo: pathlib.Path,
     run_dir: pathlib.Path,
     sample: dict,
 ) -> tuple[dict, list[str], pathlib.Path, pathlib.Path]:
-    require_local_binary("prefetch")
-    require_local_binary("fasterq-dump")
-    accession = sample["sra_accession"]
-    threads = int(source_cfg.get("sra_threads", default_thread_count(cap=16)))
-    logger.info(
-        "Downloading reads for sample %s from %s with %s threads...",
-        sample["sample_id"],
-        accession,
-        threads,
-    )
-    sample_reads_dir = run_dir / "reads" / sample["sample_id"]
-    sample_reads_dir.mkdir(parents=True, exist_ok=True)
-    sra_cache_dir = run_dir / "sra"
-    sra_cache_dir.mkdir(parents=True, exist_ok=True)
-    shell_command = (
-        "set -euo pipefail; "
-        f"prefetch --output-directory {shlex.quote(str(sra_cache_dir))} {shlex.quote(accession)}; "
-        f"fasterq-dump --threads {threads} --split-files "
-        f"--outdir {shlex.quote(str(sample_reads_dir))} {shlex.quote(accession)}"
-    )
-    command = ["bash", "-lc", shell_command]
-    stdout_path = run_dir / f"sra_{sample['sample_id']}.stdout.txt"
-    stderr_path = run_dir / f"sra_{sample['sample_id']}.stderr.txt"
+    require_local_binary("fastp")
+    threads = int(source_cfg.get("fastp_threads", default_thread_count(cap=16)))
+    out_dir = run_dir / "trimmed" / sample["sample_id"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paired = bool(sample["reads_2"])
+    reads_1_out = out_dir / (f"{sample['sample_id']}_R1.fastq.gz" if paired else f"{sample['sample_id']}.fastq.gz")
+    reads_2_out = out_dir / f"{sample['sample_id']}_R2.fastq.gz" if paired else None
+    html_path = out_dir / "fastp.html"
+    json_path = out_dir / "fastp.json"
+    command = [
+        "fastp",
+        "--thread",
+        str(threads),
+        "-i",
+        sample["reads_1"],
+        "-o",
+        str(reads_1_out),
+        "--html",
+        str(html_path),
+        "--json",
+        str(json_path),
+        *[str(arg) for arg in source_cfg.get("fastp_extra_args", [])],
+    ]
+    if paired:
+        assert reads_2_out is not None
+        command.extend(["-I", sample["reads_2"], "-O", str(reads_2_out)])
+    stdout_path = run_dir / f"fastp_{sample['sample_id']}.stdout.txt"
+    stderr_path = run_dir / f"fastp_{sample['sample_id']}.stderr.txt"
     run_logged_command(
         command,
         cwd=repo,
         stdout_path=stdout_path,
         stderr_path=stderr_path,
-        error_label=f"SRA download for sample {sample['sample_id']}",
+        error_label=f"fastp trimming for sample {sample['sample_id']}",
     )
-    reads_1, reads_2 = detect_downloaded_fastqs(sample_reads_dir, accession)
-    resolved = dict(sample)
-    resolved["reads_1"] = str(reads_1)
-    resolved["reads_2"] = str(reads_2) if reads_2 else ""
-    return resolved, command, stdout_path, stderr_path
+    if not reads_1_out.exists():
+        raise ValueError(f"fastp completed but did not create {reads_1_out}")
+    if paired and (reads_2_out is None or not reads_2_out.exists()):
+        raise ValueError(f"fastp completed but did not create the expected mate file for {sample['sample_id']}")
+    trimmed = dict(sample)
+    trimmed["reads_1"] = str(reads_1_out)
+    trimmed["reads_2"] = str(reads_2_out) if reads_2_out else ""
+    return trimmed, command, stdout_path, stderr_path
 
 
-def materialize_reads_samples(
+def run_star_alignment(
     *,
     source_cfg: dict,
     repo: pathlib.Path,
     run_dir: pathlib.Path,
-    control_samples: list[dict],
-    treated_samples: list[dict],
-) -> tuple[list[dict], list[dict], dict]:
-    download_manifest = {
-        "downloaded_samples": [],
-        "sra_download_commands": {},
-        "sra_download_stdout": {},
-        "sra_download_stderr": {},
-    }
-
-    def resolve_sample(sample: dict) -> dict:
-        if sample["reads_1"]:
-            return sample
-        resolved, command, stdout_path, stderr_path = run_sra_download(
-            source_cfg=source_cfg,
-            repo=repo,
-            run_dir=run_dir,
-            sample=sample,
-        )
-        download_manifest["downloaded_samples"].append(sample["sample_id"])
-        download_manifest["sra_download_commands"][sample["sample_id"]] = command
-        download_manifest["sra_download_stdout"][sample["sample_id"]] = str(stdout_path)
-        download_manifest["sra_download_stderr"][sample["sample_id"]] = str(stderr_path)
-        return resolved
-
-    resolved_control = [resolve_sample(sample) for sample in control_samples]
-    resolved_treated = [resolve_sample(sample) for sample in treated_samples]
-    return resolved_control, resolved_treated, download_manifest
-
-
-def write_salmon_manifest(
-    run_dir: pathlib.Path,
-    control_samples: list[dict],
-    treated_samples: list[dict],
-    quant_paths: dict[str, pathlib.Path],
-) -> pathlib.Path:
-    manifest_rows = []
-    for sample in control_samples + treated_samples:
-        manifest_rows.append(
-            {
-                "sample_id": sample["sample_id"],
-                "condition": sample["group"],
-                "quant_sf": str(quant_paths[sample["sample_id"]]),
-            }
-        )
-    manifest_path = run_dir / "salmon_samples.tsv"
-    pd.DataFrame(manifest_rows).to_csv(manifest_path, sep="\t", index=False)
-    return manifest_path
-
-
-def run_deseq2(
-    *,
-    repo: pathlib.Path,
-    run_dir: pathlib.Path,
-    salmon_manifest: pathlib.Path,
-    tx2gene_tsv: pathlib.Path,
-    output_path: pathlib.Path,
-) -> tuple[list[str], pathlib.Path, pathlib.Path]:
-    require_local_binary("Rscript")
-    logger.info("Running tximport + DESeq2...")
-    r_script = repo / "pipelines" / "experiments" / "run_deseq2.R"
+    sample: dict,
+    star_index: pathlib.Path,
+) -> tuple[pathlib.Path, list[str], pathlib.Path, pathlib.Path]:
+    require_local_binary("STAR")
+    threads = int(source_cfg.get("star_threads", default_thread_count(cap=32)))
+    logger.info("Running STAR for sample %s with %s threads...", sample["sample_id"], threads)
+    out_dir = run_dir / "star" / sample["sample_id"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    reads = [sample["reads_1"]]
+    if sample["reads_2"]:
+        reads.append(sample["reads_2"])
     command = [
-        "Rscript",
-        str(r_script),
-        "--sample-sheet",
-        str(salmon_manifest),
-        "--tx2gene",
-        str(tx2gene_tsv),
-        "--output",
-        str(output_path),
+        "STAR",
+        "--runThreadN",
+        str(threads),
+        "--genomeDir",
+        str(star_index),
+        "--readFilesIn",
+        *reads,
+        "--outFileNamePrefix",
+        f"{out_dir}/",
+        "--outSAMtype",
+        "BAM",
+        "SortedByCoordinate",
+        *[str(arg) for arg in source_cfg.get("star_extra_args", [])],
     ]
-    stdout_path = run_dir / "deseq2.stdout.txt"
-    stderr_path = run_dir / "deseq2.stderr.txt"
+    if any(read.endswith(".gz") for read in reads):
+        read_files_command = normalize_space(source_cfg.get("read_files_command", "")) or "zcat"
+        command.extend(["--readFilesCommand", read_files_command])
+    stdout_path = run_dir / f"star_{sample['sample_id']}.stdout.txt"
+    stderr_path = run_dir / f"star_{sample['sample_id']}.stderr.txt"
     run_logged_command(
         command,
         cwd=repo,
         stdout_path=stdout_path,
         stderr_path=stderr_path,
-        error_label="DESeq2 run",
+        error_label=f"STAR alignment for sample {sample['sample_id']}",
+    )
+    bam_path = out_dir / "Aligned.sortedByCoord.out.bam"
+    if not bam_path.exists():
+        raise ValueError(f"STAR completed but did not create {bam_path}")
+    return bam_path, command, stdout_path, stderr_path
+
+
+def run_featurecounts(
+    *,
+    source_cfg: dict,
+    repo: pathlib.Path,
+    run_dir: pathlib.Path,
+    gtf_path: pathlib.Path,
+    bam_paths: dict[str, pathlib.Path],
+    sample_order: list[str],
+    paired_end: bool,
+) -> tuple[pathlib.Path, list[str], pathlib.Path, pathlib.Path]:
+    require_local_binary("featureCounts")
+    threads = int(source_cfg.get("featurecounts_threads", default_thread_count(cap=16)))
+    feature_type = normalize_space(source_cfg.get("featurecounts_feature_type", "")) or "exon"
+    gene_attribute = normalize_space(source_cfg.get("featurecounts_gene_attribute", "")) or "gene_id"
+    output_path = run_dir / "featurecounts_counts.tsv"
+    command = [
+        "featureCounts",
+        "-T",
+        str(threads),
+        "-a",
+        str(gtf_path),
+        "-o",
+        str(output_path),
+        "-t",
+        feature_type,
+        "-g",
+        gene_attribute,
+    ]
+    if paired_end:
+        command.extend(["-p", "--countReadPairs"])
+    command.extend(str(arg) for arg in source_cfg.get("featurecounts_extra_args", []))
+    command.extend(str(bam_paths[sample_id]) for sample_id in sample_order)
+    stdout_path = run_dir / "featurecounts.stdout.txt"
+    stderr_path = run_dir / "featurecounts.stderr.txt"
+    run_logged_command(
+        command,
+        cwd=repo,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        error_label="featureCounts run",
     )
     if not output_path.exists():
-        raise ValueError(f"DESeq2 completed but did not create the expected DE table: {output_path}")
-    return command, stdout_path, stderr_path
+        raise ValueError(f"featureCounts completed but did not create {output_path}")
+    return output_path, command, stdout_path, stderr_path
+
+
+def build_featurecounts_matrix(
+    *,
+    featurecounts_path: pathlib.Path,
+    bam_paths: dict[str, pathlib.Path],
+    sample_order: list[str],
+    out_path: pathlib.Path,
+) -> pathlib.Path:
+    df = pd.read_csv(featurecounts_path, sep="\t", comment="#")
+    if "Geneid" not in df.columns:
+        raise ValueError(f"featureCounts output is missing the Geneid column: {featurecounts_path}")
+
+    matrix = pd.DataFrame({"gene_id": df["Geneid"].astype(str)})
+    column_names = {str(column): column for column in df.columns}
+    for sample_id in sample_order:
+        bam_path = bam_paths[sample_id]
+        candidates = [str(bam_path), bam_path.name]
+        match = None
+        for candidate in candidates:
+            if candidate in column_names:
+                match = column_names[candidate]
+                break
+        if match is None:
+            suffix_matches = [column for column in df.columns if str(column).endswith(bam_path.name)]
+            if len(suffix_matches) == 1:
+                match = suffix_matches[0]
+        if match is None:
+            raise ValueError(
+                f"Could not find the featureCounts column for sample {sample_id!r} and BAM {bam_path!s}."
+            )
+        matrix[sample_id] = pd.to_numeric(df[match], errors="raise")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    matrix.to_csv(out_path, sep="\t", index=False)
+    return out_path
 
 
 def run_count_matrix_mode(
@@ -906,14 +807,11 @@ def run_count_matrix_mode(
     logger.info("Mode: count_matrix (%s)", config["dataset_id"])
     source_cfg = config.get("source", {})
     logger.info("Loading count matrix...")
-    counts_df, counts_source, count_matrix_url = load_source_table(
+    counts_df, counts_source = load_local_source_table(
         source_cfg,
         path_key="count_matrix_path",
-        url_key="count_matrix_url",
-        run_dir=run_dir,
         config_path=config_path,
         repo=repo,
-        force=force,
     )
 
     comparison_cfg = config.get("comparison", {})
@@ -936,7 +834,6 @@ def run_count_matrix_mode(
         run_dir=run_dir,
         counts_df=counts_df,
         counts_source=counts_source,
-        count_matrix_url=count_matrix_url,
         source_mode="count_matrix",
         control_cols=control_cols,
         treated_cols=treated_cols,
@@ -957,16 +854,70 @@ def run_reads_mode(
     source_cfg = config.get("source", {})
     logger.info("Loading reads config...")
     control_samples, treated_samples = load_reads_samples(config, config_path=config_path, repo=repo)
-    control_samples, treated_samples, download_manifest = materialize_reads_samples(
-        source_cfg=source_cfg,
-        repo=repo,
-        run_dir=run_dir,
-        control_samples=control_samples,
-        treated_samples=treated_samples,
-    )
     sample_sheet = write_reads_sample_sheet(run_dir, control_samples, treated_samples)
+    sample_order = [sample["sample_id"] for sample in control_samples + treated_samples]
+    paired_end = infer_library_layout(control_samples + treated_samples) == "paired"
+
+    raw_fastqc_outputs: dict[str, dict] = {}
+    raw_fastqc_commands: dict[str, list[str]] = {}
+    raw_fastqc_stdout: dict[str, str] = {}
+    raw_fastqc_stderr: dict[str, str] = {}
+    trimmed_samples: list[dict] = []
+    fastp_commands: dict[str, list[str]] = {}
+    fastp_stdout: dict[str, str] = {}
+    fastp_stderr: dict[str, str] = {}
+    trimmed_fastqc_outputs: dict[str, dict] = {}
+    trimmed_fastqc_commands: dict[str, list[str]] = {}
+    trimmed_fastqc_stdout: dict[str, str] = {}
+    trimmed_fastqc_stderr: dict[str, str] = {}
+
+    for sample in control_samples + treated_samples:
+        report_info, command, stdout_path, stderr_path = run_fastqc(
+            stage_name="raw",
+            source_cfg=source_cfg,
+            repo=repo,
+            run_dir=run_dir,
+            sample=sample,
+            reads_1=sample["reads_1"],
+            reads_2=sample["reads_2"],
+        )
+        raw_fastqc_outputs[sample["sample_id"]] = report_info
+        raw_fastqc_commands[sample["sample_id"]] = command
+        raw_fastqc_stdout[sample["sample_id"]] = str(stdout_path)
+        raw_fastqc_stderr[sample["sample_id"]] = str(stderr_path)
+
+        current_sample, command, stdout_path, stderr_path = run_fastp(
+            source_cfg=source_cfg,
+            repo=repo,
+            run_dir=run_dir,
+            sample=sample,
+        )
+        fastp_commands[sample["sample_id"]] = command
+        fastp_stdout[sample["sample_id"]] = str(stdout_path)
+        fastp_stderr[sample["sample_id"]] = str(stderr_path)
+
+        report_info, command, stdout_path, stderr_path = run_fastqc(
+            stage_name="trimmed",
+            source_cfg=source_cfg,
+            repo=repo,
+            run_dir=run_dir,
+            sample=current_sample,
+            reads_1=current_sample["reads_1"],
+            reads_2=current_sample["reads_2"],
+        )
+        trimmed_fastqc_outputs[current_sample["sample_id"]] = report_info
+        trimmed_fastqc_commands[current_sample["sample_id"]] = command
+        trimmed_fastqc_stdout[current_sample["sample_id"]] = str(stdout_path)
+        trimmed_fastqc_stderr[current_sample["sample_id"]] = str(stderr_path)
+
+        trimmed_samples.append(current_sample)
+
+    trimmed_samples_by_id = {sample["sample_id"]: sample for sample in trimmed_samples}
+    control_samples = [trimmed_samples_by_id[sample["sample_id"]] for sample in control_samples]
+    treated_samples = [trimmed_samples_by_id[sample["sample_id"]] for sample in treated_samples]
+
     logger.info("Preparing references...")
-    reference_assets = prepare_reference_assets(
+    reference_assets = prepare_reads_reference_assets(
         dataset_id=config["dataset_id"],
         source_cfg=source_cfg,
         config_path=config_path,
@@ -974,90 +925,95 @@ def run_reads_mode(
         run_dir=run_dir,
         force=force,
     )
-    salmon_index = pathlib.Path(reference_assets["salmon_index"])
-    tx2gene_tsv = pathlib.Path(reference_assets["tx2gene_tsv"])
+    star_index = pathlib.Path(reference_assets["star_index"])
+    gtf_path = pathlib.Path(reference_assets["gtf_path"])
 
-    quant_paths = {}
-    reused_quant_samples = []
+    bam_paths: dict[str, pathlib.Path] = {}
+    star_commands: dict[str, list[str]] = {}
+    star_stdout: dict[str, str] = {}
+    star_stderr: dict[str, str] = {}
     for sample in control_samples + treated_samples:
-        reusable_quant = None if force else find_reusable_quant_path(
+        bam_path, command, stdout_path, stderr_path = run_star_alignment(
+            source_cfg=source_cfg,
             repo=repo,
-            dataset_id=config["dataset_id"],
-            current_run_dir=run_dir,
-            sample_id=sample["sample_id"],
+            run_dir=run_dir,
+            sample=sample,
+            star_index=star_index,
         )
-        if reusable_quant is not None:
-            logger.info("Reusing Salmon quant for sample %s...", sample["sample_id"])
-            quant_paths[sample["sample_id"]] = reusable_quant
-            reused_quant_samples.append(sample["sample_id"])
-        else:
-            quant_paths[sample["sample_id"]] = run_salmon_quant(
-                source_cfg=source_cfg,
-                repo=repo,
-                run_dir=run_dir,
-                sample=sample,
-                salmon_index=salmon_index,
-            )
+        bam_paths[sample["sample_id"]] = bam_path
+        star_commands[sample["sample_id"]] = command
+        star_stdout[sample["sample_id"]] = str(stdout_path)
+        star_stderr[sample["sample_id"]] = str(stderr_path)
 
-    salmon_manifest = write_salmon_manifest(run_dir, control_samples, treated_samples, quant_paths)
-    de_results_path = run_dir / "de_results.tsv"
-    deseq2_command, stdout_path, stderr_path = run_deseq2(
+    featurecounts_output, featurecounts_command, featurecounts_stdout, featurecounts_stderr = run_featurecounts(
+        source_cfg=source_cfg,
         repo=repo,
         run_dir=run_dir,
-        salmon_manifest=salmon_manifest,
-        tx2gene_tsv=tx2gene_tsv,
-        output_path=de_results_path,
+        gtf_path=gtf_path,
+        bam_paths=bam_paths,
+        sample_order=sample_order,
+        paired_end=paired_end,
     )
-    de_df = read_table_auto(de_results_path)
-    required = {"gene_id", "logFC", "FDR"}
-    if not required.issubset(de_df.columns):
-        raise ValueError(
-            f"DESeq2 output is missing required columns. Expected at least {sorted(required)}, "
-            f"found {sorted(de_df.columns)}"
-        )
-
-    out_rel = output_de_table_rel_path(config["dataset_id"])
-    out_path = repo / out_rel
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    de_df.to_csv(out_path, sep="\t", index=False)
-    write_candidate_metadata(config, run_dir / "candidate_metadata.tsv", de_table_rel_path=str(out_rel))
-    write_json(
-        {
-            "dataset_id": config["dataset_id"],
-            "gse": normalize_space(config.get("gse", "")),
-            "config_path": str(config_path),
-            "source_mode": "reads",
-            "runtime": "local",
-            "salmon_index": str(salmon_index),
-            "tx2gene_tsv": str(tx2gene_tsv),
+    counts_matrix_path = build_featurecounts_matrix(
+        featurecounts_path=featurecounts_output,
+        bam_paths=bam_paths,
+        sample_order=sample_order,
+        out_path=run_dir / "counts_matrix.tsv",
+    )
+    counts_df = read_table_auto(counts_matrix_path)
+    control_cols = [sample["sample_id"] for sample in control_samples]
+    treated_cols = [sample["sample_id"] for sample in treated_samples]
+    trimmed_reads = {
+        sample["sample_id"]: {"reads_1": sample["reads_1"], "reads_2": sample["reads_2"]}
+        for sample in control_samples + treated_samples
+    }
+    return run_de_from_counts(
+        config=config,
+        config_path=config_path,
+        repo=repo,
+        run_dir=run_dir,
+        counts_df=counts_df,
+        counts_source=counts_matrix_path,
+        source_mode="reads",
+        control_cols=control_cols,
+        treated_cols=treated_cols,
+        control_samples=control_samples,
+        treated_samples=treated_samples,
+        gene_id_column_override="gene_id",
+        extra_manifest={
             "reads_sample_sheet": str(sample_sheet),
-            "salmon_manifest": str(salmon_manifest),
-            "deseq2_command": deseq2_command,
-            "deseq2_stdout": str(stdout_path),
-            "deseq2_stderr": str(stderr_path),
-            "sample_quant_dirs": {sample_id: str(path.parent) for sample_id, path in quant_paths.items()},
-            "reused_quant_samples": reused_quant_samples,
-            "downloaded_samples": download_manifest["downloaded_samples"],
-            "sra_download_commands": download_manifest["sra_download_commands"],
-            "sra_download_stdout": download_manifest["sra_download_stdout"],
-            "sra_download_stderr": download_manifest["sra_download_stderr"],
-            "generated_salmon_index": reference_assets["generated_salmon_index"],
-            "generated_tx2gene_tsv": reference_assets["generated_tx2gene_tsv"],
-            "reused_salmon_index": reference_assets["reused_salmon_index"],
-            "reused_tx2gene_tsv": reference_assets["reused_tx2gene_tsv"],
-            "transcript_fasta": reference_assets["transcript_fasta"],
-            "transcript_fasta_url": reference_assets["transcript_fasta_url"],
-            "gtf_path": reference_assets["gtf_path"],
-            "gtf_url": reference_assets["gtf_url"],
-            "salmon_index_command": reference_assets.get("salmon_index_command", []),
-            "salmon_index_stdout": reference_assets.get("salmon_index_stdout", ""),
-            "salmon_index_stderr": reference_assets.get("salmon_index_stderr", ""),
-            "output_de_table": str(out_path),
+            "library_layout": "paired" if paired_end else "single",
+            "pipeline_stages": ["fastqc_raw", "fastp", "fastqc_trimmed", "star", "featurecounts", "deseq2"],
+            "raw_fastqc_outputs": raw_fastqc_outputs,
+            "raw_fastqc_commands": raw_fastqc_commands,
+            "raw_fastqc_stdout": raw_fastqc_stdout,
+            "raw_fastqc_stderr": raw_fastqc_stderr,
+            "fastp_commands": fastp_commands,
+            "fastp_stdout": fastp_stdout,
+            "fastp_stderr": fastp_stderr,
+            "trimmed_reads": trimmed_reads,
+            "trimmed_fastqc_outputs": trimmed_fastqc_outputs,
+            "trimmed_fastqc_commands": trimmed_fastqc_commands,
+            "trimmed_fastqc_stdout": trimmed_fastqc_stdout,
+            "trimmed_fastqc_stderr": trimmed_fastqc_stderr,
+            "star_index": str(star_index),
+            "generated_star_index": reference_assets["generated_star_index"],
+            "reused_star_index": reference_assets["reused_star_index"],
+            "genome_fasta": reference_assets["genome_fasta"],
+            "gtf_path": str(gtf_path),
+            "star_index_command": reference_assets.get("star_index_command", []),
+            "star_index_stdout": reference_assets.get("star_index_stdout", ""),
+            "star_index_stderr": reference_assets.get("star_index_stderr", ""),
+            "star_commands": star_commands,
+            "star_stdout": star_stdout,
+            "star_stderr": star_stderr,
+            "sample_bams": {sample_id: str(path) for sample_id, path in bam_paths.items()},
+            "featurecounts_command": featurecounts_command,
+            "featurecounts_stdout": str(featurecounts_stdout),
+            "featurecounts_stderr": str(featurecounts_stderr),
+            "featurecounts_output": str(featurecounts_output),
         },
-        run_dir / "run_manifest.json",
     )
-    pd.DataFrame(control_samples + treated_samples).to_csv(run_dir / "samples.tsv", sep="\t", index=False)
-    return {"run_dir": str(run_dir), "de_table_path": str(out_path)}
 
 
 def run_ingestion_config(config_path: pathlib.Path, repo: pathlib.Path | None = None, *, force: bool = False) -> dict:
@@ -1103,7 +1059,8 @@ def main() -> None:
     args = parse_args()
     setup_logging(parse_log_level(args.log_level))
     result = run_ingestion_config(args.config, force=args.force)
-    logger.info("DE table: %s", result["de_table_path"])
+    logger.info("Wrote DE table: %s", result["de_table_path"])
+    logger.info("Run dir: %s", result["run_dir"])
 
 
 if __name__ == "__main__":

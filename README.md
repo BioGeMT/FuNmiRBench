@@ -108,10 +108,10 @@ Experiment config summary:
 Supported inputs:
 
 - count matrix: counts matrix + control columns + treated columns -> DESeq2
-- reads: local FASTQs or SRA accessions + explicit sample groups -> `salmon + tximport + DESeq2`
+- reads: local FASTQs + local reference files + explicit sample groups -> `FastQC + fastp + STAR + featureCounts + DESeq2`
 
 This path expects the `funmirbench-experiments` environment from `pipelines/experiments/environment.yml` to be
-active so `salmon`, `prefetch`, `fasterq-dump`, and `Rscript` are available on `PATH`.
+active so `fastqc`, `fastp`, `STAR`, `featureCounts`, and `Rscript` are available on `PATH`.
 
 Download the shipped real example inputs:
 
@@ -123,7 +123,7 @@ That downloader fetches:
 
 - the real `GSE253003` count matrix
 - the real `GSE93717` FASTQ files
-- the shared Homo sapiens Ensembl v109 transcript FASTA and GTF used by the reads example
+- the shared Homo sapiens Ensembl v109 genome FASTA and GTF used by the reads example
 
 Run the real count-matrix example:
 
@@ -144,13 +144,8 @@ Tracked example configs:
 
 Reads configs can either:
 
-- use local `reads_1` and `reads_2`
-- use `sra_accession` and let the pipeline download reads
-
-Reads configs can also either:
-
-- use prebuilt `salmon_index` and `tx2gene_tsv`
-- or build them from `transcript_fasta_path` and `gtf_path`
+- use local `reads_1` and optional `reads_2`
+- use local `genome_fasta_path` and `gtf_path`
 
 So the practical reads flow is:
 
@@ -159,9 +154,7 @@ So the practical reads flow is:
 3. run `uv run funmirbench-experiments --config pipelines/experiments/configs/gse93717.reads.example.yaml`
 
 The shipped reads example now points at the downloaded Ensembl v109 reference source files under
-`data/experiments/raw/refs/ensembl_v109/`, so it can build the derived Salmon index and
-`tx2gene.tsv` automatically. You only need to edit it if you want to use a different reference or
-your own prebuilt files.
+`data/experiments/raw/refs/ensembl_v109/`, so it builds the derived STAR index automatically.
 
 Each run writes:
 

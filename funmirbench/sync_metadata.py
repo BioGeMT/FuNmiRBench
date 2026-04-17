@@ -41,7 +41,7 @@ def collect_input_paths(kind: str, inputs: list[pathlib.Path], repo: pathlib.Pat
     pattern = REGISTRIES[kind]["default_pattern"]
     if not inputs:
         if kind == "experiments":
-            base = repo / "pipelines" / "geo" / "runs"
+            base = repo / "pipelines" / "experiments" / "runs"
             if not base.exists():
                 return []
             return sorted(base.glob(f"*/{pattern}"))
