@@ -58,11 +58,12 @@ already includes:
 - experiment metadata in `metadata/mirna_experiment_info.tsv`
 - predictor metadata in `metadata/predictions_info.tsv`
 
-Generate the two demo predictor outputs:
+Generate the demo predictor outputs:
 
 ```bash
-uv run pipelines/standardized_predictors/mock/pipeline.py
+uv run pipelines/standardized_predictors/random/pipeline.py
 uv run pipelines/standardized_predictors/cheating/pipeline.py
+uv run pipelines/standardized_predictors/perfect/pipeline.py
 ```
 
 Then run the default benchmark:
@@ -80,7 +81,7 @@ The default config already points at:
 - `metadata/mirna_experiment_info.tsv`
 - `metadata/predictions_info.tsv`
 
-and selects 3 real experiment datasets plus 2 demo predictors.
+and selects 3 real experiment datasets plus 4 demo predictors and TargetScan.
 
 ## Workflow
 
@@ -179,24 +180,27 @@ uv run funmirbench-sync-metadata --kind experiments
 Predictor score files live under `data/predictions/` and are discovered through
 `metadata/predictions_info.tsv`.
 
-The repo ships two demo predictor pipelines:
+The repo ships three demo predictor pipelines:
 
 ```bash
-uv run pipelines/standardized_predictors/mock/pipeline.py
+uv run pipelines/standardized_predictors/random/pipeline.py
 uv run pipelines/standardized_predictors/cheating/pipeline.py
+uv run pipelines/standardized_predictors/perfect/pipeline.py
 ```
 
 This creates:
 
-- `data/predictions/mock/mock_standardized.tsv`
-- `data/predictions/mock/mock_3000_standardized.tsv`
+- `data/predictions/random/random_standardized.tsv`
+- `data/predictions/random/random_3000_standardized.tsv`
 - `data/predictions/cheating/cheating_standardized.tsv`
+- `data/predictions/perfect/perfect_standardized.tsv`
 
 The built-in demo predictors are intentionally different:
 
-- `predictor_1`: deterministic random baseline over the full available miRNA-gene pairs
-- `predictor_1_3000`: deterministic random baseline capped at 3000 genes per dataset
+- `random`: deterministic random baseline over the full available miRNA-gene pairs
+- `random_3000`: deterministic random baseline capped at 3000 genes per dataset
 - `cheating`: demo-only directional scores informed by the benchmark DE tables
+- `perfect`: dataset-aware oracle scores that exactly separate benchmark positives from negatives
 
 The demo predictors already have registry rows in `metadata/predictions_info.tsv`.
 
@@ -252,7 +256,7 @@ experiments:
   id: [GSE109725_OE_miR_204_5p, GSE118315_KO_miR_124_3p, GSE210778_OE_miR_375_3p]
 
 predictors:
-  tool_id: [predictor_1, predictor_1_3000, predictor_2, targetscan]
+  tool_id: [random, random_3000, cheating, perfect, targetscan]
 
 evaluation:
   fdr_threshold: 0.05
