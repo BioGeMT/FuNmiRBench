@@ -276,6 +276,22 @@ def test_cross_predictor_plots_use_common_scored_rows(tmp_path, monkeypatch):
         assert [item["tool_id"] for item in comparisons] == ["cheating", "mock"]
 
 
+def test_top_fraction_mask_uses_exact_top_k_with_deterministic_ties():
+    series = pd.Series([1.0, 1.0, 1.0, 0.4, 0.1], index=["ENSG3", "ENSG1", "ENSG2", "ENSG4", "ENSG5"])
+    tie_breaker = pd.Series(series.index, index=series.index)
+
+    selected = evaluate_module._top_fraction_mask(series, 0.40, tie_breaker=tie_breaker)
+
+    assert int(selected.sum()) == 2
+    assert selected.to_dict() == {
+        "ENSG3": False,
+        "ENSG1": True,
+        "ENSG2": True,
+        "ENSG4": False,
+        "ENSG5": False,
+    }
+
+
 def test_per_dataset_visuals_use_local_ranks_not_global_ranks(tmp_path, monkeypatch):
     joined = pd.DataFrame(
         {

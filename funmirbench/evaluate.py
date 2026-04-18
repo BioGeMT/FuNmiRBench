@@ -153,12 +153,26 @@ def _rank_col_for_tool(tool_id, *, prefix=GLOBAL_RANK_PREFIX):
     return f"{prefix}{tool_id}"
 
 
-def _top_fraction_mask(series, fraction):
+def _top_fraction_mask(series, fraction, *, tie_breaker=None):
     valid = series.notna()
     if not bool(valid.any()):
         return pd.Series(False, index=series.index)
-    threshold = series[valid].quantile(1.0 - fraction)
-    return valid & (series >= threshold)
+    fraction = float(fraction)
+    if fraction <= 0.0:
+        return pd.Series(False, index=series.index)
+    valid_count = int(valid.sum())
+    keep_count = min(valid_count, max(1, int(math.ceil(valid_count * fraction))))
+    work = pd.DataFrame({"score": series[valid].astype(float)})
+    if tie_breaker is not None:
+        work["tie_breaker"] = tie_breaker[valid].astype(str)
+        work = work.sort_values(
+            ["score", "tie_breaker"], ascending=[False, True], kind="mergesort"
+        )
+    else:
+        work = work.sort_values("score", ascending=False, kind="mergesort")
+    selected = pd.Series(False, index=series.index)
+    selected.loc[work.index[:keep_count]] = True
+    return selected
 
 
 def _prepare_scored_frame(
@@ -840,7 +854,11 @@ def _plot_predictor_correlation_heatmap(
         tid: joined[rank_col].astype(float)
         for tid, rank_col in zip(tool_ids, rank_cols)
     }
-    top_masks = {tid: _top_fraction_mask(ranked[tid], top_fraction) for tid in tool_ids}
+    tie_breaker = joined["gene_id"] if "gene_id" in joined.columns else None
+    top_masks = {
+        tid: _top_fraction_mask(ranked[tid], top_fraction, tie_breaker=tie_breaker)
+        for tid in tool_ids
+    }
 
     matrix = pd.DataFrame(index=tool_ids, columns=tool_ids, dtype=float)
     for a in tool_ids:

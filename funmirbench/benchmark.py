@@ -183,7 +183,10 @@ def write_run_readme(
             f"- GT positive threshold: `FDR < {fdr_threshold}` and perturbation-aware effect "
             f"`> {abs_logfc_threshold}` (`-logFC` for OE, `+logFC` for KO/KD)"
         ),
-        f"- Predictor agreement top fraction: `{predictor_top_fraction:.0%}`",
+        (
+            f"- Predictor agreement top fraction: `{predictor_top_fraction:.0%}`"
+            " (exact top-k per predictor, deterministic tie-break)"
+        ),
         "- Score handling: predictors are first aligned so that higher always means stronger",
         "- Per-dataset heatmaps and agreement plots: dataset-local tie-aware dense ranking over scored rows",
         "- Cross-dataset rank-distribution plots: global tie-aware dense ranking over each predictor's full standardized file",
@@ -257,7 +260,10 @@ def write_run_pdf_report(
             f"- GT positives were defined as FDR < {fdr_threshold} and perturbation-aware effect "
             f"> {abs_logfc_threshold} (-logFC for OE, +logFC for KO/KD)"
         ),
-        f"- Predictor-correlation top fraction: {predictor_top_fraction:.0%}",
+        (
+            f"- Predictor-correlation top fraction: {predictor_top_fraction:.0%}"
+            " (exact top-k per predictor, deterministic tie-break)"
+        ),
         "- Predictor scores were aligned to a common higher-is-stronger direction before evaluation",
         "- Per-dataset heatmaps and agreement plots use a dataset-local tie-aware dense ranking over scored rows",
         "- Cross-dataset rank-distribution plots use a global tie-aware dense ranking computed over each predictor's full standardized file",

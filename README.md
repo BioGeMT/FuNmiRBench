@@ -239,7 +239,9 @@ coverage information to `tables/coverage_per_experiment.tsv`, and the per-predic
 reports also record total rows, scored rows, missing rows, and coverage. For per-dataset
 heatmaps and agreement plots, FuNmiRBench uses a dataset-local tie-aware rank over the scored
 rows. For cross-dataset rank-distribution plots, it keeps a separate global tie-aware rank
-derived from each predictor's full standardized file.
+derived from each predictor's full standardized file. Predictor-agreement top fractions use an
+exact top-k selection per predictor with a deterministic tie-break instead of a quantile
+threshold.
 
 YAML paths can be:
 
