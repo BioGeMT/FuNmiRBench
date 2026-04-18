@@ -276,6 +276,65 @@ def test_cross_predictor_plots_use_common_scored_rows(tmp_path, monkeypatch):
         assert [item["tool_id"] for item in comparisons] == ["cheating", "mock"]
 
 
+def test_per_dataset_visuals_use_local_ranks_not_global_ranks(tmp_path, monkeypatch):
+    joined = pd.DataFrame(
+        {
+            "dataset_id": ["D001"] * 4,
+            "mirna": ["hsa-miR-demo"] * 4,
+            "gene_id": ["ENSG1", "ENSG2", "ENSG3", "ENSG4"],
+            "logFC": [2.0, 1.5, 0.2, -0.1],
+            "FDR": [0.01, 0.02, 0.3, 0.8],
+            "score_mock": [0.9, 0.2, 0.5, 0.1],
+            "score_cheating": [0.95, 0.88, 0.1, 0.05],
+            "global_rank_mock": [0.0, 0.0, 1.0, 1.0],
+            "global_rank_cheating": [1.0, 1.0, 0.0, 0.0],
+        }
+    )
+    captured = {}
+
+    monkeypatch.setattr(evaluate_module, "_plot_scatter_with_correlation", lambda *args, **kwargs: (0.0, 0.0))
+    monkeypatch.setattr(evaluate_module, "_plot_gsea_enrichment", lambda *args, **kwargs: 0.0)
+    monkeypatch.setattr(evaluate_module, "_plot_single_predictor_pr_curve", lambda *args, **kwargs: None)
+    monkeypatch.setattr(evaluate_module, "_plot_predictor_pr_curves", lambda *args, **kwargs: None)
+    monkeypatch.setattr(evaluate_module, "_plot_predictor_roc_curves", lambda *args, **kwargs: None)
+    monkeypatch.setattr(evaluate_module, "_plot_predictor_gsea_curves", lambda *args, **kwargs: None)
+    monkeypatch.setattr(evaluate_module, "_write_tool_report", lambda *args, **kwargs: None)
+
+    def capture_alg(joined_frame, *, score_cols, rank_cols, tool_ids, dataset_id, out_path, **kwargs):
+        captured["alg"] = joined_frame[rank_cols].copy()
+        captured["alg_cols"] = rank_cols
+
+    def capture_top(joined_frame, *, rank_cols, tool_ids, dataset_id, out_path, **kwargs):
+        captured["top"] = joined_frame[rank_cols].copy()
+        captured["top_cols"] = rank_cols
+        return False
+
+    def capture_corr(joined_frame, *, rank_cols, tool_ids, dataset_id, out_path, top_fraction):
+        captured["corr"] = joined_frame[rank_cols].copy()
+        captured["corr_cols"] = rank_cols
+        return pd.DataFrame(index=tool_ids, columns=tool_ids, dtype=float)
+
+    monkeypatch.setattr(evaluate_module, "_plot_algorithms_vs_genes_heatmap", capture_alg)
+    monkeypatch.setattr(evaluate_module, "_plot_top_positive_heatmap", capture_top)
+    monkeypatch.setattr(evaluate_module, "_plot_predictor_correlation_heatmap", capture_corr)
+
+    evaluate_joined_dataframe(
+        joined,
+        plots_dir=tmp_path / "plots",
+        reports_dir=tmp_path / "reports",
+        fdr_threshold=0.05,
+        abs_logfc_threshold=1.0,
+        predictor_top_fraction=0.10,
+    )
+
+    expected_mock = evaluate_module._rank_scale_scores(joined["score_mock"])
+    expected_cheating = evaluate_module._rank_scale_scores(joined["score_cheating"])
+    for key in ("alg", "top", "corr"):
+        assert captured[f"{key}_cols"] == ["local_rank_cheating", "local_rank_mock"]
+        assert captured[key]["local_rank_mock"].tolist() == expected_mock.tolist()
+        assert captured[key]["local_rank_cheating"].tolist() == expected_cheating.tolist()
+
+
 def test_evaluate_uses_only_existing_pairs_and_reports_coverage(tmp_path):
     joined = pd.DataFrame(
         {

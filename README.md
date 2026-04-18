@@ -236,9 +236,10 @@ uv run funmirbench-experiments-store
 During evaluation, each predictor is scored only on miRNA-gene pairs that exist in that
 predictor's standardized file. Missing pairs are not filled with zero for metrics. Each run writes
 coverage information to `tables/coverage_per_experiment.tsv`, and the per-predictor Markdown/PDF
-reports also record total rows, scored rows, missing rows, and coverage. For cross-predictor
-heatmaps and agreement plots, FuNmiRBench uses a global tie-aware rank derived from each
-predictor's full standardized file instead of dataset-local min-max scaling.
+reports also record total rows, scored rows, missing rows, and coverage. For per-dataset
+heatmaps and agreement plots, FuNmiRBench uses a dataset-local tie-aware rank over the scored
+rows. For cross-dataset rank-distribution plots, it keeps a separate global tie-aware rank
+derived from each predictor's full standardized file.
 
 YAML paths can be:
 

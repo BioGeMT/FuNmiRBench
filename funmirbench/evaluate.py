@@ -19,6 +19,7 @@ from sklearn.metrics import (
 
 SCORE_PREFIX = "score_"
 GLOBAL_RANK_PREFIX = "global_rank_"
+LOCAL_RANK_PREFIX = "local_rank_"
 FIGURE_DPI = 300
 NEGATIVE_COLOR = "#B8C4D6"
 POSITIVE_COLOR = "#D04E4E"
@@ -148,8 +149,8 @@ def _tool_id_from_score_col(score_col):
     return score_col
 
 
-def _rank_col_for_tool(tool_id):
-    return f"{GLOBAL_RANK_PREFIX}{tool_id}"
+def _rank_col_for_tool(tool_id, *, prefix=GLOBAL_RANK_PREFIX):
+    return f"{prefix}{tool_id}"
 
 
 def _top_fraction_mask(series, fraction):
@@ -722,7 +723,7 @@ def _plot_algorithms_vs_genes_heatmap(
         orientation="horizontal",
         fraction=0.05,
         pad=0.08,
-        label="global rank percentile",
+        label="dataset-local rank percentile",
     )
     _save_figure(fig, out_path)
 
@@ -807,7 +808,7 @@ def _plot_top_positive_heatmap(
         0.972,
         (
             f"{_dataset_caption(dataset_id)}  |  {len(work):,} positive genes selected by FDR and expected effect"
-            "  |  predictor colors show global rank percentile"
+            "  |  predictor colors show dataset-local rank percentile"
         ),
         fontsize=8.6,
         color=NEUTRAL_COLOR,
@@ -826,7 +827,7 @@ def _plot_top_positive_heatmap(
         orientation="horizontal",
         fraction=0.05,
         pad=0.08,
-        label="global rank percentile",
+        label="dataset-local rank percentile",
     )
     _save_figure(fig, out_path)
     return True
@@ -865,7 +866,7 @@ def _plot_predictor_correlation_heatmap(
     ax.set_yticks(range(len(tool_ids)))
     ax.set_yticklabels([_tool_label(tool_id) for tool_id in tool_ids])
     ax.set_title(
-        f"Predictor agreement (shared top {int(top_fraction * 100)}%)",
+        f"Predictor agreement (shared local top {int(top_fraction * 100)}%)",
         fontsize=11,
         fontweight="semibold",
         loc="left",
@@ -1084,13 +1085,19 @@ def evaluate_joined_dataframe(
     dataset_plots_dir = plots_dir
     dataset_plots_dir.mkdir(parents=True, exist_ok=True)
     tool_ids = [_tool_id_from_score_col(sc) for sc in score_cols]
-    rank_cols = []
+    global_rank_cols = []
+    local_rank_cols = []
     for score_col, tool_id in zip(score_cols, tool_ids):
-        rank_col = _rank_col_for_tool(tool_id)
-        if rank_col not in joined.columns:
+        global_rank_col = _rank_col_for_tool(tool_id)
+        local_rank_col = _rank_col_for_tool(tool_id, prefix=LOCAL_RANK_PREFIX)
+        if global_rank_col not in joined.columns or local_rank_col not in joined.columns:
             joined = joined.copy()
-            joined[rank_col] = _rank_scale_scores(joined[score_col])
-        rank_cols.append(rank_col)
+        if local_rank_col not in joined.columns:
+            joined[local_rank_col] = _rank_scale_scores(joined[score_col])
+        if global_rank_col not in joined.columns:
+            joined[global_rank_col] = joined[local_rank_col]
+        global_rank_cols.append(global_rank_col)
+        local_rank_cols.append(local_rank_col)
 
     metric_rows = []
     dataset_plots = {}
@@ -1196,7 +1203,7 @@ def evaluate_joined_dataframe(
 
     heatmap_png = dataset_plots_dir / "algorithms_vs_genes_heatmap.png"
     _plot_algorithms_vs_genes_heatmap(
-        joined, score_cols=score_cols, rank_cols=rank_cols, tool_ids=tool_ids,
+        joined, score_cols=score_cols, rank_cols=local_rank_cols, tool_ids=tool_ids,
         dataset_id=dataset_id, out_path=heatmap_png,
         fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
         perturbation=perturbation,
@@ -1207,7 +1214,7 @@ def evaluate_joined_dataframe(
     top_positive_heatmap_png = dataset_plots_dir / "top_10pct_positive_heatmap.png"
     wrote_top_positive_heatmap = _plot_top_positive_heatmap(
         joined,
-        rank_cols=rank_cols,
+        rank_cols=local_rank_cols,
         tool_ids=tool_ids,
         dataset_id=dataset_id,
         out_path=top_positive_heatmap_png,
@@ -1263,7 +1270,7 @@ def evaluate_joined_dataframe(
         corr_png = dataset_plots_dir / "predictor_correlation_heatmap.png"
         corr_tsv = reports_dir / f"{dataset_id}__predictor_correlation.tsv"
         corr_matrix = _plot_predictor_correlation_heatmap(
-            joined, rank_cols=rank_cols, tool_ids=tool_ids,
+            joined, rank_cols=local_rank_cols, tool_ids=tool_ids,
             dataset_id=dataset_id, out_path=corr_png,
             top_fraction=predictor_top_fraction,
         )
