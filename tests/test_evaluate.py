@@ -3,6 +3,7 @@
 import pandas as pd
 import pytest
 
+import funmirbench.evaluate as evaluate_module
 from funmirbench.evaluate import (
     evaluate_joined_dataframe,
     write_cross_dataset_summaries,
@@ -219,6 +220,60 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
     assert (tmp_path / "plots" / "predictor_gsea_curves.png").is_file()
     assert (tmp_path / "plots" / "top_10pct_positive_heatmap.png").is_file()
     assert not (tmp_path / "plots" / "mock_roc_curve.png").exists()
+
+
+def test_cross_predictor_plots_use_common_scored_rows(tmp_path, monkeypatch):
+    joined = pd.DataFrame(
+        {
+            "dataset_id": ["D001"] * 4,
+            "mirna": ["hsa-miR-demo"] * 4,
+            "gene_id": ["ENSG1", "ENSG2", "ENSG3", "ENSG4"],
+            "logFC": [2.0, 0.4, 0.2, -0.1],
+            "FDR": [0.01, 0.01, 0.4, 0.8],
+            "score_mock": [0.9, 0.8, None, 0.2],
+            "score_cheating": [0.95, 0.7, 0.1, None],
+        }
+    )
+    captured = {}
+
+    monkeypatch.setattr(evaluate_module, "_plot_scatter_with_correlation", lambda *args, **kwargs: (0.0, 0.0))
+    monkeypatch.setattr(evaluate_module, "_plot_gsea_enrichment", lambda *args, **kwargs: 0.0)
+    monkeypatch.setattr(evaluate_module, "_plot_single_predictor_pr_curve", lambda *args, **kwargs: None)
+    monkeypatch.setattr(evaluate_module, "_plot_algorithms_vs_genes_heatmap", lambda *args, **kwargs: None)
+    monkeypatch.setattr(evaluate_module, "_plot_top_positive_heatmap", lambda *args, **kwargs: False)
+    monkeypatch.setattr(evaluate_module, "_plot_predictor_correlation_heatmap", lambda *args, **kwargs: pd.DataFrame())
+    monkeypatch.setattr(evaluate_module, "_write_tool_report", lambda *args, **kwargs: None)
+
+    def capture_pr(comparisons, *, dataset_id, out_path):
+        captured["pr"] = comparisons
+
+    def capture_roc(comparisons, *, dataset_id, out_path):
+        captured["roc"] = comparisons
+
+    def capture_gsea(comparisons, *, dataset_id, out_path):
+        captured["gsea"] = comparisons
+
+    monkeypatch.setattr(evaluate_module, "_plot_predictor_pr_curves", capture_pr)
+    monkeypatch.setattr(evaluate_module, "_plot_predictor_roc_curves", capture_roc)
+    monkeypatch.setattr(evaluate_module, "_plot_predictor_gsea_curves", capture_gsea)
+
+    evaluate_joined_dataframe(
+        joined,
+        plots_dir=tmp_path / "plots",
+        reports_dir=tmp_path / "reports",
+        fdr_threshold=0.05,
+        abs_logfc_threshold=1.0,
+        predictor_top_fraction=0.10,
+    )
+
+    assert set(captured) == {"pr", "roc", "gsea"}
+    for key in ("pr", "roc", "gsea"):
+        comparisons = captured[key]
+        assert len(comparisons) == 2
+        assert all(len(item["y_true"]) == 2 for item in comparisons)
+        assert all(int(item["y_true"].sum()) == 1 for item in comparisons)
+        assert comparisons[0]["y_true"].tolist() == comparisons[1]["y_true"].tolist()
+        assert [item["tool_id"] for item in comparisons] == ["cheating", "mock"]
 
 
 def test_evaluate_uses_only_existing_pairs_and_reports_coverage(tmp_path):

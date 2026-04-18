@@ -1096,6 +1096,7 @@ def evaluate_joined_dataframe(
     dataset_plots = {}
     predictor_correlation_tsv = None
     comparisons = []
+    coverage_by_tool = {}
 
     _emit_log(logger, f"    Evaluation start: {dataset_id} | tools={tool_ids}")
 
@@ -1188,6 +1189,7 @@ def evaluate_joined_dataframe(
             "y_score": scored[score_col],
             "coverage": coverage_info["coverage"],
         })
+        coverage_by_tool[tool_id] = coverage_info["coverage"]
         dataset_plots[f"{tool_id}_scatter"] = str(scatter_png)
         dataset_plots[f"{tool_id}_gsea_enrichment"] = str(gsea_png)
         dataset_plots[f"{tool_id}_pr_curve"] = str(pr_curve_png)
@@ -1229,27 +1231,27 @@ def evaluate_joined_dataframe(
             abs_logfc_threshold=abs_logfc_threshold,
             perturbation=perturbation,
         )
-        common_pr_comparisons = [
+        common_comparisons = [
             {
                 "tool_id": tool_id,
                 "y_true": common_pr["is_positive"],
                 "y_score": common_pr[score_col],
-                "coverage": float(len(common_pr) / len(joined)) if len(joined) else float("nan"),
+                "coverage": coverage_by_tool.get(tool_id, float("nan")),
             }
             for score_col, tool_id in zip(score_cols, tool_ids)
         ]
         _plot_predictor_pr_curves(
-            common_pr_comparisons,
+            common_comparisons,
             dataset_id=dataset_id,
             out_path=comparison_pr_png,
         )
         _plot_predictor_roc_curves(
-            comparisons,
+            common_comparisons,
             dataset_id=dataset_id,
             out_path=comparison_roc_png,
         )
         _plot_predictor_gsea_curves(
-            comparisons,
+            common_comparisons,
             dataset_id=dataset_id,
             out_path=comparison_gsea_png,
         )
