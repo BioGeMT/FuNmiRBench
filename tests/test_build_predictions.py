@@ -3,6 +3,7 @@
 import pandas as pd
 
 from funmirbench.build_cheating_predictions import build_cheating_scores
+from funmirbench.build_perfect_predictions import build_perfect_scores
 from funmirbench.build_predictions import build_dataset_random_scores, build_random_scores
 
 
@@ -162,3 +163,50 @@ def test_build_cheating_scores_use_perturbation_direction(tmp_path):
     assert 0.0 <= negative_b <= 0.95
     assert positive > negative_a
     assert positive > negative_b
+
+
+def test_build_perfect_scores_are_dataset_aware_and_strictly_separate_labels(tmp_path):
+    de_path = tmp_path / "de.tsv"
+    de_path.write_text(
+        "\n".join(
+            [
+                "gene_id\tlogFC\tFDR",
+                "ENSG00000000001\t-2.0\t0.001",
+                "ENSG00000000002\t-1.2\t0.040",
+                "ENSG00000000003\t-2.5\t0.20",
+                "ENSG00000000004\t0.3\t0.001",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    experiments_tsv = tmp_path / "experiments.tsv"
+    pd.DataFrame(
+        [
+            {
+                "id": "D001",
+                "mirna_name": "hsa-miR-test",
+                "de_table_path": "de.tsv",
+                "experiment_type": "OE",
+            }
+        ]
+    ).to_csv(experiments_tsv, sep="\t", index=False)
+
+    scores = build_perfect_scores(experiments_tsv, tmp_path, dataset_ids=["D001"])
+
+    assert set(scores) == {
+        ("D001", "hsa-miR-test", "ENSG00000000001"),
+        ("D001", "hsa-miR-test", "ENSG00000000002"),
+        ("D001", "hsa-miR-test", "ENSG00000000003"),
+        ("D001", "hsa-miR-test", "ENSG00000000004"),
+    }
+    positives = [
+        scores[("D001", "hsa-miR-test", "ENSG00000000001")],
+        scores[("D001", "hsa-miR-test", "ENSG00000000002")],
+    ]
+    negatives = [
+        scores[("D001", "hsa-miR-test", "ENSG00000000003")],
+        scores[("D001", "hsa-miR-test", "ENSG00000000004")],
+    ]
+    assert min(positives) > max(negatives)

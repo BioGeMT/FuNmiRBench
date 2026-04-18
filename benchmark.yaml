@@ -25,11 +25,11 @@ experiments:
   # de_table_path: [data/experiments/processed/18745741/GSE124530_edger_out_oe_hsa_miR_10a_5p_oe_10a5p.tsv]
 
 # Filter predictors by ANY column in the predictions TSV.
-# The default repo config compares two random baselines, the cheating demo predictor,
-# and TargetScan.
+# The default repo config compares two random baselines, the cheating and perfect
+# demo predictors, and TargetScan.
 predictors:
-  tool_id: [random, random_3000, cheating, targetscan]
-  # official_name: [Random, Random (3000 per dataset), Cheating]
+  tool_id: [random, random_3000, cheating, perfect, targetscan]
+  # official_name: [Random, Random (3000 per dataset), Cheating, Perfect]
   # organism: [Homo sapiens]
   # score_type: [probability]
   # score_direction: [higher_is_stronger]
