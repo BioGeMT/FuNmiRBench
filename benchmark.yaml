@@ -28,8 +28,8 @@ experiments:
 # The default repo config compares two random baselines, the cheating demo predictor,
 # and TargetScan.
 predictors:
-  tool_id: [predictor_1, predictor_1_3000, predictor_2, targetscan]
-  # official_name: [Predictor 1, Predictor 1 (3000 per dataset), Predictor 2]
+  tool_id: [random, random_3000, cheating, targetscan]
+  # official_name: [Random, Random (3000 per dataset), Cheating]
   # organism: [Homo sapiens]
   # score_type: [probability]
   # score_direction: [higher_is_stronger]
@@ -38,7 +38,7 @@ predictors:
   # canonical_id_gene_type: [ensembl_v109]
   # input_id_mirna_type: [mirbase_v22]
   # canonical_id_mirna_type: [mirbase_v22]
-  # predictor_output_path: [data/predictions/mock/mock_standardized.tsv]
+  # predictor_output_path: [data/predictions/random/random_standardized.tsv]
 
 evaluation:
   fdr_threshold: 0.05

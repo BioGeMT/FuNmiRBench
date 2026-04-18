@@ -2,11 +2,11 @@
 
 import pandas as pd
 
-from funmirbench.build_predictions import build_dataset_mock_scores, build_mock_scores
 from funmirbench.build_cheating_predictions import build_cheating_scores
+from funmirbench.build_predictions import build_dataset_random_scores, build_random_scores
 
 
-def test_build_mock_scores_are_deterministic_and_do_not_follow_de_signal(tmp_path):
+def test_build_random_scores_are_deterministic_and_do_not_follow_de_signal(tmp_path):
     de_path = tmp_path / "de.tsv"
     de_path.write_text(
         "\n".join(
@@ -33,8 +33,8 @@ def test_build_mock_scores_are_deterministic_and_do_not_follow_de_signal(tmp_pat
         ]
     ).to_csv(experiments_tsv, sep="\t", index=False)
 
-    scores_a = build_mock_scores(experiments_tsv, tmp_path, max_genes_per_mirna=10)
-    scores_b = build_mock_scores(experiments_tsv, tmp_path, max_genes_per_mirna=10)
+    scores_a = build_random_scores(experiments_tsv, tmp_path, max_genes_per_mirna=10)
+    scores_b = build_random_scores(experiments_tsv, tmp_path, max_genes_per_mirna=10)
 
     assert scores_a == scores_b
     assert set(scores_a) == {
@@ -47,7 +47,7 @@ def test_build_mock_scores_are_deterministic_and_do_not_follow_de_signal(tmp_pat
     assert scores_a[("hsa-miR-test", "ENSG00000000001")] != scores_a[("hsa-miR-test", "ENSG00000000003")]
 
 
-def test_build_mock_scores_can_cap_genes_per_mirna(tmp_path):
+def test_build_random_scores_can_cap_genes_per_mirna(tmp_path):
     de_path = tmp_path / "de.tsv"
     de_path.write_text(
         "\n".join(
@@ -75,15 +75,15 @@ def test_build_mock_scores_can_cap_genes_per_mirna(tmp_path):
         ]
     ).to_csv(experiments_tsv, sep="\t", index=False)
 
-    full_scores = build_mock_scores(experiments_tsv, tmp_path)
-    capped_scores = build_mock_scores(experiments_tsv, tmp_path, max_genes_per_mirna=3)
+    full_scores = build_random_scores(experiments_tsv, tmp_path)
+    capped_scores = build_random_scores(experiments_tsv, tmp_path, max_genes_per_mirna=3)
 
     assert len(full_scores) == 4
     assert len(capped_scores) == 3
     assert set(capped_scores).issubset(set(full_scores))
 
 
-def test_build_dataset_mock_scores_caps_each_dataset_independently(tmp_path):
+def test_build_dataset_random_scores_caps_each_dataset_independently(tmp_path):
     for name in ("de_a.tsv", "de_b.tsv"):
         (tmp_path / name).write_text(
             "\n".join(
@@ -117,7 +117,7 @@ def test_build_dataset_mock_scores_caps_each_dataset_independently(tmp_path):
         ]
     ).to_csv(experiments_tsv, sep="\t", index=False)
 
-    scores = build_dataset_mock_scores(experiments_tsv, tmp_path, max_genes_per_dataset=3)
+    scores = build_dataset_random_scores(experiments_tsv, tmp_path, max_genes_per_dataset=3)
 
     assert len(scores) == 6
     assert sum(1 for key in scores if key[0] == "D001") == 3

@@ -9,7 +9,7 @@ import pandas as pd
 
 from funmirbench import benchmark
 from funmirbench.build_cheating_predictions import build_cheating_scores
-from funmirbench.build_predictions import build_mock_scores, write_tsv
+from funmirbench.build_predictions import build_random_scores, write_tsv
 
 
 def test_selected_experiment_paths_applies_filters(tmp_path):
@@ -48,11 +48,11 @@ def test_example_end_to_end(tmp_path):
     experiments.to_csv(experiments_tsv, sep="\t", index=False)
 
     predictions = pd.read_csv(repo_root / "metadata" / "predictions_info.tsv", sep="\t")
-    predictions = predictions[predictions["tool_id"].isin(["predictor_1", "predictor_2"])].copy()
+    predictions = predictions[predictions["tool_id"].isin(["random", "cheating"])].copy()
 
-    mock_path = tmp_dir / "mock_standardized.tsv"
+    random_path = tmp_dir / "random_standardized.tsv"
     cheating_path = tmp_dir / "cheating_standardized.tsv"
-    write_tsv(build_mock_scores(experiments_tsv, tmp_dir), mock_path)
+    write_tsv(build_random_scores(experiments_tsv, tmp_dir), random_path)
     write_tsv(
         build_cheating_scores(
             experiments_tsv,
@@ -68,8 +68,8 @@ def test_example_end_to_end(tmp_path):
 
     predictions["predictor_output_path"] = predictions["tool_id"].map(
         {
-            "predictor_1": str(mock_path.resolve()),
-            "predictor_2": str(cheating_path.resolve()),
+            "random": str(random_path.resolve()),
+            "cheating": str(cheating_path.resolve()),
         }
     )
     predictions_tsv = tmp_dir / "predictions.tsv"
@@ -85,7 +85,7 @@ def test_example_end_to_end(tmp_path):
                 "  id: [GSE109725_OE_miR_204_5p, GSE118315_KO_miR_124_3p, GSE210778_OE_miR_375_3p]",
                 "",
                 "predictors:",
-                "  tool_id: [predictor_1, predictor_2]",
+                "  tool_id: [random, cheating]",
                 "",
                 "evaluation:",
                 "  fdr_threshold: 0.05",
@@ -102,10 +102,10 @@ def test_example_end_to_end(tmp_path):
     )
 
     stale_run_dir = out_root / "legacy_run"
-    stale_plot = stale_run_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "mock_score_vs_logFC.png"
+    stale_plot = stale_run_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "random_score_vs_logFC.png"
     stale_plot.parent.mkdir(parents=True, exist_ok=True)
     stale_plot.write_text("stale", encoding="utf-8")
-    stale_report = stale_run_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__mock_evaluation_report.md"
+    stale_report = stale_run_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__random_evaluation_report.md"
     stale_report.parent.mkdir(parents=True, exist_ok=True)
     stale_report.write_text("stale", encoding="utf-8")
 
@@ -128,10 +128,10 @@ def test_example_end_to_end(tmp_path):
     assert (out_dir / "tables" / "per_experiment" / "pr_auc_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "combined" / "cross_dataset_predictor_summary.tsv").is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__predictor_1_evaluation_report.md"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__random_evaluation_report.md"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__predictor_1_evaluation_report.pdf"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__random_evaluation_report.pdf"
     ).is_file()
 
     joined_files = sorted((out_dir / "datasets").glob("*/joined.tsv"))
@@ -163,21 +163,21 @@ def test_example_end_to_end(tmp_path):
         "GSE210778_OE_miR_375_3p",
         "GSE118315_KO_miR_124_3p",
     }
-    assert summary["tool_ids"] == ["predictor_1", "predictor_2"]
+    assert summary["tool_ids"] == ["random", "cheating"]
 
     plots = list(out_dir.rglob("*.png"))
     assert len(plots) == 41
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_1_score_vs_logFC.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "random_score_vs_logFC.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_1_gsea_enrichment.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "random_gsea_enrichment.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_1_pr_curve.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "random_pr_curve.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_2_pr_curve.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "cheating_pr_curve.png"
     ).is_file()
     assert (
         out_dir / "plots" / "combined" / "cross_dataset_metric_heatmap.png"
@@ -207,7 +207,7 @@ def test_example_end_to_end(tmp_path):
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_gsea_curves.png"
     ).is_file()
     assert not (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_2_roc_curve.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "cheating_roc_curve.png"
     ).exists()
     assert stale_plot.exists()
     assert stale_report.exists()
@@ -217,8 +217,8 @@ def test_example_end_to_end(tmp_path):
     ).strip().splitlines()
     assert len(aps_lines) == 4
     header = aps_lines[0].split("\t")
-    assert "predictor_1" in header
-    assert "predictor_2" in header
+    assert "random" in header
+    assert "cheating" in header
     coverage_lines = (out_dir / "tables" / "per_experiment" / "coverage_per_experiment.tsv").read_text(
         encoding="utf-8"
     ).strip().splitlines()
@@ -259,7 +259,7 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
     pd.DataFrame(
         [
             {
-                "tool_id": "predictor_1",
+                "tool_id": "random",
                 "predictor_output_path": str(score_path),
             }
         ]
@@ -273,7 +273,7 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
                 "experiments:",
                 "  id: [T001]",
                 "predictors:",
-                "  tool_id: [predictor_1]",
+                "  tool_id: [random]",
                 f"out_dir: {results_dir}",
             ]
         )
@@ -323,4 +323,4 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
     assert sync_calls == [(["data/experiments/processed/18745741/demo.tsv"], tmp_path, None, 120, False)]
     joined = pd.read_csv(out_dir / "datasets" / "T001" / "joined.tsv", sep="\t")
     assert joined["gene_id"].tolist() == ["ENSG1"]
-    assert joined["score_predictor_1"].tolist() == [0.9]
+    assert joined["score_random"].tolist() == [0.9]

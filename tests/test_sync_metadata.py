@@ -63,7 +63,7 @@ def test_sync_predictor_metadata_updates_existing_rows(tmp_path):
     pd.DataFrame(
         [
             {
-                "tool_id": "predictor_1",
+                "tool_id": "random",
                 "official_name": "Old Name",
                 "organism": "Homo sapiens",
                 "score_type": "probability",
@@ -82,7 +82,7 @@ def test_sync_predictor_metadata_updates_existing_rows(tmp_path):
     pd.DataFrame(
         [
             {
-                "tool_id": "predictor_1",
+                "tool_id": "random",
                 "official_name": "New Name",
                 "organism": "Homo sapiens",
                 "score_type": "probability",

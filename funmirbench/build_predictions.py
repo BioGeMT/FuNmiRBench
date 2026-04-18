@@ -1,4 +1,4 @@
-"""Generate mock prediction score files."""
+"""Generate random baseline prediction score files."""
 
 import argparse
 import hashlib
@@ -19,7 +19,7 @@ def stable_hash_float(s):
     return int.from_bytes(h[:8], "big") / 2**64
 
 
-def build_mock_scores(experiments_tsv, root, *, max_genes_per_mirna=None):
+def build_random_scores(experiments_tsv, root, *, max_genes_per_mirna=None):
     df = pd.read_csv(experiments_tsv, sep="\t")
     genes_by_mirna = {}
     for _, row in df.iterrows():
@@ -44,7 +44,7 @@ def build_mock_scores(experiments_tsv, root, *, max_genes_per_mirna=None):
     return scores
 
 
-def build_dataset_mock_scores(experiments_tsv, root, *, max_genes_per_dataset):
+def build_dataset_random_scores(experiments_tsv, root, *, max_genes_per_dataset):
     if not max_genes_per_dataset:
         raise ValueError("max_genes_per_dataset must be a positive integer.")
 
@@ -85,7 +85,7 @@ def write_tsv(scores, out_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Build mock prediction scores.")
+    parser = argparse.ArgumentParser(description="Build random baseline prediction scores.")
     parser.add_argument("--experiments-tsv", type=pathlib.Path, required=True)
     parser.add_argument("--out", type=pathlib.Path, required=True)
     parser.add_argument("--root", type=pathlib.Path, default=None)
@@ -105,7 +105,7 @@ def main():
     setup_logging(parse_log_level(args.log_level))
 
     root = (args.root or args.experiments_tsv.parent).resolve()
-    scores = build_mock_scores(
+    scores = build_random_scores(
         args.experiments_tsv.resolve(),
         root,
         max_genes_per_mirna=(args.max_genes_per_mirna or None),

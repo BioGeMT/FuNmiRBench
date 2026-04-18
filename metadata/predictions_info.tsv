@@ -1,5 +1,5 @@
 tool_id	official_name	organism	score_type	score_direction	score_range	input_id_gene_type	canonical_id_gene_type	input_id_mirna_type	canonical_id_mirna_type	predictor_output_path
-predictor_1	Predictor 1	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/mock/mock_standardized.tsv
-predictor_1_3000	Predictor 1 (3000 per dataset)	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/mock/mock_3000_standardized.tsv
-predictor_2	Predictor 2	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/cheating/cheating_standardized.tsv
+random	Random	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/random/random_standardized.tsv
+random_3000	Random (3000 per dataset)	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/random/random_3000_standardized.tsv
+cheating	Cheating	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/cheating/cheating_standardized.tsv
 targetscan	TargetScan v8	Homo sapiens	raw_score	lower_is_stronger	context++ raw	ensembl_v115	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/targetscan/targetscan_standardized.tsv
