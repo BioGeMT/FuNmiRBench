@@ -121,9 +121,9 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
         joined_frames=joined_frames,
     )
     assert (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").is_file()
-    assert (tmp_path / "plots" / "cross_dataset_metric_distributions.png").is_file()
-    assert (tmp_path / "plots" / "positive_coverage_vs_performance.png").is_file()
-    assert (tmp_path / "plots" / "positive_background_rank_distributions.png").is_file()
+    assert (tmp_path / "plots" / "metrics" / "cross_dataset_metric_distributions.png").is_file()
+    assert (tmp_path / "plots" / "coverage" / "positive_coverage_vs_performance.png").is_file()
+    assert (tmp_path / "plots" / "ranks" / "positive_background_rank_distributions.png").is_file()
     summary_text = (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").read_text(encoding="utf-8")
     assert "aps_mean" in summary_text
     assert outputs["tables"]["cross_dataset_predictor_summary"].endswith("cross_dataset_predictor_summary.tsv")
@@ -215,14 +215,14 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
     assert "predictor_gsea_curves" in result["plots"]
     assert "top_10pct_positive_heatmap" in result["plots"]
     assert "mock_roc_curve" not in result["plots"]
-    assert (tmp_path / "plots" / "mock_score_vs_logFC.png").is_file()
-    assert (tmp_path / "plots" / "mock_gsea_enrichment.png").is_file()
-    assert (tmp_path / "plots" / "mock_pr_curve.png").is_file()
-    assert (tmp_path / "plots" / "cheating_pr_curve.png").is_file()
-    assert (tmp_path / "plots" / "predictor_pr_curves.png").is_file()
-    assert (tmp_path / "plots" / "predictor_roc_curves.png").is_file()
-    assert (tmp_path / "plots" / "predictor_gsea_curves.png").is_file()
-    assert (tmp_path / "plots" / "top_10pct_positive_heatmap.png").is_file()
+    assert (tmp_path / "plots" / "predictors" / "mock" / "score_vs_expected_effect.png").is_file()
+    assert (tmp_path / "plots" / "predictors" / "mock" / "gsea_enrichment.png").is_file()
+    assert (tmp_path / "plots" / "predictors" / "mock" / "precision_recall_curve.png").is_file()
+    assert (tmp_path / "plots" / "predictors" / "cheating" / "precision_recall_curve.png").is_file()
+    assert (tmp_path / "plots" / "comparisons" / "precision_recall_common.png").is_file()
+    assert (tmp_path / "plots" / "comparisons" / "roc_common.png").is_file()
+    assert (tmp_path / "plots" / "comparisons" / "gsea_common.png").is_file()
+    assert (tmp_path / "plots" / "heatmaps" / "top_10pct_positive_genes.png").is_file()
     assert not (tmp_path / "plots" / "mock_roc_curve.png").exists()
 
 

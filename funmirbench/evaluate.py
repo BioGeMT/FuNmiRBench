@@ -1308,7 +1308,11 @@ def evaluate_joined_dataframe(
         str(joined["mirna"].iloc[0]) if "mirna" in joined.columns else None
     )
     dataset_plots_dir = plots_dir
-    dataset_plots_dir.mkdir(parents=True, exist_ok=True)
+    predictor_plots_dir = dataset_plots_dir / "predictors"
+    comparison_plots_dir = dataset_plots_dir / "comparisons"
+    heatmap_plots_dir = dataset_plots_dir / "heatmaps"
+    for path in (dataset_plots_dir, predictor_plots_dir, comparison_plots_dir, heatmap_plots_dir):
+        path.mkdir(parents=True, exist_ok=True)
     tool_ids = [_tool_id_from_score_col(sc) for sc in score_cols]
     global_rank_cols = []
     local_rank_cols = []
@@ -1334,14 +1338,16 @@ def evaluate_joined_dataframe(
 
     for score_col, tool_id in zip(score_cols, tool_ids):
         _emit_log(logger, f"    Tool: {tool_id} | preparing scored pairs")
+        tool_plots_dir = predictor_plots_dir / tool_id
+        tool_plots_dir.mkdir(parents=True, exist_ok=True)
         scored, coverage_info = _prepare_scored_frame(
             joined, score_col=score_col,
             fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
             perturbation=perturbation,
         )
-        scatter_png = dataset_plots_dir / f"{tool_id}_score_vs_logFC.png"
-        gsea_png = dataset_plots_dir / f"{tool_id}_gsea_enrichment.png"
-        pr_curve_png = dataset_plots_dir / f"{tool_id}_pr_curve.png"
+        scatter_png = tool_plots_dir / "score_vs_expected_effect.png"
+        gsea_png = tool_plots_dir / "gsea_enrichment.png"
+        pr_curve_png = tool_plots_dir / "precision_recall_curve.png"
         pearson, spearman = _plot_scatter_with_correlation(
             scored,
             score_col=score_col,
@@ -1431,7 +1437,7 @@ def evaluate_joined_dataframe(
         dataset_plots[f"{tool_id}_gsea_enrichment"] = str(gsea_png)
         dataset_plots[f"{tool_id}_pr_curve"] = str(pr_curve_png)
 
-    heatmap_png = dataset_plots_dir / "algorithms_vs_genes_heatmap.png"
+    heatmap_png = heatmap_plots_dir / "algorithms_vs_genes.png"
     _plot_algorithms_vs_genes_heatmap(
         joined, score_cols=score_cols, rank_cols=local_rank_cols, tool_ids=tool_ids,
         dataset_id=dataset_id, out_path=heatmap_png,
@@ -1441,7 +1447,7 @@ def evaluate_joined_dataframe(
     dataset_plots["algorithms_vs_genes_heatmap"] = str(heatmap_png)
     _emit_log(logger, f"    Dataset: {dataset_id} | wrote gene-level heatmap")
 
-    top_positive_heatmap_png = dataset_plots_dir / "top_10pct_positive_heatmap.png"
+    top_positive_heatmap_png = heatmap_plots_dir / "top_10pct_positive_genes.png"
     wrote_top_positive_heatmap = _plot_top_positive_heatmap(
         joined,
         rank_cols=local_rank_cols,
@@ -1458,9 +1464,9 @@ def evaluate_joined_dataframe(
         _emit_log(logger, f"    Dataset: {dataset_id} | wrote top-positive heatmap")
 
     if len(score_cols) >= 2:
-        comparison_pr_png = dataset_plots_dir / "predictor_pr_curves.png"
-        comparison_roc_png = dataset_plots_dir / "predictor_roc_curves.png"
-        comparison_gsea_png = dataset_plots_dir / "predictor_gsea_curves.png"
+        comparison_pr_png = comparison_plots_dir / "precision_recall_common.png"
+        comparison_roc_png = comparison_plots_dir / "roc_common.png"
+        comparison_gsea_png = comparison_plots_dir / "gsea_common.png"
         common_pr = _prepare_common_scored_frame(
             joined,
             score_cols=score_cols,
@@ -1498,7 +1504,7 @@ def evaluate_joined_dataframe(
         dataset_plots["predictor_gsea_curves"] = str(comparison_gsea_png)
         _emit_log(logger, f"    Dataset: {dataset_id} | wrote PR/ROC/GSEA comparison plots")
 
-        corr_png = dataset_plots_dir / "predictor_correlation_heatmap.png"
+        corr_png = comparison_plots_dir / "predictor_correlation_heatmap.png"
         corr_tsv = reports_dir / f"{dataset_id}__predictor_correlation.tsv"
         corr_matrix = _plot_predictor_correlation_heatmap(
             joined, rank_cols=local_rank_cols, tool_ids=tool_ids,
@@ -1806,6 +1812,11 @@ def write_cross_dataset_summaries(
 ):
     tables_dir.mkdir(parents=True, exist_ok=True)
     plots_dir.mkdir(parents=True, exist_ok=True)
+    metric_plots_dir = plots_dir / "metrics"
+    coverage_plots_dir = plots_dir / "coverage"
+    rank_plots_dir = plots_dir / "ranks"
+    for path in (metric_plots_dir, coverage_plots_dir, rank_plots_dir):
+        path.mkdir(parents=True, exist_ok=True)
     metrics_df = pd.DataFrame(metric_rows)
     if metrics_df.empty:
         return {
@@ -1821,18 +1832,18 @@ def write_cross_dataset_summaries(
     summary.to_csv(summary_path, sep="\t", index=False)
     _emit_log(logger, f"  Wrote cross-dataset summary table: {summary_path}")
 
-    distributions_path = plots_dir / "cross_dataset_metric_distributions.png"
+    distributions_path = metric_plots_dir / "cross_dataset_metric_distributions.png"
     _plot_cross_dataset_metric_distributions(metrics_df, metric_names=metric_names, out_path=distributions_path)
     _emit_log(logger, f"  Wrote cross-dataset metric distributions: {distributions_path}")
 
-    positive_coverage_scatter_path = plots_dir / "positive_coverage_vs_performance.png"
+    positive_coverage_scatter_path = coverage_plots_dir / "positive_coverage_vs_performance.png"
     _plot_positive_coverage_vs_performance(summary, out_path=positive_coverage_scatter_path)
     _emit_log(
         logger,
         f"  Wrote positive coverage vs performance plot: {positive_coverage_scatter_path}",
     )
 
-    rank_distribution_path = plots_dir / "positive_background_rank_distributions.png"
+    rank_distribution_path = rank_plots_dir / "positive_background_rank_distributions.png"
     wrote_rank_distributions = False
     if joined_frames:
         wrote_rank_distributions = _plot_rank_class_distributions(

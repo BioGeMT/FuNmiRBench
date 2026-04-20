@@ -295,18 +295,20 @@ Inside each run folder you get:
 - `README.md`: human-readable run guide and quick-start map for the output folder
 - `REPORT.pdf`: main run-level PDF report with explanations and selected combined plots
 - `datasets/<dataset_id>/joined.tsv`: joined DE + predictor score table for that dataset
-- `datasets/<dataset_id>/plots/`: per-dataset plots
+- `datasets/<dataset_id>/plots/predictors/<tool_id>/`: per-tool plots for that dataset
+- `datasets/<dataset_id>/plots/comparisons/`: multi-predictor comparison plots for that dataset
+- `datasets/<dataset_id>/plots/heatmaps/`: dataset-level heatmaps
 - `datasets/<dataset_id>/reports/`: per-dataset Markdown/PDF reports and correlation TSVs
 - `tables/per_experiment/`: per-experiment metric tables
 - `tables/combined/`: cross-dataset predictor summary table
-- `plots/combined/`: cross-dataset comparison plots across the selected experiments
+- `plots/combined/metrics/`, `plots/combined/coverage/`, `plots/combined/ranks/`: cross-dataset comparison plots grouped by theme
 - `summary.json`: run summary
 
 When 2 or more predictors are selected, each dataset gets:
 
-- one score-vs-logFC scatter per predictor
-- one combined PR curve
-- one combined ROC curve
+- one score-vs-expected-effect scatter per predictor
+- one combined PR curve on common scored pairs
+- one combined ROC curve on common scored pairs
 - one algorithms-vs-genes heatmap
 - one predictor-correlation heatmap
 

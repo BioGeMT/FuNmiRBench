@@ -207,37 +207,37 @@ def test_example_end_to_end(tmp_path):
     plots = list(out_dir.rglob("*.png"))
     assert len(plots) == 39
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "random_score_vs_logFC.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "score_vs_expected_effect.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "random_gsea_enrichment.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "gsea_enrichment.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "random_pr_curve.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "precision_recall_curve.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "cheating_pr_curve.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "cheating" / "precision_recall_curve.png"
     ).is_file()
     assert (
-        out_dir / "plots" / "combined" / "cross_dataset_metric_distributions.png"
+        out_dir / "plots" / "combined" / "metrics" / "cross_dataset_metric_distributions.png"
     ).is_file()
     assert (
-        out_dir / "plots" / "combined" / "positive_coverage_vs_performance.png"
+        out_dir / "plots" / "combined" / "coverage" / "positive_coverage_vs_performance.png"
     ).is_file()
     assert (
-        out_dir / "plots" / "combined" / "positive_background_rank_distributions.png"
+        out_dir / "plots" / "combined" / "ranks" / "positive_background_rank_distributions.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "top_10pct_positive_heatmap.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "heatmaps" / "top_10pct_positive_genes.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_pr_curves.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "precision_recall_common.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_roc_curves.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "roc_common.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictor_gsea_curves.png"
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "gsea_common.png"
     ).is_file()
     assert not (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "cheating_roc_curve.png"
