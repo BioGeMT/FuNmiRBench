@@ -6,7 +6,12 @@ import pathlib
 
 import pandas as pd
 
-from funmirbench.build_cheating_predictions import DEMO_DATASET_IDS, _expected_effect_from_logfc
+from funmirbench.build_cheating_predictions import (
+    DEFAULT_ABS_LOGFC_THRESHOLD,
+    DEFAULT_FDR_THRESHOLD,
+    DEMO_DATASET_IDS,
+    _expected_effect_from_logfc,
+)
 from funmirbench.build_predictions import write_tsv
 from funmirbench.de_table import find_gene_id_column, read_de_table
 from funmirbench.logger import parse_log_level, setup_logging
@@ -35,8 +40,8 @@ def build_perfect_scores(
     root,
     *,
     dataset_ids=None,
-    fdr_threshold=0.05,
-    abs_logfc_threshold=1.0,
+    fdr_threshold=DEFAULT_FDR_THRESHOLD,
+    abs_logfc_threshold=DEFAULT_ABS_LOGFC_THRESHOLD,
 ):
     df = pd.read_csv(experiments_tsv, sep="\t")
     if dataset_ids:
@@ -108,8 +113,8 @@ def main():
         default=None,
         help="Restrict to specific dataset IDs. Defaults to the shipped demo datasets.",
     )
-    parser.add_argument("--fdr-threshold", type=float, default=0.05)
-    parser.add_argument("--abs-logfc-threshold", type=float, default=1.0)
+    parser.add_argument("--fdr-threshold", type=float, default=DEFAULT_FDR_THRESHOLD)
+    parser.add_argument("--abs-logfc-threshold", type=float, default=DEFAULT_ABS_LOGFC_THRESHOLD)
     parser.add_argument(
         "--log-level",
         default="INFO",

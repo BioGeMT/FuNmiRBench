@@ -202,6 +202,10 @@ The built-in demo predictors are intentionally different:
 - `cheating`: demo-only directional scores informed by the benchmark DE tables
 - `perfect`: dataset-aware oracle scores that exactly separate benchmark positives from negatives
 
+`cheating` and `perfect` are threshold-sensitive demo predictors. Their standardized outputs are
+generated against a specific `(FDR threshold, effect threshold)` pair, and the benchmark now checks
+that those build thresholds match the current `evaluation` config before running.
+
 The demo predictors already have registry rows in `metadata/predictions_info.tsv`.
 
 ### 4. Run The Benchmark
@@ -241,7 +245,8 @@ heatmaps and agreement plots, FuNmiRBench uses a dataset-local tie-aware rank ov
 rows. For cross-dataset rank-distribution plots, it keeps a separate global tie-aware rank
 derived from each predictor's full standardized file. Predictor-agreement top fractions use an
 exact top-k selection per predictor with a deterministic tie-break instead of a quantile
-threshold.
+threshold. Combined PR, ROC, and GSEA comparison plots are computed on the common set of genes
+scored by all compared predictors.
 
 YAML paths can be:
 

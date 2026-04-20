@@ -27,6 +27,9 @@ from funmirbench.logger import parse_log_level, setup_logging
 
 
 logger = logging.getLogger(__name__)
+DEFAULT_DEMO_FDR_THRESHOLD = 0.05
+DEFAULT_DEMO_ABS_LOGFC_THRESHOLD = 1.0
+THRESHOLD_SENSITIVE_DEMO_TOOLS = {"cheating", "perfect"}
 
 
 def _slugify(value):
@@ -147,6 +150,63 @@ def load_predictions(tsv_path, filters):
     return {row["tool_id"]: row.to_dict() for _, row in df.iterrows()}
 
 
+def _resolve_predictor_output_path(root, predictor_output_path):
+    path = pathlib.Path(predictor_output_path)
+    if not path.is_absolute():
+        path = root / path
+    return path
+
+
+def _predictor_metadata_sidecar_path(predictor_output_path):
+    return predictor_output_path.with_suffix(predictor_output_path.suffix + ".meta.json")
+
+
+def _thresholds_match(left, right, *, atol=1e-12):
+    return abs(float(left) - float(right)) <= atol
+
+
+def validate_threshold_sensitive_predictors(predictions, *, root, fdr_threshold, abs_logfc_threshold):
+    for tool_id, tool_meta in predictions.items():
+        if tool_id not in THRESHOLD_SENSITIVE_DEMO_TOOLS:
+            continue
+
+        output_path = _resolve_predictor_output_path(root, tool_meta["predictor_output_path"])
+        metadata_path = _predictor_metadata_sidecar_path(output_path)
+        thresholds_are_default = (
+            _thresholds_match(fdr_threshold, DEFAULT_DEMO_FDR_THRESHOLD)
+            and _thresholds_match(abs_logfc_threshold, DEFAULT_DEMO_ABS_LOGFC_THRESHOLD)
+        )
+
+        if not metadata_path.is_file():
+            if thresholds_are_default:
+                continue
+            raise ValueError(
+                "Selected threshold-sensitive demo predictor "
+                f"{tool_id!r} at {output_path} has no sidecar metadata file "
+                f"({metadata_path}). Regenerate it with matching thresholds before benchmarking."
+            )
+
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        built_fdr_threshold = metadata.get("fdr_threshold")
+        built_abs_logfc_threshold = metadata.get("abs_logfc_threshold")
+        if built_fdr_threshold is None or built_abs_logfc_threshold is None:
+            raise ValueError(
+                "Threshold-sensitive demo predictor "
+                f"{tool_id!r} metadata file {metadata_path} is missing build threshold fields."
+            )
+        if not (
+            _thresholds_match(fdr_threshold, built_fdr_threshold)
+            and _thresholds_match(abs_logfc_threshold, built_abs_logfc_threshold)
+        ):
+            raise ValueError(
+                "Selected threshold-sensitive demo predictor "
+                f"{tool_id!r} was built with thresholds "
+                f"FDR<{built_fdr_threshold} and effect>{built_abs_logfc_threshold}, "
+                f"but the benchmark is configured for FDR<{fdr_threshold} and effect>{abs_logfc_threshold}. "
+                f"Regenerate {output_path.name} with matching thresholds."
+            )
+
+
 def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
     dataset_plots_dir = plots_dir / dataset_id
     if dataset_plots_dir.exists():
@@ -155,6 +215,88 @@ def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
     for stale_report in reports_dir.glob(f"{dataset_id}__*"):
         if stale_report.is_file():
             stale_report.unlink()
+
+
+def _relative_display_path(path, *, base_dir):
+    resolved = pathlib.Path(path).expanduser().resolve()
+    try:
+        return str(resolved.relative_to(base_dir.resolve()))
+    except ValueError:
+        return str(resolved)
+
+
+def _format_summary_value(value, *, percent=False):
+    if pd.isna(value):
+        return "NA"
+    number = float(value)
+    if percent:
+        return f"{number:.1%}"
+    return f"{number:.3f}"
+
+
+def _load_cross_dataset_summary(combined_outputs):
+    summary_path = combined_outputs.get("tables", {}).get("cross_dataset_predictor_summary")
+    if not summary_path:
+        return None
+    summary_file = pathlib.Path(summary_path)
+    if not summary_file.is_file():
+        return None
+    summary_df = pd.read_csv(summary_file, sep="\t")
+    if summary_df.empty:
+        return summary_df
+    return summary_df.sort_values(
+        ["aps_mean", "auroc_mean", "positive_coverage_mean", "coverage_mean"],
+        ascending=[False, False, False, False],
+    ).reset_index(drop=True)
+
+
+def _cross_dataset_markdown_table(summary_df):
+    lines = [
+        "| Predictor | Mean coverage | Mean positive coverage | Mean APS | Mean PR-AUC | Mean Spearman | Mean AUROC |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in summary_df.itertuples(index=False):
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(row.tool_id),
+                    _format_summary_value(row.coverage_mean, percent=True),
+                    _format_summary_value(row.positive_coverage_mean, percent=True),
+                    _format_summary_value(row.aps_mean),
+                    _format_summary_value(row.pr_auc_mean),
+                    _format_summary_value(row.spearman_mean),
+                    _format_summary_value(row.auroc_mean),
+                ]
+            )
+            + " |"
+        )
+    return lines
+
+
+def _report_takeaways(summary_df):
+    if summary_df is None or summary_df.empty:
+        return []
+    takeaways = []
+    specs = [
+        ("aps_mean", "Highest mean APS"),
+        ("auroc_mean", "Highest mean AUROC"),
+        ("positive_coverage_mean", "Highest mean positive coverage"),
+        ("spearman_mean", "Highest mean Spearman"),
+    ]
+    for metric_col, label in specs:
+        row = summary_df.sort_values(metric_col, ascending=False).iloc[0]
+        formatted = _format_summary_value(
+            row[metric_col],
+            percent=metric_col.endswith("coverage_mean"),
+        )
+        takeaways.append(f"{label}: {row['tool_id']} ({formatted})")
+    sparse_row = summary_df.sort_values("coverage_mean", ascending=True).iloc[0]
+    takeaways.append(
+        "Lowest mean overall coverage: "
+        f"{sparse_row['tool_id']} ({_format_summary_value(sparse_row['coverage_mean'], percent=True)})"
+    )
+    return takeaways
 
 
 def write_run_readme(
@@ -169,6 +311,18 @@ def write_run_readme(
     abs_logfc_threshold,
     predictor_top_fraction,
 ):
+    summary_df = _load_cross_dataset_summary(combined_outputs)
+    relative_metric_tables = {
+        key: _relative_display_path(path, base_dir=out_dir)
+        for key, path in metric_tables.items()
+    }
+    relative_combined_outputs = {
+        section: {
+            key: _relative_display_path(path, base_dir=out_dir)
+            for key, path in values.items()
+        }
+        for section, values in combined_outputs.items()
+    }
     lines = [
         "# FuNmiRBench Run README",
         "",
@@ -190,7 +344,23 @@ def write_run_readme(
         "- Score handling: predictors are first aligned so that higher always means stronger",
         "- Per-dataset heatmaps and agreement plots: dataset-local tie-aware dense ranking over scored rows",
         "- Cross-dataset rank-distribution plots: global tie-aware dense ranking over each predictor's full standardized file",
+        "- Combined PR/ROC/GSEA comparison plots: computed on the common set of genes scored by all compared predictors",
         "",
+        "## Cross-Dataset Summary",
+        (
+            "Coverage, positive coverage, and mean metric performance are summarized numerically below. "
+            "The PDF report carries the same summary table, so there is no separate combined coverage scatter "
+            "or mean-metric heatmap in this run package."
+        ),
+        "",
+    ]
+    if summary_df is not None and not summary_df.empty:
+        lines.extend(_cross_dataset_markdown_table(summary_df))
+    else:
+        lines.append("Cross-dataset summary table is unavailable for this run.")
+    lines.extend(
+        [
+            "",
         "## Where To Start",
         "- Read `REPORT.pdf` for the main run-level summary with combined plots and explanatory notes",
         "- Open `tables/combined/cross_dataset_predictor_summary.tsv` for the compact numeric cross-dataset summary",
@@ -207,24 +377,59 @@ def write_run_readme(
         "- `summary.json`: machine-readable run summary",
         "",
         "## Datasets",
-    ]
+        "| Dataset | miRNA | Perturbation | Cell line | Joined table |",
+        "| --- | --- | --- | --- | --- |",
+        ]
+    )
     for item in dataset_outputs:
-        lines.extend(
-            [
-                (
-                    f"- `{item['dataset_id']}`"
-                    f" | miRNA `{item['mirna']}`"
-                    f" | cell line `{item['cell_line']}`"
-                    f" | joined `{item['joined_tsv']}`"
-                )
-            ]
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    f"`{item['dataset_id']}`",
+                    f"`{item['mirna']}`",
+                    f"`{item['perturbation']}`",
+                    f"`{item['cell_line']}`",
+                    f"`{_relative_display_path(item['joined_tsv'], base_dir=out_dir)}`",
+                ]
+            )
+            + " |"
         )
     lines.extend(
         [
             "",
-            "## Key Outputs",
-            f"- per-experiment tables: `{metric_tables}`",
-            f"- combined outputs: `{combined_outputs}`",
+            "## Key Files",
+            "- `REPORT.pdf`: polished run-level summary with the main cross-dataset table and selected plots",
+            "- `tables/combined/cross_dataset_predictor_summary.tsv`: exact numeric cross-dataset summary used in the report",
+            "",
+            "### Per-Experiment Tables",
+        ]
+    )
+    metric_descriptions = {
+        "coverage": "fraction of genes with predictor scores",
+        "positive_coverage": "fraction of GT-positive genes that were scored",
+        "aps": "average precision score per dataset",
+        "pr_auc": "precision-recall AUC per dataset",
+        "spearman": "score vs expected-effect Spearman correlation per dataset",
+        "auroc": "AUROC per dataset",
+    }
+    for key, path in relative_metric_tables.items():
+        lines.append(f"- `{path}`: {metric_descriptions.get(key, key)}")
+    lines.extend(
+        [
+            "",
+            "### Combined Plots",
+        ]
+    )
+    combined_plot_descriptions = {
+        "cross_dataset_metric_distributions": "distribution of each metric across the selected datasets",
+        "positive_coverage_vs_performance": "mean positive coverage against mean APS and mean AUROC",
+        "positive_background_rank_distributions": "global-rank separation of GT positives from background genes",
+    }
+    for key, path in relative_combined_outputs.get("plots", {}).items():
+        lines.append(f"- `{path}`: {combined_plot_descriptions.get(key, key)}")
+    lines.extend(
+        [
             "",
         ]
     )
@@ -245,117 +450,281 @@ def write_run_pdf_report(
     abs_logfc_threshold,
     predictor_top_fraction,
 ):
+    summary_df = _load_cross_dataset_summary(combined_outputs)
     report_path = out_dir / "REPORT.pdf"
-    text_lines = [
-        "# FuNmiRBench Run Report",
-        "",
-        "## Run Summary",
-        f"- Config: {config_path}",
-        f"- Run directory: {out_dir}",
-        f"- Datasets: {len(dataset_outputs)}",
-        f"- Predictors: {', '.join(tool_ids)}",
-        "",
-        "## Evaluation Settings",
-        (
-            f"- GT positives were defined as FDR < {fdr_threshold} and perturbation-aware effect "
-            f"> {abs_logfc_threshold} (-logFC for OE, +logFC for KO/KD)"
-        ),
-        (
-            f"- Predictor-correlation top fraction: {predictor_top_fraction:.0%}"
-            " (exact top-k per predictor, deterministic tie-break)"
-        ),
-        "- Predictor scores were aligned to a common higher-is-stronger direction before evaluation",
-        "- Per-dataset heatmaps and agreement plots use a dataset-local tie-aware dense ranking over scored rows",
-        "- Cross-dataset rank-distribution plots use a global tie-aware dense ranking computed over each predictor's full standardized file",
-        "",
-        "## Output Guide",
-        f"- Per-experiment metric tables: {metric_tables}",
-        f"- Cross-dataset outputs: {combined_outputs}",
-        "- Dataset-specific outputs live under datasets/<dataset_id>/",
-        "",
-        "## Datasets",
-    ]
-    for item in dataset_outputs:
-        text_lines.append(
-            f"- {item['dataset_id']} | miRNA {item['mirna']} | cell line {item['cell_line']} | perturbation {item['perturbation']}"
-        )
-
-    style_map = {
-        "h1": {"fontsize": 17, "weight": "bold", "color": "#17324D", "gap": 0.060},
-        "h2": {"fontsize": 12, "weight": "bold", "color": "#2F5D8C", "gap": 0.042},
-        "body": {"fontsize": 9.5, "weight": "normal", "color": "#22303C", "gap": 0.026},
-        "blank": {"fontsize": 9.5, "weight": "normal", "color": "#22303C", "gap": 0.018},
-    }
-
-    def iter_lines():
-        for raw_line in text_lines:
-            if raw_line.startswith("# "):
-                yield {"text": raw_line[2:], "kind": "h1"}
-                continue
-            if raw_line.startswith("## "):
-                yield {"text": raw_line[3:], "kind": "h2"}
-                continue
-            if raw_line.startswith("- "):
-                wrapped = textwrap.wrap(raw_line[2:], width=92) or [""]
-                for index, chunk in enumerate(wrapped):
-                    prefix = "- " if index == 0 else "  "
-                    yield {"text": prefix + chunk, "kind": "body"}
-                continue
-            if not raw_line.strip():
-                yield {"text": "", "kind": "blank"}
-                continue
-            for chunk in textwrap.wrap(raw_line, width=94) or [""]:
-                yield {"text": chunk, "kind": "body"}
 
     with PdfPages(report_path) as pdf:
-        fig = None
-        ax = None
-        y = 0.0
-
-        def new_text_page():
+        def new_page():
             page_fig, page_ax = plt.subplots(figsize=(8.27, 11.69))
             page_ax.axis("off")
             page_fig.patch.set_facecolor("white")
-            return page_fig, page_ax, 0.95
+            return page_fig, page_ax
 
-        for item in iter_lines():
-            style = style_map[item["kind"]]
-            if fig is None or y - style["gap"] < 0.06:
-                if fig is not None:
-                    pdf.savefig(fig, bbox_inches="tight")
-                    plt.close(fig)
-                fig, ax, y = new_text_page()
-            if item["text"]:
+        def add_header(ax, title, subtitle=None):
+            ax.text(
+                0.06,
+                0.95,
+                title,
+                fontsize=20,
+                fontweight="bold",
+                color="#17324D",
+                va="top",
+                ha="left",
+                family="DejaVu Sans",
+            )
+            if subtitle:
                 ax.text(
                     0.06,
-                    y,
-                    item["text"],
-                    fontsize=style["fontsize"],
-                    fontweight=style["weight"],
-                    color=style["color"],
+                    0.915,
+                    subtitle,
+                    fontsize=10.5,
+                    color="#5B6577",
                     va="top",
                     ha="left",
                     family="DejaVu Sans",
                 )
-            y -= style["gap"]
+            ax.add_line(
+                plt.Line2D([0.06, 0.94], [0.895, 0.895], color="#D8DEE9", linewidth=1.4)
+            )
 
-        if fig is None:
-            fig, ax, y = new_text_page()
+        def add_block(ax, title, lines, *, x, y, width):
+            ax.text(
+                x,
+                y,
+                title,
+                fontsize=11.5,
+                fontweight="bold",
+                color="#2F5D8C",
+                va="top",
+                ha="left",
+                family="DejaVu Sans",
+            )
+            current_y = y - 0.03
+            for line in lines:
+                wrapped = textwrap.wrap(line, width=max(26, int(width * 95))) or [""]
+                for chunk in wrapped:
+                    ax.text(
+                        x,
+                        current_y,
+                        chunk,
+                        fontsize=9.5,
+                        color="#22303C",
+                        va="top",
+                        ha="left",
+                        family="DejaVu Sans",
+                    )
+                    current_y -= 0.024
+                current_y -= 0.004
+            return current_y
+
+        fig, ax = new_page()
+        add_header(
+            ax,
+            "FuNmiRBench Run Report",
+            f"{len(dataset_outputs)} datasets | {len(tool_ids)} predictors | generated from {config_path.name}",
+        )
+        summary_boxes = [
+            ("Datasets", str(len(dataset_outputs))),
+            ("Predictors", str(len(tool_ids))),
+            ("GT Threshold", f"FDR < {fdr_threshold}\neffect > {abs_logfc_threshold}"),
+            ("Top Fraction", f"{predictor_top_fraction:.0%}\nexact top-k"),
+        ]
+        x_positions = [0.06, 0.29, 0.52, 0.75]
+        for (label, value), x in zip(summary_boxes, x_positions):
+            ax.text(
+                x,
+                0.84,
+                f"{label}\n{value}",
+                fontsize=10.5,
+                fontweight="bold",
+                color="#17324D",
+                va="top",
+                ha="left",
+                family="DejaVu Sans",
+                bbox={
+                    "boxstyle": "round,pad=0.45",
+                    "facecolor": "#F5F8FC",
+                    "edgecolor": "#D8E2EF",
+                },
+            )
+        add_block(
+            ax,
+            "Evaluation Settings",
+            [
+                (
+                    f"GT positives: FDR < {fdr_threshold} and perturbation-aware effect > {abs_logfc_threshold} "
+                    "(-logFC for OE, +logFC for KO/KD)"
+                ),
+                "Predictor scores are aligned so that higher always means stronger before evaluation.",
+                "Per-dataset heatmaps and agreement plots use dataset-local tie-aware dense ranks.",
+                "Combined PR/ROC/GSEA plots use only the common set of genes scored by all compared predictors.",
+            ],
+            x=0.06,
+            y=0.69,
+            width=0.40,
+        )
+        add_block(
+            ax,
+            "What This Report Emphasizes",
+            [
+                "Cross-dataset coverage and performance are summarized numerically in the predictor table on the next page.",
+                "The exact numeric source for the report is tables/combined/cross_dataset_predictor_summary.tsv.",
+            ],
+            x=0.54,
+            y=0.69,
+            width=0.38,
+        )
+        add_block(
+            ax,
+            "Key Files",
+            [
+                "REPORT.pdf: this run-level summary",
+                "tables/combined/cross_dataset_predictor_summary.tsv: exact mean/median/std values by predictor",
+                "tables/per_experiment/: per-dataset APS, PR-AUC, AUROC, coverage, positive coverage, and Spearman tables",
+                "datasets/<dataset_id>/: joined tables, plots, and per-predictor reports",
+            ],
+            x=0.06,
+            y=0.36,
+            width=0.86,
+        )
+        pdf.savefig(fig, bbox_inches="tight")
+        plt.close(fig)
+
+        fig, ax = new_page()
+        add_header(ax, "Cross-Dataset Summary", "Mean values are across the selected datasets only.")
+        takeaways = _report_takeaways(summary_df)
+        if takeaways:
+            add_block(ax, "Quick Takeaways", takeaways, x=0.06, y=0.85, width=0.88)
+        if summary_df is not None and not summary_df.empty:
+            display_df = summary_df[
+                [
+                    "tool_id",
+                    "coverage_mean",
+                    "positive_coverage_mean",
+                    "aps_mean",
+                    "pr_auc_mean",
+                    "spearman_mean",
+                    "auroc_mean",
+                ]
+            ].copy()
+            display_df.columns = [
+                "Predictor",
+                "Mean coverage",
+                "Mean positive coverage",
+                "Mean APS",
+                "Mean PR-AUC",
+                "Mean Spearman",
+                "Mean AUROC",
+            ]
+            for column in display_df.columns[1:]:
+                percent = "coverage" in column.lower()
+                display_df[column] = display_df[column].map(
+                    lambda value: _format_summary_value(value, percent=percent)
+                )
+            table = ax.table(
+                cellText=display_df.values.tolist(),
+                colLabels=display_df.columns.tolist(),
+                cellLoc="center",
+                colLoc="center",
+                bbox=[0.06, 0.18, 0.88, 0.48],
+            )
+            table.auto_set_font_size(False)
+            table.set_fontsize(8.8)
+            table.scale(1.0, 1.35)
+            for (row, col), cell in table.get_celld().items():
+                if row == 0:
+                    cell.set_facecolor("#E9F1FB")
+                    cell.set_edgecolor("#D8E2EF")
+                    cell.set_text_props(weight="bold", color="#17324D")
+                else:
+                    cell.set_edgecolor("#E1E8F0")
+                    cell.set_facecolor("#FFFFFF" if row % 2 else "#F9FBFD")
+            ax.text(
+                0.06,
+                0.11,
+                (
+                    "Coverage columns replace the removed combined coverage scatter, and the mean metric columns replace "
+                    "the removed combined metric heatmap. Use the TSV for the full count/median/std/min/max summary."
+                ),
+                fontsize=9.2,
+                color="#22303C",
+                va="top",
+                ha="left",
+                family="DejaVu Sans",
+            )
+        pdf.savefig(fig, bbox_inches="tight")
+        plt.close(fig)
+
+        fig, ax = new_page()
+        add_header(ax, "Dataset Inventory", "Datasets included in this benchmark run.")
+        dataset_df = pd.DataFrame(
+            [
+                {
+                    "Dataset": item["dataset_id"],
+                    "miRNA": item["mirna"],
+                    "Perturbation": item["perturbation"],
+                    "Cell line": item["cell_line"],
+                }
+                for item in dataset_outputs
+            ]
+        )
+        table = ax.table(
+            cellText=dataset_df.values.tolist(),
+            colLabels=dataset_df.columns.tolist(),
+            cellLoc="left",
+            colLoc="left",
+            bbox=[0.06, 0.56, 0.88, 0.24],
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(9.2)
+        table.scale(1.0, 1.45)
+        for (row, col), cell in table.get_celld().items():
+            if row == 0:
+                cell.set_facecolor("#E9F1FB")
+                cell.set_edgecolor("#D8E2EF")
+                cell.set_text_props(weight="bold", color="#17324D")
+            else:
+                cell.set_edgecolor("#E1E8F0")
+                cell.set_facecolor("#FFFFFF" if row % 2 else "#F9FBFD")
+        add_block(
+            ax,
+            "Included Combined Figures",
+            [
+                "cross_dataset_metric_distributions.png: how each metric varies across the selected datasets",
+                "positive_coverage_vs_performance.png: mean positive coverage against mean APS and AUROC",
+                "positive_background_rank_distributions.png: whether positives rank above background on the global rank scale",
+            ],
+            x=0.06,
+            y=0.45,
+            width=0.88,
+        )
         pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
 
         plot_items = []
-        for key in [
-            "cross_dataset_metric_heatmap",
-            "cross_dataset_metric_distributions",
-            "coverage_vs_performance",
-            "positive_background_rank_distributions",
-        ]:
+        plot_descriptions = {
+            "cross_dataset_metric_distributions": (
+                "Cross-dataset metric distributions",
+                "Each panel shows the spread of one metric across datasets for every predictor. "
+                "Spearman uses the full -1 to 1 range so weak negative correlations remain visible."
+            ),
+            "positive_coverage_vs_performance": (
+                "Positive coverage vs performance",
+                "Mean positive coverage is plotted against mean APS and mean AUROC. "
+                "This is especially helpful for sparse predictors where overall coverage alone can be misleading."
+            ),
+            "positive_background_rank_distributions": (
+                "Positive vs background rank distributions",
+                "Global-rank distributions aggregated across datasets, split into GT positives and background genes. "
+                "Stronger predictors should push positives higher than background."
+            ),
+        }
+        for key, (title, caption) in plot_descriptions.items():
             path = combined_outputs.get("plots", {}).get(key)
             if path:
-                plot_items.append((key, pathlib.Path(path)))
+                plot_items.append((title, caption, pathlib.Path(path)))
 
-        for key, path in plot_items:
+        for title, caption, path in plot_items:
             if not path.is_file():
                 continue
             image = plt.imread(path)
@@ -365,15 +734,25 @@ def write_run_pdf_report(
             ax.text(
                 0.06,
                 0.975,
-                key.replace("_", " ").title(),
+                title,
                 fontsize=12,
                 fontweight="bold",
                 color="#17324D",
                 va="top",
                 ha="left",
             )
+            ax.text(
+                0.06,
+                0.94,
+                caption,
+                fontsize=9.4,
+                color="#22303C",
+                va="top",
+                ha="left",
+                wrap=True,
+            )
             ax.imshow(image)
-            ax.set_position([0.08, 0.08, 0.84, 0.82])
+            ax.set_position([0.08, 0.08, 0.84, 0.78])
             pdf.savefig(fig, bbox_inches="tight")
             plt.close(fig)
 
@@ -454,6 +833,12 @@ def run_benchmark(config_path):
     joined_frames = []
     fdr_threshold = float(eval_cfg.get("fdr_threshold", 0.05))
     abs_logfc_threshold = float(eval_cfg.get("abs_logfc_threshold", 1.0))
+    validate_threshold_sensitive_predictors(
+        predictions,
+        root=root,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+    )
 
     logger.info(f"Experiments: {len(experiments)}")
     logger.info(f"Predictors:  {tool_ids}")

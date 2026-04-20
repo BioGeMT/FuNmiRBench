@@ -98,7 +98,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
                 "positive_coverage": 0.25,
                 "aps": 0.5,
                 "pr_auc": 0.48,
-                "spearman": 0.2,
+                "spearman": -0.2,
                 "auroc": 0.65,
             },
             {
@@ -121,18 +121,22 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
         joined_frames=joined_frames,
     )
     assert (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").is_file()
-    assert (tmp_path / "plots" / "cross_dataset_metric_heatmap.png").is_file()
     assert (tmp_path / "plots" / "cross_dataset_metric_distributions.png").is_file()
-    assert (tmp_path / "plots" / "coverage_vs_performance.png").is_file()
     assert (tmp_path / "plots" / "positive_coverage_vs_performance.png").is_file()
     assert (tmp_path / "plots" / "positive_background_rank_distributions.png").is_file()
     summary_text = (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").read_text(encoding="utf-8")
     assert "aps_mean" in summary_text
     assert outputs["tables"]["cross_dataset_predictor_summary"].endswith("cross_dataset_predictor_summary.tsv")
-    assert outputs["plots"]["coverage_vs_performance"].endswith("coverage_vs_performance.png")
     assert outputs["plots"]["positive_coverage_vs_performance"].endswith(
         "positive_coverage_vs_performance.png"
     )
+    assert "cross_dataset_metric_heatmap" not in outputs["plots"]
+    assert "coverage_vs_performance" not in outputs["plots"]
+
+
+def test_metric_plot_limits_allow_negative_spearman():
+    assert evaluate_module._metric_plot_limits("spearman") == (-1.02, 1.02)
+    assert evaluate_module._metric_plot_limits("aps") == (0.0, 1.02)
 
 
 def test_evaluate_rejects_single_class_labels(tmp_path):
@@ -381,6 +385,8 @@ def test_evaluate_uses_only_existing_pairs_and_reports_coverage(tmp_path):
     report_pdf = tmp_path / "reports" / "D001__sparse_evaluation_report.pdf"
     report_text = report_md.read_text(encoding="utf-8")
     assert report_pdf.is_file()
+    assert "## Snapshot" in report_text
+    assert "## Evaluation Rule" in report_text
     assert "rows_total: `5`" in report_text
     assert "rows_scored: `3`" in report_text
     assert "rows_missing_score: `2`" in report_text
@@ -388,6 +394,8 @@ def test_evaluate_uses_only_existing_pairs_and_reports_coverage(tmp_path):
     assert "positives_total: `3`" in report_text
     assert "positives_scored: `2`" in report_text
     assert "positive_coverage: `0.666667`" in report_text
+    assert "precision_recall_curve:" in report_text
+    assert "gsea_enrichment:" in report_text
 
 
 def test_evaluate_uses_supplied_logger(tmp_path):

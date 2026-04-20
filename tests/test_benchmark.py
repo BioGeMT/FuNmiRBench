@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 import pandas as pd
+import pytest
 
 from funmirbench import benchmark
 from funmirbench.build_cheating_predictions import build_cheating_scores
@@ -24,6 +25,45 @@ def test_selected_experiment_paths_applies_filters(tmp_path):
     paths = benchmark.selected_experiment_paths(experiments_tsv, {"id": ["B"]})
 
     assert paths == ["data/experiments/processed/18745741/b.tsv"]
+
+
+def test_validate_threshold_sensitive_predictors_requires_matching_metadata(tmp_path):
+    cheating_path = tmp_path / "cheating_standardized.tsv"
+    cheating_path.write_text("", encoding="utf-8")
+    predictions = {"cheating": {"predictor_output_path": str(cheating_path)}}
+
+    with pytest.raises(ValueError, match="no sidecar metadata file"):
+        benchmark.validate_threshold_sensitive_predictors(
+            predictions,
+            root=tmp_path,
+            fdr_threshold=0.10,
+            abs_logfc_threshold=1.0,
+        )
+
+    metadata_path = pathlib.Path(str(cheating_path) + ".meta.json")
+    metadata_path.write_text(
+        json.dumps({"fdr_threshold": 0.10, "abs_logfc_threshold": 1.0}),
+        encoding="utf-8",
+    )
+
+    benchmark.validate_threshold_sensitive_predictors(
+        predictions,
+        root=tmp_path,
+        fdr_threshold=0.10,
+        abs_logfc_threshold=1.0,
+    )
+
+    metadata_path.write_text(
+        json.dumps({"fdr_threshold": 0.05, "abs_logfc_threshold": 1.0}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="was built with thresholds"):
+        benchmark.validate_threshold_sensitive_predictors(
+            predictions,
+            root=tmp_path,
+            fdr_threshold=0.10,
+            abs_logfc_threshold=1.0,
+        )
 
 
 def test_example_end_to_end(tmp_path):
@@ -152,12 +192,11 @@ def test_example_end_to_end(tmp_path):
     assert summary["cross_dataset_outputs"]["tables"]["cross_dataset_predictor_summary"].endswith(
         "cross_dataset_predictor_summary.tsv"
     )
-    assert summary["cross_dataset_outputs"]["plots"]["coverage_vs_performance"].endswith(
-        "coverage_vs_performance.png"
-    )
     assert summary["cross_dataset_outputs"]["plots"]["positive_coverage_vs_performance"].endswith(
         "positive_coverage_vs_performance.png"
     )
+    assert "coverage_vs_performance" not in summary["cross_dataset_outputs"]["plots"]
+    assert "cross_dataset_metric_heatmap" not in summary["cross_dataset_outputs"]["plots"]
     assert set(summary["dataset_ids"]) == {
         "GSE109725_OE_miR_204_5p",
         "GSE210778_OE_miR_375_3p",
@@ -166,7 +205,7 @@ def test_example_end_to_end(tmp_path):
     assert summary["tool_ids"] == ["random", "cheating"]
 
     plots = list(out_dir.rglob("*.png"))
-    assert len(plots) == 41
+    assert len(plots) == 39
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "random_score_vs_logFC.png"
     ).is_file()
@@ -180,13 +219,7 @@ def test_example_end_to_end(tmp_path):
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "cheating_pr_curve.png"
     ).is_file()
     assert (
-        out_dir / "plots" / "combined" / "cross_dataset_metric_heatmap.png"
-    ).is_file()
-    assert (
         out_dir / "plots" / "combined" / "cross_dataset_metric_distributions.png"
-    ).is_file()
-    assert (
-        out_dir / "plots" / "combined" / "coverage_vs_performance.png"
     ).is_file()
     assert (
         out_dir / "plots" / "combined" / "positive_coverage_vs_performance.png"

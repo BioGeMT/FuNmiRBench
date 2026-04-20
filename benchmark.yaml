@@ -17,7 +17,6 @@ experiments:
   # article_pubmed_id: [https://pubmed.ncbi.nlm.nih.gov/36074222]
   # organism: [Homo sapiens]
   # experiment_type: [OE, KD]
-  # tested_cell_line: [HeLa]
   # treatment: [Overexpression of hsa-miR-10a-5p]
   # tissue: [Cervix]
   # method: [RNA-seq]

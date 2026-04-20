@@ -1,6 +1,7 @@
 """Evaluate joined GT/prediction tables: metrics, plots, reports."""
 
 import math
+import os
 import pathlib
 import textwrap
 
@@ -38,6 +39,12 @@ CURVE_COLORS = [
     "#D97D0D",
     "#4C78A8",
 ]
+
+
+def _metric_plot_limits(metric_name):
+    if metric_name == "spearman":
+        return -1.02, 1.02
+    return 0.0, 1.02
 
 
 def _emit_log(logger, message):
@@ -546,10 +553,7 @@ def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
         ax.plot(
             fpr,
             tpr,
-            label=(
-                f"{_tool_label(item['tool_id'])} "
-                f"({auroc:.3f}, cov {item['coverage']:.0%})"
-            ),
+            label=f"{_tool_label(item['tool_id'])} ({auroc:.3f})",
             linewidth=2.2,
             color=CURVE_COLORS[index % len(CURVE_COLORS)],
         )
@@ -566,13 +570,20 @@ def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
     ax.set_xlabel("False positive rate", fontsize=10)
     ax.set_ylabel("True positive rate", fontsize=10)
     ax.set_title(
-        "ROC comparison",
+        "ROC comparison (common scored pairs)",
         fontsize=11,
         fontweight="semibold",
         loc="left",
         pad=14,
     )
-    fig.text(0.125, 0.955, _dataset_caption(dataset_id), fontsize=9, color=NEUTRAL_COLOR)
+    comparison_size = len(comparisons[0]["y_true"]) if comparisons else 0
+    fig.text(
+        0.125,
+        0.955,
+        f"{_dataset_caption(dataset_id)}  |  common n={comparison_size:,}",
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
     ax.legend(
         frameon=False,
         fontsize=8.8,
@@ -587,11 +598,16 @@ def _plot_predictor_gsea_curves(comparisons, *, dataset_id, out_path):
     fig, ax = plt.subplots(figsize=(6.8, 5.2))
     _style_axes(ax, grid_axis="both")
     for index, item in enumerate(comparisons):
-        ordered = (
-            pd.DataFrame({"y_true": item["y_true"], "y_score": item["y_score"]})
-            .sort_values(["y_score"], ascending=[False])
-            .reset_index(drop=True)
-        )
+        order_frame = {"y_true": item["y_true"], "y_score": item["y_score"]}
+        sort_cols = ["y_score"]
+        ascending = [False]
+        if "gene_id" in item:
+            order_frame["gene_id"] = item["gene_id"]
+            sort_cols.append("gene_id")
+            ascending.append(True)
+        ordered = pd.DataFrame(order_frame).sort_values(
+            sort_cols, ascending=ascending, kind="mergesort"
+        ).reset_index(drop=True)
         hits = ordered["y_true"].astype(int).to_numpy(dtype=int)
         total_hits = int(hits.sum())
         total_misses = int(len(hits) - total_hits)
@@ -615,13 +631,20 @@ def _plot_predictor_gsea_curves(comparisons, *, dataset_id, out_path):
     ax.set_xlabel("Ranked genes", fontsize=10)
     ax.set_ylabel("Running ES", fontsize=10)
     ax.set_title(
-        "GSEA comparison",
+        "GSEA comparison (common scored pairs)",
         fontsize=11,
         fontweight="semibold",
         loc="left",
         pad=14,
     )
-    fig.text(0.125, 0.955, _dataset_caption(dataset_id), fontsize=9, color=NEUTRAL_COLOR)
+    comparison_size = len(comparisons[0]["y_true"]) if comparisons else 0
+    fig.text(
+        0.125,
+        0.955,
+        f"{_dataset_caption(dataset_id)}  |  common n={comparison_size:,}",
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
     ax.legend(
         frameon=False,
         fontsize=8.8,
@@ -908,20 +931,56 @@ def _plot_predictor_correlation_heatmap(
     return matrix
 
 
+def _relative_report_path(path, *, report_dir):
+    if not path:
+        return "NA"
+    target = pathlib.Path(path).expanduser().resolve()
+    base = pathlib.Path(report_dir).resolve()
+    try:
+        return os.path.relpath(target, start=base)
+    except ValueError:
+        return str(target)
+
+
 def _build_tool_report_markdown(
     *, dataset_id, mirna, cell_line, perturbation, geo_accession,
     de_table_path, joined_tsv,
-    tool_id, predictor_output_path, metrics, coverage_info, scatter_png,
+    tool_id, predictor_output_path, metrics, coverage_info,
+    scatter_png, pr_curve_png, gsea_png,
+    fdr_threshold, abs_logfc_threshold,
 ):
+    coverage_percent = coverage_info["coverage"] * 100.0
+    positive_coverage_percent = coverage_info["positive_coverage"] * 100.0
     lines = [
         f"# Evaluation Report: {dataset_id} | {_tool_label(tool_id)}",
         "",
-        "## Dataset",
+        "## Snapshot",
+        f"- predictor: `{tool_id}`",
         f"- dataset_id: `{dataset_id}`",
         f"- mirna: `{mirna or 'NA'}`",
         f"- cell_line: `{cell_line or 'NA'}`",
         f"- perturbation: `{perturbation or 'NA'}`",
         f"- geo_accession: `{geo_accession or 'NA'}`",
+        (
+            f"- overall coverage: `{coverage_percent:.1f}%`"
+            f" (`{int(coverage_info['rows_scored'])}` of `{int(coverage_info['rows_total'])}` genes scored)"
+        ),
+        (
+            f"- positive coverage: `{positive_coverage_percent:.1f}%`"
+            f" (`{int(coverage_info['positives_scored'])}` of `{int(coverage_info['positives_total'])}` GT positives scored)"
+        ),
+        f"- aps: `{metrics['aps']:.6f}`",
+        f"- auroc: `{metrics['auroc']:.6f}`",
+        f"- spearman: `{metrics['spearman']:.6f}`",
+        "",
+        "## Evaluation Rule",
+        (
+            f"- GT positives: `FDR < {fdr_threshold}` and perturbation-aware effect `> {abs_logfc_threshold}`"
+            " (`-logFC` for OE, `+logFC` for KO/KD)"
+        ),
+        "- Predictor scores are aligned so that higher always means stronger before evaluation",
+        "- Pearson and Spearman compare predictor score against perturbation-aware expected effect",
+        "- APS, PR-AUC, AUROC, and GSEA are computed on scored rows only",
         "",
         "## Inputs",
         f"- de_table_path: `{de_table_path or 'NA'}`",
@@ -929,7 +988,7 @@ def _build_tool_report_markdown(
         f"- tool_id: `{tool_id}`",
         f"- predictor_output_path: `{predictor_output_path or 'NA'}`",
         "",
-        "## Coverage",
+        "## Coverage Details",
         f"- rows_total: `{int(coverage_info['rows_total'])}`",
         f"- rows_scored: `{int(coverage_info['rows_scored'])}`",
         f"- rows_missing_score: `{int(coverage_info['rows_missing_score'])}`",
@@ -938,7 +997,7 @@ def _build_tool_report_markdown(
         f"- positives_scored: `{int(coverage_info['positives_scored'])}`",
         f"- positive_coverage: `{coverage_info['positive_coverage']:.6f}`",
         "",
-        "## Metrics",
+        "## Metric Details",
         f"- rows_used: `{int(metrics['rows_used'])}`",
         f"- positives: `{int(metrics['positives'])}`",
         f"- negatives: `{int(metrics['negatives'])}`",
@@ -948,104 +1007,235 @@ def _build_tool_report_markdown(
         f"- pr_auc: `{metrics['pr_auc']:.6f}`",
         f"- auroc: `{metrics['auroc']:.6f}`",
         "",
-        "## Plots",
-        f"- scatter: `{scatter_png}`",
+        "## Included Plots",
+        f"- score_vs_expected_effect: `{scatter_png}`",
+        f"- precision_recall_curve: `{pr_curve_png}`",
+        f"- gsea_enrichment: `{gsea_png}`",
         "",
     ]
     return "\n".join(lines)
 
 
-def _render_markdown_pdf(markdown_text, *, pdf_path, title, scatter_png=None):
-    def iter_lines():
-        for raw_line in markdown_text.splitlines():
-            if raw_line.startswith("# "):
-                yield {"text": raw_line[2:], "kind": "h1"}
-                continue
-            if raw_line.startswith("## "):
-                yield {"text": raw_line[3:], "kind": "h2"}
-                continue
-            if raw_line.startswith("- "):
-                wrapped = textwrap.wrap(raw_line[2:], width=90) or [""]
-                for index, chunk in enumerate(wrapped):
-                    prefix = "- " if index == 0 else "  "
-                    yield {"text": prefix + chunk, "kind": "body"}
-                continue
-            if not raw_line.strip():
-                yield {"text": "", "kind": "blank"}
-                continue
-            for chunk in textwrap.wrap(raw_line, width=92) or [""]:
-                yield {"text": chunk, "kind": "body"}
-
-    style_map = {
-        "h1": {"fontsize": 16, "weight": "bold", "color": "#17324D", "gap": 0.060},
-        "h2": {"fontsize": 12, "weight": "bold", "color": "#2F5D8C", "gap": 0.042},
-        "body": {"fontsize": 9.5, "weight": "normal", "color": "#22303C", "gap": 0.026},
-        "blank": {"fontsize": 9.5, "weight": "normal", "color": "#22303C", "gap": 0.018},
-    }
-
+def _render_tool_report_pdf(
+    *,
+    pdf_path,
+    dataset_id,
+    tool_id,
+    mirna,
+    cell_line,
+    perturbation,
+    geo_accession,
+    predictor_output_path,
+    metrics,
+    coverage_info,
+    fdr_threshold,
+    abs_logfc_threshold,
+    scatter_png=None,
+    pr_curve_png=None,
+    gsea_png=None,
+):
     with PdfPages(pdf_path) as pdf:
-        fig = None
-        ax = None
-        y = 0.0
-
         def new_page():
             page_fig, page_ax = plt.subplots(figsize=(8.27, 11.69))
             page_ax.axis("off")
             page_fig.patch.set_facecolor("white")
-            page_ax.text(
+            return page_fig, page_ax
+
+        def add_header(ax, title, subtitle=None):
+            ax.text(
                 0.06,
-                0.975,
+                0.95,
                 title,
-                fontsize=8.5,
-                color=NEUTRAL_COLOR,
+                fontsize=19,
+                fontweight="bold",
+                color="#17324D",
                 va="top",
                 ha="left",
+                family="DejaVu Sans",
             )
-            return page_fig, page_ax, 0.93
-
-        for item in iter_lines():
-            style = style_map[item["kind"]]
-            if fig is None or y - style["gap"] < 0.06:
-                if fig is not None:
-                    pdf.savefig(fig, bbox_inches="tight")
-                    plt.close(fig)
-                fig, ax, y = new_page()
-            if item["text"]:
+            if subtitle:
                 ax.text(
                     0.06,
-                    y,
-                    item["text"],
-                    fontsize=style["fontsize"],
-                    fontweight=style["weight"],
-                    color=style["color"],
+                    0.915,
+                    subtitle,
+                    fontsize=10.3,
+                    color="#5B6577",
                     va="top",
                     ha="left",
                     family="DejaVu Sans",
                 )
-            y -= style["gap"]
+            ax.add_line(plt.Line2D([0.06, 0.94], [0.892, 0.892], color="#D8DEE9", linewidth=1.4))
 
-        if fig is None:
-            fig, ax, y = new_page()
+        def add_block(ax, title, lines, *, x, y, width):
+            ax.text(
+                x,
+                y,
+                title,
+                fontsize=11.3,
+                fontweight="bold",
+                color="#2F5D8C",
+                va="top",
+                ha="left",
+                family="DejaVu Sans",
+            )
+            current_y = y - 0.03
+            for line in lines:
+                wrapped = textwrap.wrap(line, width=max(24, int(width * 94))) or [""]
+                for chunk in wrapped:
+                    ax.text(
+                        x,
+                        current_y,
+                        chunk,
+                        fontsize=9.4,
+                        color="#22303C",
+                        va="top",
+                        ha="left",
+                        family="DejaVu Sans",
+                    )
+                    current_y -= 0.024
+                current_y -= 0.004
+            return current_y
+
+        fig, ax = new_page()
+        add_header(
+            ax,
+            f"{dataset_id} | {_tool_label(tool_id)}",
+            f"{mirna or 'NA'} | {perturbation or 'NA'} | {cell_line or 'NA'}",
+        )
+        summary_cards = [
+            ("Coverage", f"{coverage_info['coverage']:.1%}"),
+            ("Positive cov", f"{coverage_info['positive_coverage']:.1%}"),
+            ("APS", f"{metrics['aps']:.3f}"),
+            ("AUROC", f"{metrics['auroc']:.3f}"),
+        ]
+        for (label, value), x in zip(summary_cards, [0.06, 0.29, 0.52, 0.75]):
+            ax.text(
+                x,
+                0.84,
+                f"{label}\n{value}",
+                fontsize=10.4,
+                fontweight="bold",
+                color="#17324D",
+                va="top",
+                ha="left",
+                family="DejaVu Sans",
+                bbox={
+                    "boxstyle": "round,pad=0.45",
+                    "facecolor": "#F5F8FC",
+                    "edgecolor": "#D8E2EF",
+                },
+            )
+        add_block(
+            ax,
+            "Evaluation Rule",
+            [
+                (
+                    f"GT positives: FDR < {fdr_threshold} and perturbation-aware effect > {abs_logfc_threshold} "
+                    "(-logFC for OE, +logFC for KO/KD)"
+                ),
+                "Predictor scores are aligned so that higher always means stronger before evaluation.",
+                "Pearson and Spearman compare score against perturbation-aware expected effect.",
+                "APS, PR-AUC, AUROC, and GSEA are computed on scored rows only.",
+            ],
+            x=0.06,
+            y=0.69,
+            width=0.40,
+        )
+        add_block(
+            ax,
+            "Coverage Details",
+            [
+                f"rows_total: {int(coverage_info['rows_total'])}",
+                f"rows_scored: {int(coverage_info['rows_scored'])}",
+                f"rows_missing_score: {int(coverage_info['rows_missing_score'])}",
+                f"positives_total: {int(coverage_info['positives_total'])}",
+                f"positives_scored: {int(coverage_info['positives_scored'])}",
+            ],
+            x=0.54,
+            y=0.69,
+            width=0.38,
+        )
+        add_block(
+            ax,
+            "Metric Details",
+            [
+                f"Pearson: {metrics['pearson']:.3f}",
+                f"Spearman: {metrics['spearman']:.3f}",
+                f"APS: {metrics['aps']:.3f}",
+                f"PR-AUC: {metrics['pr_auc']:.3f}",
+                f"AUROC: {metrics['auroc']:.3f}",
+            ],
+            x=0.06,
+            y=0.42,
+            width=0.40,
+        )
+        add_block(
+            ax,
+            "Provenance",
+            [
+                f"GEO accession: {geo_accession or 'NA'}",
+                f"Predictor source: {predictor_output_path or 'NA'}",
+            ],
+            x=0.54,
+            y=0.42,
+            width=0.38,
+        )
         pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
 
-        if scatter_png is not None and pathlib.Path(scatter_png).is_file():
-            image = plt.imread(scatter_png)
+        plot_specs = [
+            ("Score vs expected effect", scatter_png),
+            ("Precision-recall curve", pr_curve_png),
+            ("GSEA enrichment", gsea_png),
+        ]
+        existing_plots = [(label, path) for label, path in plot_specs if path and pathlib.Path(path).is_file()]
+        if existing_plots:
             fig, ax = plt.subplots(figsize=(8.27, 11.69))
             ax.axis("off")
             fig.patch.set_facecolor("white")
             ax.text(
                 0.06,
                 0.975,
-                f"{title} | Scatter plot",
-                fontsize=12,
+                f"{dataset_id} | {_tool_label(tool_id)} | Plots",
+                fontsize=13,
                 fontweight="bold",
                 color="#17324D",
                 va="top",
                 ha="left",
             )
-            ax.imshow(image)
-            ax.set_position([0.08, 0.08, 0.84, 0.82])
+            ax.text(
+                0.06,
+                0.945,
+                "These are the main per-tool visuals for this dataset: ranking quality, classification quality, and enrichment behavior.",
+                fontsize=9.2,
+                color="#22303C",
+                va="top",
+                ha="left",
+                wrap=True,
+            )
+            layout_specs = [
+                ("Score vs expected effect", [0.08, 0.55, 0.84, 0.28]),
+                ("Precision-recall curve", [0.08, 0.12, 0.40, 0.25]),
+                ("GSEA enrichment", [0.52, 0.12, 0.40, 0.25]),
+            ]
+            for label, bounds in layout_specs:
+                match = next((path for plot_label, path in existing_plots if plot_label == label), None)
+                if match is None:
+                    continue
+                image = plt.imread(match)
+                fig.text(
+                    bounds[0],
+                    bounds[1] + bounds[3] + 0.015,
+                    label,
+                    fontsize=10,
+                    fontweight="bold",
+                    color="#2F5D8C",
+                    ha="left",
+                    va="bottom",
+                )
+                image_ax = fig.add_axes(bounds)
+                image_ax.imshow(image)
+                image_ax.axis("off")
             pdf.savefig(fig, bbox_inches="tight")
             plt.close(fig)
 
@@ -1053,28 +1243,45 @@ def _render_markdown_pdf(markdown_text, *, pdf_path, title, scatter_png=None):
 def _write_tool_report(
     *, dataset_id, mirna, cell_line, perturbation, geo_accession,
     de_table_path, joined_tsv,
-    tool_id, predictor_output_path, metrics, markdown_path, pdf_path, coverage_info, scatter_png,
+    tool_id, predictor_output_path, metrics, markdown_path, pdf_path, coverage_info,
+    scatter_png, pr_curve_png, gsea_png, fdr_threshold, abs_logfc_threshold,
 ):
+    report_dir = markdown_path.parent
     markdown_text = _build_tool_report_markdown(
         dataset_id=dataset_id,
         mirna=mirna,
         cell_line=cell_line,
         perturbation=perturbation,
         geo_accession=geo_accession,
-        de_table_path=de_table_path,
-        joined_tsv=joined_tsv,
+        de_table_path=_relative_report_path(de_table_path, report_dir=report_dir),
+        joined_tsv=_relative_report_path(joined_tsv, report_dir=report_dir),
         tool_id=tool_id,
-        predictor_output_path=predictor_output_path,
+        predictor_output_path=_relative_report_path(predictor_output_path, report_dir=report_dir),
         metrics=metrics,
         coverage_info=coverage_info,
-        scatter_png=scatter_png,
+        scatter_png=_relative_report_path(scatter_png, report_dir=report_dir),
+        pr_curve_png=_relative_report_path(pr_curve_png, report_dir=report_dir),
+        gsea_png=_relative_report_path(gsea_png, report_dir=report_dir),
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
     )
     markdown_path.write_text(markdown_text + "\n", encoding="utf-8")
-    _render_markdown_pdf(
-        markdown_text,
+    _render_tool_report_pdf(
         pdf_path=pdf_path,
-        title=f"{dataset_id} | {_tool_label(tool_id)}",
+        dataset_id=dataset_id,
+        tool_id=tool_id,
+        mirna=mirna,
+        cell_line=cell_line,
+        perturbation=perturbation,
+        geo_accession=geo_accession,
+        predictor_output_path=_relative_report_path(predictor_output_path, report_dir=report_dir),
+        metrics=metrics,
+        coverage_info=coverage_info,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
         scatter_png=scatter_png,
+        pr_curve_png=pr_curve_png,
+        gsea_png=gsea_png,
     )
 
 
@@ -1184,7 +1391,12 @@ def evaluate_joined_dataframe(
             tool_id=tool_id,
             predictor_output_path=(predictor_output_paths or {}).get(tool_id),
             metrics=metrics, markdown_path=report_md, pdf_path=report_pdf,
-            coverage_info=coverage_info, scatter_png=scatter_png,
+            coverage_info=coverage_info,
+            scatter_png=scatter_png,
+            pr_curve_png=pr_curve_png,
+            gsea_png=gsea_png,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
         )
         _emit_log(
             logger,
@@ -1259,6 +1471,7 @@ def evaluate_joined_dataframe(
         common_comparisons = [
             {
                 "tool_id": tool_id,
+                "gene_id": common_pr["gene_id"],
                 "y_true": common_pr["is_positive"],
                 "y_score": common_pr[score_col],
                 "coverage": coverage_by_tool.get(tool_id, float("nan")),
@@ -1343,7 +1556,15 @@ def _plot_cross_dataset_metric_heatmap(summary_df, *, metric_names, out_path):
     fig, ax = plt.subplots(
         figsize=(max(5.6, len(tool_ids) * 1.25), max(4.8, len(metric_names) * 1.0))
     )
-    image = ax.imshow(matrix, cmap="YlGnBu", vmin=0, vmax=1, aspect="auto")
+    if float(np.nanmin(matrix)) < 0.0:
+        image = ax.imshow(
+            matrix,
+            cmap="coolwarm",
+            norm=TwoSlopeNorm(vmin=-1.0, vcenter=0.0, vmax=1.0),
+            aspect="auto",
+        )
+    else:
+        image = ax.imshow(matrix, cmap="YlGnBu", vmin=0, vmax=1, aspect="auto")
     ax.set_xticks(range(len(tool_ids)))
     ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
     ax.set_yticks(range(len(metric_names)))
@@ -1436,6 +1657,9 @@ def _plot_cross_dataset_metric_distributions(metrics_df, *, metric_names, out_pa
         loc="left",
         pad=14,
     )
+    for ax, metric_name in zip(axes, metric_names):
+        ymin, ymax = _metric_plot_limits(metric_name)
+        ax.set_ylim(ymin, ymax)
     _save_figure(fig, out_path)
 
 
@@ -1597,17 +1821,9 @@ def write_cross_dataset_summaries(
     summary.to_csv(summary_path, sep="\t", index=False)
     _emit_log(logger, f"  Wrote cross-dataset summary table: {summary_path}")
 
-    heatmap_path = plots_dir / "cross_dataset_metric_heatmap.png"
-    _plot_cross_dataset_metric_heatmap(summary, metric_names=metric_names, out_path=heatmap_path)
-    _emit_log(logger, f"  Wrote cross-dataset metric heatmap: {heatmap_path}")
-
     distributions_path = plots_dir / "cross_dataset_metric_distributions.png"
     _plot_cross_dataset_metric_distributions(metrics_df, metric_names=metric_names, out_path=distributions_path)
     _emit_log(logger, f"  Wrote cross-dataset metric distributions: {distributions_path}")
-
-    coverage_scatter_path = plots_dir / "coverage_vs_performance.png"
-    _plot_coverage_vs_performance(summary, out_path=coverage_scatter_path)
-    _emit_log(logger, f"  Wrote coverage vs performance plot: {coverage_scatter_path}")
 
     positive_coverage_scatter_path = plots_dir / "positive_coverage_vs_performance.png"
     _plot_positive_coverage_vs_performance(summary, out_path=positive_coverage_scatter_path)
@@ -1633,9 +1849,7 @@ def write_cross_dataset_summaries(
             "cross_dataset_predictor_summary": str(summary_path),
         },
         "plots": {
-            "cross_dataset_metric_heatmap": str(heatmap_path),
             "cross_dataset_metric_distributions": str(distributions_path),
-            "coverage_vs_performance": str(coverage_scatter_path),
             "positive_coverage_vs_performance": str(positive_coverage_scatter_path),
             **(
                 {"positive_background_rank_distributions": str(rank_distribution_path)}
