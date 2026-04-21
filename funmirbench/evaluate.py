@@ -452,6 +452,54 @@ def _plot_single_predictor_pr_curve(item, *, dataset_id, out_path):
     _save_figure(fig, out_path)
 
 
+def _plot_single_predictor_roc_curve(item, *, dataset_id, out_path):
+    fpr, tpr, _ = roc_curve(item["y_true"], item["y_score"])
+    auroc = roc_auc_score(item["y_true"], item["y_score"])
+
+    fig, ax = plt.subplots(figsize=(6.1, 4.9))
+    _style_axes(ax, grid_axis="both")
+    ax.plot(
+        fpr,
+        tpr,
+        linewidth=2.2,
+        color=CURVE_COLORS[0],
+        label=f"AUROC {auroc:.3f}",
+    )
+    ax.plot(
+        [0, 1],
+        [0, 1],
+        linestyle="--",
+        linewidth=1.4,
+        color=NEUTRAL_COLOR,
+        label="random",
+    )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("False positive rate", fontsize=10)
+    ax.set_ylabel("True positive rate", fontsize=10)
+    ax.set_title(
+        f"{_tool_label(item['tool_id'])} ROC",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        (
+            f"{_dataset_caption(dataset_id)}"
+            f"  |  n={len(item['y_true']):,}"
+            f"  |  positives={int(item['y_true'].sum()):,}"
+            f"  |  cov={item['coverage']:.0%}"
+        ),
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(frameon=False, fontsize=8.8, loc="lower right")
+    _save_figure(fig, out_path)
+
+
 def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
     fig, ax = plt.subplots(figsize=(6.4, 5.1))
     _style_axes(ax, grid_axis="both")
@@ -501,6 +549,51 @@ def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
     ax.legend(
         frameon=False,
         fontsize=8.8,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    _save_figure(fig, out_path)
+
+
+def _plot_predictor_pr_curves_own_scored(comparisons, *, dataset_id, out_path):
+    fig, ax = plt.subplots(figsize=(6.6, 5.2))
+    _style_axes(ax, grid_axis="both")
+    for index, item in enumerate(comparisons):
+        precision, recall, _ = precision_recall_curve(item["y_true"], item["y_score"])
+        pr_auc = auc(recall, precision)
+        baseline = float(item["y_true"].mean())
+        ax.plot(
+            recall,
+            precision,
+            label=(
+                f"{_tool_label(item['tool_id'])} "
+                f"({pr_auc:.3f}, base {baseline:.3f})"
+            ),
+            linewidth=2.2,
+            color=CURVE_COLORS[index % len(CURVE_COLORS)],
+        )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("Recall", fontsize=10)
+    ax.set_ylabel("Precision", fontsize=10)
+    ax.set_title(
+        "Precision-recall comparison (each predictor's scored pairs)",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        f"{_dataset_caption(dataset_id)}  |  own scored sets",
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(
+        frameon=False,
+        fontsize=8.4,
         loc="upper left",
         bbox_to_anchor=(1.02, 1.0),
         borderaxespad=0.0,
@@ -946,7 +1039,7 @@ def _build_tool_report_markdown(
     *, dataset_id, mirna, cell_line, perturbation, geo_accession,
     de_table_path, joined_tsv,
     tool_id, predictor_output_path, metrics, coverage_info,
-    scatter_png, pr_curve_png, gsea_png,
+    scatter_png, pr_curve_png, roc_curve_png, gsea_png,
     fdr_threshold, abs_logfc_threshold,
 ):
     coverage_percent = coverage_info["coverage"] * 100.0
@@ -1010,6 +1103,7 @@ def _build_tool_report_markdown(
         "## Included Plots",
         f"- score_vs_expected_effect: `{scatter_png}`",
         f"- precision_recall_curve: `{pr_curve_png}`",
+        f"- roc_curve: `{roc_curve_png}`",
         f"- gsea_enrichment: `{gsea_png}`",
         "",
     ]
@@ -1032,6 +1126,7 @@ def _render_tool_report_pdf(
     abs_logfc_threshold,
     scatter_png=None,
     pr_curve_png=None,
+    roc_curve_png=None,
     gsea_png=None,
 ):
     with PdfPages(pdf_path) as pdf:
@@ -1186,6 +1281,7 @@ def _render_tool_report_pdf(
         plot_specs = [
             ("Score vs expected effect", scatter_png),
             ("Precision-recall curve", pr_curve_png),
+            ("ROC curve", roc_curve_png),
             ("GSEA enrichment", gsea_png),
         ]
         existing_plots = [(label, path) for label, path in plot_specs if path and pathlib.Path(path).is_file()]
@@ -1214,9 +1310,10 @@ def _render_tool_report_pdf(
                 wrap=True,
             )
             layout_specs = [
-                ("Score vs expected effect", [0.08, 0.55, 0.84, 0.28]),
-                ("Precision-recall curve", [0.08, 0.12, 0.40, 0.25]),
-                ("GSEA enrichment", [0.52, 0.12, 0.40, 0.25]),
+                ("Score vs expected effect", [0.08, 0.58, 0.84, 0.24]),
+                ("Precision-recall curve", [0.06, 0.12, 0.27, 0.25]),
+                ("ROC curve", [0.365, 0.12, 0.27, 0.25]),
+                ("GSEA enrichment", [0.67, 0.12, 0.27, 0.25]),
             ]
             for label, bounds in layout_specs:
                 match = next((path for plot_label, path in existing_plots if plot_label == label), None)
@@ -1244,7 +1341,7 @@ def _write_tool_report(
     *, dataset_id, mirna, cell_line, perturbation, geo_accession,
     de_table_path, joined_tsv,
     tool_id, predictor_output_path, metrics, markdown_path, pdf_path, coverage_info,
-    scatter_png, pr_curve_png, gsea_png, fdr_threshold, abs_logfc_threshold,
+    scatter_png, pr_curve_png, roc_curve_png, gsea_png, fdr_threshold, abs_logfc_threshold,
 ):
     report_dir = markdown_path.parent
     markdown_text = _build_tool_report_markdown(
@@ -1261,6 +1358,7 @@ def _write_tool_report(
         coverage_info=coverage_info,
         scatter_png=_relative_report_path(scatter_png, report_dir=report_dir),
         pr_curve_png=_relative_report_path(pr_curve_png, report_dir=report_dir),
+        roc_curve_png=_relative_report_path(roc_curve_png, report_dir=report_dir),
         gsea_png=_relative_report_path(gsea_png, report_dir=report_dir),
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
@@ -1281,6 +1379,7 @@ def _write_tool_report(
         abs_logfc_threshold=abs_logfc_threshold,
         scatter_png=scatter_png,
         pr_curve_png=pr_curve_png,
+        roc_curve_png=roc_curve_png,
         gsea_png=gsea_png,
     )
 
@@ -1348,6 +1447,7 @@ def evaluate_joined_dataframe(
         scatter_png = tool_plots_dir / "score_vs_expected_effect.png"
         gsea_png = tool_plots_dir / "gsea_enrichment.png"
         pr_curve_png = tool_plots_dir / "precision_recall_curve.png"
+        roc_curve_png = tool_plots_dir / "roc_curve.png"
         pearson, spearman = _plot_scatter_with_correlation(
             scored,
             score_col=score_col,
@@ -1373,6 +1473,16 @@ def evaluate_joined_dataframe(
             },
             dataset_id=dataset_id,
             out_path=pr_curve_png,
+        )
+        _plot_single_predictor_roc_curve(
+            {
+                "tool_id": tool_id,
+                "y_true": scored["is_positive"],
+                "y_score": scored[score_col],
+                "coverage": coverage_info["coverage"],
+            },
+            dataset_id=dataset_id,
+            out_path=roc_curve_png,
         )
 
         report_md = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.md"
@@ -1400,6 +1510,7 @@ def evaluate_joined_dataframe(
             coverage_info=coverage_info,
             scatter_png=scatter_png,
             pr_curve_png=pr_curve_png,
+            roc_curve_png=roc_curve_png,
             gsea_png=gsea_png,
             fdr_threshold=fdr_threshold,
             abs_logfc_threshold=abs_logfc_threshold,
@@ -1436,6 +1547,7 @@ def evaluate_joined_dataframe(
         dataset_plots[f"{tool_id}_scatter"] = str(scatter_png)
         dataset_plots[f"{tool_id}_gsea_enrichment"] = str(gsea_png)
         dataset_plots[f"{tool_id}_pr_curve"] = str(pr_curve_png)
+        dataset_plots[f"{tool_id}_roc_curve"] = str(roc_curve_png)
 
     heatmap_png = heatmap_plots_dir / "algorithms_vs_genes.png"
     _plot_algorithms_vs_genes_heatmap(
@@ -1465,6 +1577,7 @@ def evaluate_joined_dataframe(
 
     if len(score_cols) >= 2:
         comparison_pr_png = comparison_plots_dir / "precision_recall_common.png"
+        comparison_pr_all_png = comparison_plots_dir / "precision_recall_all_scored.png"
         comparison_roc_png = comparison_plots_dir / "roc_common.png"
         comparison_gsea_png = comparison_plots_dir / "gsea_common.png"
         common_pr = _prepare_common_scored_frame(
@@ -1489,6 +1602,11 @@ def evaluate_joined_dataframe(
             dataset_id=dataset_id,
             out_path=comparison_pr_png,
         )
+        _plot_predictor_pr_curves_own_scored(
+            comparisons,
+            dataset_id=dataset_id,
+            out_path=comparison_pr_all_png,
+        )
         _plot_predictor_roc_curves(
             common_comparisons,
             dataset_id=dataset_id,
@@ -1500,6 +1618,7 @@ def evaluate_joined_dataframe(
             out_path=comparison_gsea_png,
         )
         dataset_plots["predictor_pr_curves"] = str(comparison_pr_png)
+        dataset_plots["predictor_pr_curves_all_scored"] = str(comparison_pr_all_png)
         dataset_plots["predictor_roc_curves"] = str(comparison_roc_png)
         dataset_plots["predictor_gsea_curves"] = str(comparison_gsea_png)
         _emit_log(logger, f"    Dataset: {dataset_id} | wrote PR/ROC/GSEA comparison plots")

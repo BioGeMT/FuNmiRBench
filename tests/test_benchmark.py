@@ -205,7 +205,7 @@ def test_example_end_to_end(tmp_path):
     assert summary["tool_ids"] == ["random", "cheating"]
 
     plots = list(out_dir.rglob("*.png"))
-    assert len(plots) == 39
+    assert len(plots) == 48
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "score_vs_expected_effect.png"
     ).is_file()
@@ -216,7 +216,13 @@ def test_example_end_to_end(tmp_path):
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "precision_recall_curve.png"
     ).is_file()
     assert (
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "roc_curve.png"
+    ).is_file()
+    assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "cheating" / "precision_recall_curve.png"
+    ).is_file()
+    assert (
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "cheating" / "roc_curve.png"
     ).is_file()
     assert (
         out_dir / "plots" / "combined" / "metrics" / "cross_dataset_metric_distributions.png"
@@ -234,14 +240,14 @@ def test_example_end_to_end(tmp_path):
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "precision_recall_common.png"
     ).is_file()
     assert (
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "precision_recall_all_scored.png"
+    ).is_file()
+    assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "roc_common.png"
     ).is_file()
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "gsea_common.png"
     ).is_file()
-    assert not (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "cheating_roc_curve.png"
-    ).exists()
     assert stale_plot.exists()
     assert stale_report.exists()
 

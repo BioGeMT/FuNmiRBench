@@ -209,21 +209,23 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
     assert "mock_scatter" in result["plots"]
     assert "mock_gsea_enrichment" in result["plots"]
     assert "mock_pr_curve" in result["plots"]
+    assert "mock_roc_curve" in result["plots"]
     assert "cheating_pr_curve" in result["plots"]
     assert "predictor_pr_curves" in result["plots"]
+    assert "predictor_pr_curves_all_scored" in result["plots"]
     assert "predictor_roc_curves" in result["plots"]
     assert "predictor_gsea_curves" in result["plots"]
     assert "top_10pct_positive_heatmap" in result["plots"]
-    assert "mock_roc_curve" not in result["plots"]
     assert (tmp_path / "plots" / "predictors" / "mock" / "score_vs_expected_effect.png").is_file()
     assert (tmp_path / "plots" / "predictors" / "mock" / "gsea_enrichment.png").is_file()
     assert (tmp_path / "plots" / "predictors" / "mock" / "precision_recall_curve.png").is_file()
+    assert (tmp_path / "plots" / "predictors" / "mock" / "roc_curve.png").is_file()
     assert (tmp_path / "plots" / "predictors" / "cheating" / "precision_recall_curve.png").is_file()
     assert (tmp_path / "plots" / "comparisons" / "precision_recall_common.png").is_file()
+    assert (tmp_path / "plots" / "comparisons" / "precision_recall_all_scored.png").is_file()
     assert (tmp_path / "plots" / "comparisons" / "roc_common.png").is_file()
     assert (tmp_path / "plots" / "comparisons" / "gsea_common.png").is_file()
     assert (tmp_path / "plots" / "heatmaps" / "top_10pct_positive_genes.png").is_file()
-    assert not (tmp_path / "plots" / "mock_roc_curve.png").exists()
 
 
 def test_cross_predictor_plots_use_common_scored_rows(tmp_path, monkeypatch):
@@ -243,6 +245,7 @@ def test_cross_predictor_plots_use_common_scored_rows(tmp_path, monkeypatch):
     monkeypatch.setattr(evaluate_module, "_plot_scatter_with_correlation", lambda *args, **kwargs: (0.0, 0.0))
     monkeypatch.setattr(evaluate_module, "_plot_gsea_enrichment", lambda *args, **kwargs: 0.0)
     monkeypatch.setattr(evaluate_module, "_plot_single_predictor_pr_curve", lambda *args, **kwargs: None)
+    monkeypatch.setattr(evaluate_module, "_plot_single_predictor_roc_curve", lambda *args, **kwargs: None)
     monkeypatch.setattr(evaluate_module, "_plot_algorithms_vs_genes_heatmap", lambda *args, **kwargs: None)
     monkeypatch.setattr(evaluate_module, "_plot_top_positive_heatmap", lambda *args, **kwargs: False)
     monkeypatch.setattr(evaluate_module, "_plot_predictor_correlation_heatmap", lambda *args, **kwargs: pd.DataFrame())
@@ -257,7 +260,11 @@ def test_cross_predictor_plots_use_common_scored_rows(tmp_path, monkeypatch):
     def capture_gsea(comparisons, *, dataset_id, out_path):
         captured["gsea"] = comparisons
 
+    def capture_pr_all(comparisons, *, dataset_id, out_path):
+        captured["pr_all"] = comparisons
+
     monkeypatch.setattr(evaluate_module, "_plot_predictor_pr_curves", capture_pr)
+    monkeypatch.setattr(evaluate_module, "_plot_predictor_pr_curves_own_scored", capture_pr_all)
     monkeypatch.setattr(evaluate_module, "_plot_predictor_roc_curves", capture_roc)
     monkeypatch.setattr(evaluate_module, "_plot_predictor_gsea_curves", capture_gsea)
 
@@ -270,7 +277,7 @@ def test_cross_predictor_plots_use_common_scored_rows(tmp_path, monkeypatch):
         predictor_top_fraction=0.10,
     )
 
-    assert set(captured) == {"pr", "roc", "gsea"}
+    assert set(captured) == {"pr", "pr_all", "roc", "gsea"}
     for key in ("pr", "roc", "gsea"):
         comparisons = captured[key]
         assert len(comparisons) == 2
@@ -278,6 +285,12 @@ def test_cross_predictor_plots_use_common_scored_rows(tmp_path, monkeypatch):
         assert all(int(item["y_true"].sum()) == 1 for item in comparisons)
         assert comparisons[0]["y_true"].tolist() == comparisons[1]["y_true"].tolist()
         assert [item["tool_id"] for item in comparisons] == ["cheating", "mock"]
+    own_comparisons = captured["pr_all"]
+    assert len(own_comparisons) == 2
+    assert sorted((item["tool_id"], len(item["y_true"])) for item in own_comparisons) == [
+        ("cheating", 3),
+        ("mock", 3),
+    ]
 
 
 def test_top_fraction_mask_uses_exact_top_k_with_deterministic_ties():
@@ -315,7 +328,9 @@ def test_per_dataset_visuals_use_local_ranks_not_global_ranks(tmp_path, monkeypa
     monkeypatch.setattr(evaluate_module, "_plot_scatter_with_correlation", lambda *args, **kwargs: (0.0, 0.0))
     monkeypatch.setattr(evaluate_module, "_plot_gsea_enrichment", lambda *args, **kwargs: 0.0)
     monkeypatch.setattr(evaluate_module, "_plot_single_predictor_pr_curve", lambda *args, **kwargs: None)
+    monkeypatch.setattr(evaluate_module, "_plot_single_predictor_roc_curve", lambda *args, **kwargs: None)
     monkeypatch.setattr(evaluate_module, "_plot_predictor_pr_curves", lambda *args, **kwargs: None)
+    monkeypatch.setattr(evaluate_module, "_plot_predictor_pr_curves_own_scored", lambda *args, **kwargs: None)
     monkeypatch.setattr(evaluate_module, "_plot_predictor_roc_curves", lambda *args, **kwargs: None)
     monkeypatch.setattr(evaluate_module, "_plot_predictor_gsea_curves", lambda *args, **kwargs: None)
     monkeypatch.setattr(evaluate_module, "_write_tool_report", lambda *args, **kwargs: None)
@@ -395,6 +410,7 @@ def test_evaluate_uses_only_existing_pairs_and_reports_coverage(tmp_path):
     assert "positives_scored: `2`" in report_text
     assert "positive_coverage: `0.666667`" in report_text
     assert "precision_recall_curve:" in report_text
+    assert "roc_curve:" in report_text
     assert "gsea_enrichment:" in report_text
 
 
