@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.colors import ListedColormap, TwoSlopeNorm
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap, TwoSlopeNorm
 from matplotlib.patches import Rectangle
 from sklearn.metrics import (
     auc,
@@ -30,8 +30,12 @@ GRID_COLOR = "#D8DEE9"
 SCORE_CMAP = ListedColormap(
     ["#F6F7FB", "#C5D7EE", "#7FA8D8", "#2F5D8C", "#17324D"]
 )
+PREDICTOR_HEATMAP_CMAP = LinearSegmentedColormap.from_list(
+    "predictor_heatmap",
+    ["#4464D8", "#7EA6E7", "#8CC9B0", "#4AA36B", "#1E6A45"],
+)
 GT_CMAP = ListedColormap(["#EEF1F6", "#243B53"])
-MISSING_COLOR = "#EEF2F7"
+MISSING_COLOR = "#D7DEE8"
 CURVE_COLORS = [
     "#1F77B4",
     "#D1495B",
@@ -135,6 +139,21 @@ def _wrap_axis_label(text, *, width=14):
     return "\n".join(wrapped)
 
 
+def _nice_symmetric_limit(values, *, floor=1.0):
+    raw = max(float(np.nanmax(np.abs(values))), float(floor))
+    if raw <= 1.0:
+        step = 0.25
+    elif raw <= 2.0:
+        step = 0.5
+    elif raw <= 5.0:
+        step = 1.0
+    elif raw <= 10.0:
+        step = 2.0
+    else:
+        step = 5.0
+    return math.ceil(raw / step) * step
+
+
 def _add_figure_heading(fig, *, title, subtitle, x=0.08, title_y=0.975, subtitle_y=0.93):
     fig.text(
         x,
@@ -155,6 +174,19 @@ def _add_figure_heading(fig, *, title, subtitle, x=0.08, title_y=0.975, subtitle
         fontsize=8.6,
         color=NEUTRAL_COLOR,
     )
+
+
+def _add_horizontal_colorbar(fig, *, mappable, anchor_ax, label, ticks=None, height=0.014, pad=0.05):
+    pos = anchor_ax.get_position()
+    cax = fig.add_axes([pos.x0, pos.y0 - pad, pos.width, height])
+    cbar = fig.colorbar(
+        mappable,
+        cax=cax,
+        orientation="horizontal",
+        ticks=ticks,
+    )
+    cbar.set_label(label)
+    return cbar
 
 
 def _style_axes(ax, *, grid_axis="y"):
@@ -875,14 +907,14 @@ def _plot_algorithms_vs_genes_heatmap(
         }
     )
 
-    max_abs_logfc = max(float(work["abs_logFC"].max()), 1.0)
+    max_abs_logfc = _nice_symmetric_limit(work["logFC"].to_numpy(dtype=float), floor=1.0)
     figure_height = max(5.6, min(12, 0.025 * len(work)))
     figure_width = max(10.5, 5.2 + len(tool_ids) * 1.0)
     fig, axes = plt.subplots(
         1, 3, figsize=(figure_width, figure_height),
         gridspec_kw={"width_ratios": [0.5, 0.6, max(2.8, len(tool_ids) * 1.25)]},
     )
-    fig.subplots_adjust(top=0.8, bottom=0.14, wspace=0.22)
+    fig.subplots_adjust(top=0.86, bottom=0.2, wspace=0.22)
     for axis in axes:
         axis.set_facecolor("white")
         axis.spines["top"].set_visible(False)
@@ -892,27 +924,33 @@ def _plot_algorithms_vs_genes_heatmap(
         axis.tick_params(length=0, labelsize=8)
 
     gt_image = axes[0].imshow(
-        work["is_positive"].to_numpy().reshape(-1, 1), aspect="auto", cmap=GT_CMAP, vmin=0, vmax=1
+        work["is_positive"].to_numpy().reshape(-1, 1),
+        aspect="auto",
+        cmap=GT_CMAP,
+        vmin=0,
+        vmax=1,
+        interpolation="nearest",
     )
-    axes[0].set_title("GT", fontsize=10, fontweight="semibold")
-    axes[0].set_xticks([0])
-    axes[0].set_xticklabels(["positive"], rotation=90)
+    axes[0].set_title("GT status", fontsize=10, fontweight="semibold")
+    axes[0].set_xticks([])
 
     logfc_image = axes[1].imshow(
         work["logFC"].to_numpy().reshape(-1, 1), aspect="auto", cmap="coolwarm",
         norm=TwoSlopeNorm(vmin=-max_abs_logfc, vcenter=0.0, vmax=max_abs_logfc),
+        interpolation="nearest",
     )
     axes[1].set_title("logFC", fontsize=10, fontweight="semibold")
-    axes[1].set_xticks([0])
-    axes[1].set_xticklabels(["logFC"], rotation=90)
+    axes[1].set_xticks([])
 
-    score_cmap = SCORE_CMAP.with_extremes(bad=MISSING_COLOR)
+    score_cmap = PREDICTOR_HEATMAP_CMAP.copy()
+    score_cmap.set_bad(MISSING_COLOR)
     heat = axes[2].imshow(
         np.ma.masked_invalid(rank_frame.to_numpy(dtype=float)),
         aspect="auto",
         cmap=score_cmap,
         vmin=0,
         vmax=1,
+        interpolation="nearest",
     )
     axes[2].set_title("Predictor scores", fontsize=10, fontweight="semibold")
     axes[2].set_xticks(range(len(tool_ids)))
@@ -938,26 +976,28 @@ def _plot_algorithms_vs_genes_heatmap(
         title="Gene-level benchmarking overview",
         subtitle=(
             f"{_dataset_caption(dataset_id)}  |  {len(work):,} genes ordered by perturbation-aware logFC"
-            "  |  blank cells indicate missing predictor pairs"
+            "  |  dark GT = benchmark positive  |  gray cells indicate missing predictor pairs"
         ),
         title_y=0.975,
         subtitle_y=0.935,
     )
-    fig.colorbar(
-        logfc_image,
-        ax=axes[1],
-        orientation="horizontal",
-        fraction=0.055,
-        pad=0.06,
-        label="logFC",
+    _add_horizontal_colorbar(
+        fig,
+        mappable=logfc_image,
+        anchor_ax=axes[1],
+        label="observed logFC",
+        ticks=[-max_abs_logfc, 0.0, max_abs_logfc],
+        height=0.014,
+        pad=0.055,
     )
-    fig.colorbar(
-        heat,
-        ax=axes[2],
-        orientation="horizontal",
-        fraction=0.04,
-        pad=0.1,
+    _add_horizontal_colorbar(
+        fig,
+        mappable=heat,
+        anchor_ax=axes[2],
         label="dataset-local rank percentile",
+        ticks=[0.0, 0.25, 0.5, 0.75, 1.0],
+        height=0.014,
+        pad=0.055,
     )
     _save_figure(fig, out_path)
 
@@ -988,14 +1028,14 @@ def _plot_top_positive_heatmap(
             for tool_id, rank_col in zip(tool_ids, rank_cols)
         }
     )
-    max_abs_logfc = max(float(work["abs_logFC"].max()), 1.0)
+    max_abs_logfc = _nice_symmetric_limit(work["logFC"].to_numpy(dtype=float), floor=1.0)
     figure_height = max(4.2, min(9.0, 0.22 * len(work)))
     figure_width = max(10.5, 5.2 + len(tool_ids) * 1.0)
     fig, axes = plt.subplots(
         1, 2, figsize=(figure_width, figure_height),
         gridspec_kw={"width_ratios": [0.7, max(2.8, len(tool_ids) * 1.25)]},
     )
-    fig.subplots_adjust(top=0.78, bottom=0.22, wspace=0.2)
+    fig.subplots_adjust(top=0.84, bottom=0.28, wspace=0.2)
     for axis in axes:
         axis.set_facecolor("white")
         axis.spines["top"].set_visible(False)
@@ -1009,18 +1049,20 @@ def _plot_top_positive_heatmap(
         aspect="auto",
         cmap="coolwarm",
         norm=TwoSlopeNorm(vmin=-max_abs_logfc, vcenter=0.0, vmax=max_abs_logfc),
+        interpolation="nearest",
     )
     axes[0].set_title("logFC", fontsize=10, fontweight="semibold")
-    axes[0].set_xticks([0])
-    axes[0].set_xticklabels(["logFC"], rotation=90)
+    axes[0].set_xticks([])
 
-    score_cmap = SCORE_CMAP.with_extremes(bad=MISSING_COLOR)
+    score_cmap = PREDICTOR_HEATMAP_CMAP.copy()
+    score_cmap.set_bad(MISSING_COLOR)
     heat = axes[1].imshow(
         np.ma.masked_invalid(rank_frame.to_numpy(dtype=float)),
         aspect="auto",
         cmap=score_cmap,
         vmin=0,
         vmax=1,
+        interpolation="nearest",
     )
     axes[1].set_title("Predictor scores", fontsize=10, fontweight="semibold")
     axes[1].set_xticks(range(len(tool_ids)))
@@ -1046,21 +1088,23 @@ def _plot_top_positive_heatmap(
         title_y=0.975,
         subtitle_y=0.935,
     )
-    fig.colorbar(
-        logfc_image,
-        ax=axes[0],
-        orientation="horizontal",
-        fraction=0.055,
+    _add_horizontal_colorbar(
+        fig,
+        mappable=logfc_image,
+        anchor_ax=axes[0],
+        label="observed logFC",
+        ticks=[-max_abs_logfc, 0.0, max_abs_logfc],
+        height=0.016,
         pad=0.06,
-        label="logFC",
     )
-    fig.colorbar(
-        heat,
-        ax=axes[1],
-        orientation="horizontal",
-        fraction=0.04,
-        pad=0.1,
+    _add_horizontal_colorbar(
+        fig,
+        mappable=heat,
+        anchor_ax=axes[1],
         label="dataset-local rank percentile",
+        ticks=[0.0, 0.25, 0.5, 0.75, 1.0],
+        height=0.016,
+        pad=0.06,
     )
     _save_figure(fig, out_path)
     return True
