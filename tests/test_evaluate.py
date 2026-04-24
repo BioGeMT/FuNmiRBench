@@ -150,6 +150,20 @@ def test_tool_colors_follow_predictor_order():
     assert evaluate_module._tool_color("random") == evaluate_module.CURVE_COLORS[2]
 
 
+def test_heatmap_rows_are_sorted_by_perturbation_aware_logfc():
+    work = pd.DataFrame(
+        {
+            "gene_id": ["ENSG3", "ENSG1", "ENSG2"],
+            "logFC": [-1.5, -3.0, 0.2],
+            "FDR": [0.02, 0.01, 0.30],
+            "perturbation": ["OE", "OE", "OE"],
+        }
+    )
+    work = evaluate_module._annotate_ground_truth(work, perturbation="OE")
+    ordered = evaluate_module._sort_heatmap_rows_by_logfc(work)
+    assert ordered["gene_id"].tolist() == ["ENSG1", "ENSG3", "ENSG2"]
+
+
 def test_evaluate_rejects_single_class_labels(tmp_path):
     joined = pd.DataFrame(
         {

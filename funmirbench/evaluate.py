@@ -69,14 +69,18 @@ def _positive_mask(df, *, fdr_threshold, abs_logfc_threshold):
     return (df["expected_effect"] > float(abs_logfc_threshold)) & (df["FDR"] < float(fdr_threshold))
 
 
-def _positive_sort_spec(fdr_threshold):
-    del fdr_threshold
-    return ["FDR", "expected_effect"], [True, False]
-
-
 def _selection_caption(fdr_threshold):
     del fdr_threshold
     return "selected by FDR and expected effect"
+
+
+def _sort_heatmap_rows_by_logfc(work):
+    sort_cols = ["expected_effect", "FDR"]
+    ascending = [False, True]
+    if "gene_id" in work.columns:
+        sort_cols.append("gene_id")
+        ascending.append(True)
+    return work.sort_values(sort_cols, ascending=ascending, kind="mergesort").reset_index(drop=True)
 
 
 def _emit_log(logger, message):
@@ -124,6 +128,33 @@ def _dataset_heading(dataset_id, *, suffix=None):
 
 def _dataset_caption(dataset_id):
     return str(dataset_id).replace("_", " ")
+
+
+def _wrap_axis_label(text, *, width=14):
+    wrapped = textwrap.wrap(str(text), width=width) or [str(text)]
+    return "\n".join(wrapped)
+
+
+def _add_figure_heading(fig, *, title, subtitle, x=0.08, title_y=0.975, subtitle_y=0.93):
+    fig.text(
+        x,
+        title_y,
+        title,
+        ha="left",
+        va="top",
+        fontsize=12,
+        fontweight="semibold",
+        color="black",
+    )
+    fig.text(
+        x,
+        subtitle_y,
+        subtitle,
+        ha="left",
+        va="top",
+        fontsize=8.6,
+        color=NEUTRAL_COLOR,
+    )
 
 
 def _style_axes(ax, *, grid_axis="y"):
@@ -835,10 +866,7 @@ def _plot_algorithms_vs_genes_heatmap(
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
     ).astype(int)
-    sort_cols, ascending = _positive_sort_spec(fdr_threshold)
-    work = work.sort_values(
-        ["is_positive", *sort_cols], ascending=[False, *ascending],
-    ).reset_index(drop=True)
+    work = _sort_heatmap_rows_by_logfc(work)
 
     rank_frame = pd.DataFrame(
         {
@@ -854,6 +882,7 @@ def _plot_algorithms_vs_genes_heatmap(
         1, 3, figsize=(figure_width, figure_height),
         gridspec_kw={"width_ratios": [0.5, 0.6, max(2.8, len(tool_ids) * 1.25)]},
     )
+    fig.subplots_adjust(top=0.8, bottom=0.14, wspace=0.22)
     for axis in axes:
         axis.set_facecolor("white")
         axis.spines["top"].set_visible(False)
@@ -887,50 +916,47 @@ def _plot_algorithms_vs_genes_heatmap(
     )
     axes[2].set_title("Predictor scores", fontsize=10, fontweight="semibold")
     axes[2].set_xticks(range(len(tool_ids)))
-    axes[2].set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+    axes[2].set_xticklabels(
+        [_wrap_axis_label(_tool_label(tool_id)) for tool_id in tool_ids],
+        rotation=30,
+        ha="right",
+    )
 
     if len(work) <= 40:
         labels = work["gene_id"].tolist()
-        for axis in axes:
-            axis.set_yticks(range(len(labels)))
-            axis.set_yticklabels(labels, fontsize=7)
+        axes[0].set_yticks(range(len(labels)))
+        axes[0].set_yticklabels(labels, fontsize=7)
+        axes[1].set_yticks([])
+        axes[2].set_yticks([])
     else:
         for axis in axes:
             axis.set_yticks([])
 
-    axes[0].set_ylabel("genes", fontsize=10, color="#3C4858")
-    fig.suptitle(
-        "Gene-level benchmarking overview",
-        x=0.08,
-        y=0.995,
-        ha="left",
-        fontsize=12,
-        fontweight="semibold",
-    )
-    fig.text(
-        0.08,
-        0.972,
-        (
-            f"{_dataset_caption(dataset_id)}  |  {len(work):,} genes ordered by benchmark ground truth and expected effect"
+    axes[0].set_ylabel("genes ranked by logFC", fontsize=10, color="#3C4858")
+    _add_figure_heading(
+        fig,
+        title="Gene-level benchmarking overview",
+        subtitle=(
+            f"{_dataset_caption(dataset_id)}  |  {len(work):,} genes ordered by perturbation-aware logFC"
             "  |  blank cells indicate missing predictor pairs"
         ),
-        fontsize=8.6,
-        color=NEUTRAL_COLOR,
+        title_y=0.975,
+        subtitle_y=0.935,
     )
     fig.colorbar(
         logfc_image,
         ax=axes[1],
         orientation="horizontal",
-        fraction=0.08,
-        pad=0.08,
+        fraction=0.055,
+        pad=0.06,
         label="logFC",
     )
     fig.colorbar(
         heat,
         ax=axes[2],
         orientation="horizontal",
-        fraction=0.05,
-        pad=0.08,
+        fraction=0.04,
+        pad=0.1,
         label="dataset-local rank percentile",
     )
     _save_figure(fig, out_path)
@@ -952,8 +978,7 @@ def _plot_top_positive_heatmap(
     if work.empty:
         return False
 
-    sort_cols, ascending = _positive_sort_spec(fdr_threshold)
-    work = work.sort_values(sort_cols, ascending=ascending).reset_index(drop=True)
+    work = _sort_heatmap_rows_by_logfc(work)
     rows_to_keep = max(1, int(math.ceil(len(work) * positive_fraction)))
     work = work.head(rows_to_keep).copy()
 
@@ -970,6 +995,7 @@ def _plot_top_positive_heatmap(
         1, 2, figsize=(figure_width, figure_height),
         gridspec_kw={"width_ratios": [0.7, max(2.8, len(tool_ids) * 1.25)]},
     )
+    fig.subplots_adjust(top=0.78, bottom=0.22, wspace=0.2)
     for axis in axes:
         axis.set_facecolor("white")
         axis.spines["top"].set_visible(False)
@@ -998,46 +1024,42 @@ def _plot_top_positive_heatmap(
     )
     axes[1].set_title("Predictor scores", fontsize=10, fontweight="semibold")
     axes[1].set_xticks(range(len(tool_ids)))
-    axes[1].set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+    axes[1].set_xticklabels(
+        [_wrap_axis_label(_tool_label(tool_id)) for tool_id in tool_ids],
+        rotation=30,
+        ha="right",
+    )
 
     labels = work["gene_id"].tolist()
-    for axis in axes:
-        axis.set_yticks(range(len(labels)))
-        axis.set_yticklabels(labels, fontsize=7)
+    axes[0].set_yticks(range(len(labels)))
+    axes[0].set_yticklabels(labels, fontsize=7)
+    axes[1].set_yticks([])
 
-    axes[0].set_ylabel("top positive genes", fontsize=10, color="#3C4858")
-    fig.suptitle(
-        f"Top {int(positive_fraction * 100)}% of benchmark positives",
-        x=0.08,
-        y=0.995,
-        ha="left",
-        fontsize=12,
-        fontweight="semibold",
-    )
-    fig.text(
-        0.08,
-        0.972,
-        (
+    axes[0].set_ylabel("top positives ranked by logFC", fontsize=10, color="#3C4858")
+    _add_figure_heading(
+        fig,
+        title=f"Top {int(positive_fraction * 100)}% of benchmark positives",
+        subtitle=(
             f"{_dataset_caption(dataset_id)}  |  {len(work):,} positive genes {_selection_caption(fdr_threshold)}"
-            "  |  predictor colors show dataset-local rank percentile"
+            "  |  rows ordered by perturbation-aware logFC"
         ),
-        fontsize=8.6,
-        color=NEUTRAL_COLOR,
+        title_y=0.975,
+        subtitle_y=0.935,
     )
     fig.colorbar(
         logfc_image,
         ax=axes[0],
         orientation="horizontal",
-        fraction=0.08,
-        pad=0.08,
+        fraction=0.055,
+        pad=0.06,
         label="logFC",
     )
     fig.colorbar(
         heat,
         ax=axes[1],
         orientation="horizontal",
-        fraction=0.05,
-        pad=0.08,
+        fraction=0.04,
+        pad=0.1,
         label="dataset-local rank percentile",
     )
     _save_figure(fig, out_path)
