@@ -825,6 +825,59 @@ def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
     _save_figure(fig, out_path)
 
 
+def _plot_predictor_roc_curves_own_scored(comparisons, *, dataset_id, out_path):
+    fig, ax = plt.subplots(figsize=(6.6, 5.2))
+    _style_axes(ax, grid_axis="both")
+    for item in comparisons:
+        fpr, tpr, _ = roc_curve(item["y_true"], item["y_score"])
+        auroc = roc_auc_score(item["y_true"], item["y_score"])
+        baseline = float(item["y_true"].mean())
+        ax.plot(
+            fpr,
+            tpr,
+            label=(
+                f"{_tool_label(item['tool_id'])} "
+                f"({auroc:.3f}, base {baseline:.3f})"
+            ),
+            linewidth=2.2,
+            color=_tool_color(item["tool_id"]),
+        )
+    ax.plot(
+        [0, 1],
+        [0, 1],
+        linestyle="--",
+        linewidth=1.4,
+        color=NEUTRAL_COLOR,
+        label="random",
+    )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("False positive rate", fontsize=10)
+    ax.set_ylabel("True positive rate", fontsize=10)
+    ax.set_title(
+        "ROC comparison (each predictor's scored pairs)",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        f"{_dataset_caption(dataset_id)}  |  own scored sets",
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(
+        frameon=False,
+        fontsize=8.4,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    _save_figure(fig, out_path)
+
+
 def _plot_predictor_gsea_curves(comparisons, *, dataset_id, out_path):
     fig, ax = plt.subplots(figsize=(6.8, 5.2))
     _style_axes(ax, grid_axis="both")
@@ -1727,6 +1780,7 @@ def evaluate_joined_dataframe(
         comparison_pr_png = comparison_plots_dir / "precision_recall_common.png"
         comparison_pr_all_png = comparison_plots_dir / "precision_recall_all_scored.png"
         comparison_roc_png = comparison_plots_dir / "roc_common.png"
+        comparison_roc_all_png = comparison_plots_dir / "roc_all_scored.png"
         comparison_gsea_png = comparison_plots_dir / "gsea_common.png"
         common_pr = _prepare_common_scored_frame(
             joined,
@@ -1760,6 +1814,11 @@ def evaluate_joined_dataframe(
             dataset_id=dataset_id,
             out_path=comparison_roc_png,
         )
+        _plot_predictor_roc_curves_own_scored(
+            comparisons,
+            dataset_id=dataset_id,
+            out_path=comparison_roc_all_png,
+        )
         _plot_predictor_gsea_curves(
             common_comparisons,
             dataset_id=dataset_id,
@@ -1768,6 +1827,7 @@ def evaluate_joined_dataframe(
         dataset_plots["predictor_pr_curves"] = str(comparison_pr_png)
         dataset_plots["predictor_pr_curves_all_scored"] = str(comparison_pr_all_png)
         dataset_plots["predictor_roc_curves"] = str(comparison_roc_png)
+        dataset_plots["predictor_roc_curves_all_scored"] = str(comparison_roc_all_png)
         dataset_plots["predictor_gsea_curves"] = str(comparison_gsea_png)
         _emit_log(logger, f"    Dataset: {dataset_id} | wrote PR/ROC/GSEA comparison plots")
 
