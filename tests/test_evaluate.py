@@ -186,6 +186,34 @@ def test_evaluate_uses_perturbation_aware_gt_labels(tmp_path):
     assert result["metric_rows"][0]["auroc"] == pytest.approx(1.0)
 
 
+def test_evaluate_can_disable_fdr_threshold(tmp_path):
+    joined = pd.DataFrame(
+        {
+            "dataset_id": ["D001", "D001", "D001"],
+            "mirna": ["hsa-miR-demo"] * 3,
+            "perturbation": ["OE", "OE", "OE"],
+            "gene_id": ["ENSG1", "ENSG2", "ENSG3"],
+            "logFC": [-2.0, -1.5, 0.1],
+            "FDR": [0.8, 0.01, 0.9],
+            "score_mock": [0.9, 0.8, 0.1],
+        }
+    )
+    result = evaluate_joined_dataframe(
+        joined,
+        plots_dir=tmp_path / "plots",
+        reports_dir=tmp_path / "reports",
+        fdr_threshold=None,
+        abs_logfc_threshold=1.0,
+        predictor_top_fraction=0.10,
+        perturbation="OE",
+    )
+    metric_row = result["metric_rows"][0]
+    assert metric_row["aps"] == pytest.approx(1.0)
+    assert metric_row["auroc"] == pytest.approx(1.0)
+    report_text = (tmp_path / "reports" / "D001__mock_evaluation_report.md").read_text(encoding="utf-8")
+    assert "no FDR threshold" in report_text
+
+
 def test_evaluate_writes_combined_comparison_plots(tmp_path):
     joined = pd.DataFrame(
         {

@@ -17,6 +17,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 from funmirbench import DatasetMeta
 from funmirbench.evaluate import (
+    describe_gt_rule,
     evaluate_joined_dataframe,
     write_cross_dataset_summaries,
     write_metric_tables,
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_DEMO_FDR_THRESHOLD = 0.05
 DEFAULT_DEMO_ABS_LOGFC_THRESHOLD = 1.0
 THRESHOLD_SENSITIVE_DEMO_TOOLS = {"cheating", "perfect"}
+NO_FDR_COMPARISON_DIRNAME = "no_fdr_threshold"
 
 
 def _slugify(value):
@@ -234,6 +236,38 @@ def _format_summary_value(value, *, percent=False):
     return f"{number:.3f}"
 
 
+def _gt_threshold_box_text(fdr_threshold, abs_logfc_threshold):
+    if fdr_threshold is None:
+        return f"no FDR\neffect > {float(abs_logfc_threshold)}"
+    return f"FDR < {float(fdr_threshold)}\neffect > {float(abs_logfc_threshold)}"
+
+
+def _init_run_layout(base_dir):
+    datasets_dir = base_dir / "datasets"
+    plots_dir = base_dir / "plots"
+    combined_plots_dir = plots_dir / "combined"
+    tables_dir = base_dir / "tables"
+    per_experiment_tables_dir = tables_dir / "per_experiment"
+    combined_tables_dir = tables_dir / "combined"
+    for path in (
+        datasets_dir,
+        plots_dir,
+        combined_plots_dir,
+        tables_dir,
+        per_experiment_tables_dir,
+        combined_tables_dir,
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+    return {
+        "datasets_dir": datasets_dir,
+        "plots_dir": plots_dir,
+        "combined_plots_dir": combined_plots_dir,
+        "tables_dir": tables_dir,
+        "per_experiment_tables_dir": per_experiment_tables_dir,
+        "combined_tables_dir": combined_tables_dir,
+    }
+
+
 def _load_cross_dataset_summary(combined_outputs):
     summary_path = combined_outputs.get("tables", {}).get("cross_dataset_predictor_summary")
     if not summary_path:
@@ -310,6 +344,7 @@ def write_run_readme(
     fdr_threshold,
     abs_logfc_threshold,
     predictor_top_fraction,
+    comparison_runs=None,
 ):
     summary_df = _load_cross_dataset_summary(combined_outputs)
     relative_metric_tables = {
@@ -333,10 +368,7 @@ def write_run_readme(
         f"- Predictors: `{', '.join(tool_ids)}`",
         "",
         "## Evaluation Settings",
-        (
-            f"- GT positive threshold: `FDR < {fdr_threshold}` and perturbation-aware effect "
-            f"`> {abs_logfc_threshold}` (`-logFC` for OE, `+logFC` for KO/KD)"
-        ),
+        f"- GT positive threshold: {describe_gt_rule(fdr_threshold, abs_logfc_threshold, markdown=True)}",
         (
             f"- Predictor agreement top fraction: `{predictor_top_fraction:.0%}`"
             " (exact top-k per predictor, deterministic tie-break)"
@@ -430,6 +462,22 @@ def write_run_readme(
     }
     for key, path in relative_combined_outputs.get("plots", {}).items():
         lines.append(f"- `{path}`: {combined_plot_descriptions.get(key, key)}")
+    if comparison_runs:
+        lines.extend(
+            [
+                "",
+                "### Comparison Variants",
+            ]
+        )
+        for label, info in comparison_runs.items():
+            variant_dir = info.get("out_dir")
+            variant_readme = info.get("readme")
+            parts = [f"`{label}`"]
+            if variant_dir:
+                parts.append(f"directory `{_relative_display_path(variant_dir, base_dir=out_dir)}`")
+            if variant_readme:
+                parts.append(f"README `{_relative_display_path(variant_readme, base_dir=out_dir)}`")
+            lines.append("- " + " | ".join(parts))
     lines.extend(
         [
             "",
@@ -528,7 +576,7 @@ def write_run_pdf_report(
         summary_boxes = [
             ("Datasets", str(len(dataset_outputs))),
             ("Predictors", str(len(tool_ids))),
-            ("GT Threshold", f"FDR < {fdr_threshold}\neffect > {abs_logfc_threshold}"),
+            ("GT Threshold", _gt_threshold_box_text(fdr_threshold, abs_logfc_threshold)),
             ("Top Fraction", f"{predictor_top_fraction:.0%}\nexact top-k"),
         ]
         x_positions = [0.06, 0.29, 0.52, 0.75]
@@ -553,10 +601,7 @@ def write_run_pdf_report(
             ax,
             "Evaluation Settings",
             [
-                (
-                    f"GT positives: FDR < {fdr_threshold} and perturbation-aware effect > {abs_logfc_threshold} "
-                    "(-logFC for OE, +logFC for KO/KD)"
-                ),
+                f"GT positives: {describe_gt_rule(fdr_threshold, abs_logfc_threshold)}",
                 "Predictor scores are aligned so that higher always means stronger before evaluation.",
                 "Per-dataset heatmaps and agreement plots use dataset-local tie-aware dense ranks.",
                 "Combined PR/ROC/GSEA plots use only the common set of genes scored by all compared predictors.",
@@ -761,6 +806,87 @@ def write_run_pdf_report(
     return report_path
 
 
+def _finalize_run_bundle(
+    out_dir,
+    *,
+    out_root,
+    config_path,
+    tags,
+    dataset_outputs,
+    tool_ids,
+    metric_rows,
+    joined_frames,
+    fdr_threshold,
+    abs_logfc_threshold,
+    predictor_top_fraction,
+    comparison_runs=None,
+):
+    layout = _init_run_layout(out_dir)
+    metric_tables = write_metric_tables(
+        metric_rows,
+        layout["per_experiment_tables_dir"],
+        logger=logger.info,
+    )
+    combined_outputs = write_cross_dataset_summaries(
+        metric_rows,
+        layout["combined_tables_dir"],
+        layout["combined_plots_dir"],
+        joined_frames=joined_frames,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        logger=logger.info,
+    )
+    readme_path = write_run_readme(
+        out_dir,
+        config_path=config_path,
+        dataset_outputs=dataset_outputs,
+        tool_ids=tool_ids,
+        metric_tables=metric_tables,
+        combined_outputs=combined_outputs,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        predictor_top_fraction=predictor_top_fraction,
+        comparison_runs=comparison_runs,
+    )
+    report_path = write_run_pdf_report(
+        out_dir,
+        config_path=config_path,
+        dataset_outputs=dataset_outputs,
+        tool_ids=tool_ids,
+        metric_tables=metric_tables,
+        combined_outputs=combined_outputs,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        predictor_top_fraction=predictor_top_fraction,
+    )
+    summary = {
+        "config": str(config_path),
+        "out_root": str(out_root),
+        "out_dir": str(out_dir),
+        "run_dir_name": out_dir.name,
+        "tags": tags or [],
+        "dataset_ids": [item["dataset_id"] for item in dataset_outputs],
+        "tool_ids": tool_ids,
+        "readme": str(readme_path),
+        "report_pdf": str(report_path),
+        "metric_tables": metric_tables,
+        "cross_dataset_outputs": combined_outputs,
+        "datasets": dataset_outputs,
+        **({"comparison_runs": comparison_runs} if comparison_runs else {}),
+    }
+    summary_path = out_dir / "summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    logger.info(f"Wrote summary: {summary_path}")
+    return {
+        "metric_tables": metric_tables,
+        "combined_outputs": combined_outputs,
+        "readme_path": readme_path,
+        "report_path": report_path,
+        "summary": summary,
+        "summary_path": summary_path,
+    }
+
+
 def run_benchmark(config_path):
     config_path = config_path.expanduser().resolve()
     logger.info(f"Config: {config_path}")
@@ -812,29 +938,20 @@ def run_benchmark(config_path):
         suffix += 1
     logger.info(f"Results root: {out_root}")
     logger.info(f"Run output dir: {out_dir}")
-
-    datasets_dir = out_dir / "datasets"
-    plots_dir = out_dir / "plots"
-    combined_plots_dir = plots_dir / "combined"
-    tables_dir = out_dir / "tables"
-    per_experiment_tables_dir = tables_dir / "per_experiment"
-    combined_tables_dir = tables_dir / "combined"
-    for path in (
-        datasets_dir,
-        plots_dir,
-        combined_plots_dir,
-        tables_dir,
-        per_experiment_tables_dir,
-        combined_tables_dir,
-    ):
-        path.mkdir(parents=True, exist_ok=True)
+    main_layout = _init_run_layout(out_dir)
+    no_fdr_out_dir = out_dir / NO_FDR_COMPARISON_DIRNAME
+    no_fdr_layout = _init_run_layout(no_fdr_out_dir)
 
     tool_ids = list(predictions)
     metric_rows = []
     dataset_outputs = []
     joined_frames = []
+    no_fdr_metric_rows = []
+    no_fdr_dataset_outputs = []
+    no_fdr_joined_frames = []
     fdr_threshold = float(eval_cfg.get("fdr_threshold", 0.05))
     abs_logfc_threshold = float(eval_cfg.get("abs_logfc_threshold", 1.0))
+    predictor_top_fraction = float(eval_cfg.get("predictor_top_fraction", 0.10))
     validate_threshold_sensitive_predictors(
         predictions,
         root=root,
@@ -847,30 +964,31 @@ def run_benchmark(config_path):
 
     for meta in experiments:
         logger.info(f"Dataset: {meta.id} | {meta.miRNA} | {meta.cell_line}")
-        dataset_dir = datasets_dir / meta.id
-        if dataset_dir.exists():
-            shutil.rmtree(dataset_dir)
-        dataset_plots_dir = dataset_dir / "plots"
-        dataset_reports_dir = dataset_dir / "reports"
-        dataset_dir.mkdir(parents=True, exist_ok=True)
-        dataset_plots_dir.mkdir(parents=True, exist_ok=True)
-        dataset_reports_dir.mkdir(parents=True, exist_ok=True)
+        dataset_dir = main_layout["datasets_dir"] / meta.id
+        no_fdr_dataset_dir = no_fdr_layout["datasets_dir"] / meta.id
+        for branch_dir in (dataset_dir, no_fdr_dataset_dir):
+            if branch_dir.exists():
+                shutil.rmtree(branch_dir)
+            (branch_dir / "plots").mkdir(parents=True, exist_ok=True)
+            (branch_dir / "reports").mkdir(parents=True, exist_ok=True)
         logger.info(f"  Joining predictions for {meta.id}...")
         joined, predictor_output_paths = build_joined(meta, tool_ids, predictions, root)
         joined_path = dataset_dir / "joined.tsv"
-        joined_path.parent.mkdir(parents=True, exist_ok=True)
         joined.to_csv(joined_path, sep="\t", index=False)
+        no_fdr_joined_path = no_fdr_dataset_dir / "joined.tsv"
+        joined.to_csv(no_fdr_joined_path, sep="\t", index=False)
         logger.info(f"  Wrote joined table: {joined_path}")
         joined_frames.append(joined.copy())
+        no_fdr_joined_frames.append(joined.copy())
 
         logger.info(f"  Evaluating metrics and plots for {meta.id}...")
         evaluation = evaluate_joined_dataframe(
             joined,
-            plots_dir=dataset_plots_dir,
-            reports_dir=dataset_reports_dir,
+            plots_dir=dataset_dir / "plots",
+            reports_dir=dataset_dir / "reports",
             fdr_threshold=fdr_threshold,
             abs_logfc_threshold=abs_logfc_threshold,
-            predictor_top_fraction=float(eval_cfg.get("predictor_top_fraction", 0.10)),
+            predictor_top_fraction=predictor_top_fraction,
             dataset_id=meta.id,
             mirna=meta.miRNA,
             cell_line=meta.cell_line,
@@ -881,7 +999,26 @@ def run_benchmark(config_path):
             predictor_output_paths=predictor_output_paths,
             logger=logger.info,
         )
+        logger.info(f"  Evaluating no-FDR comparison metrics and plots for {meta.id}...")
+        no_fdr_evaluation = evaluate_joined_dataframe(
+            joined,
+            plots_dir=no_fdr_dataset_dir / "plots",
+            reports_dir=no_fdr_dataset_dir / "reports",
+            fdr_threshold=None,
+            abs_logfc_threshold=abs_logfc_threshold,
+            predictor_top_fraction=predictor_top_fraction,
+            dataset_id=meta.id,
+            mirna=meta.miRNA,
+            cell_line=meta.cell_line,
+            perturbation=meta.perturbation,
+            geo_accession=meta.geo_accession,
+            de_table_path=str(meta.full_path),
+            joined_tsv=no_fdr_joined_path,
+            predictor_output_paths=predictor_output_paths,
+            logger=logger.info,
+        )
         metric_rows.extend(evaluation["metric_rows"])
+        no_fdr_metric_rows.extend(no_fdr_evaluation["metric_rows"])
         dataset_outputs.append(
             {
                 "dataset_id": meta.id,
@@ -897,60 +1034,60 @@ def run_benchmark(config_path):
                 "predictor_correlation_tsv": evaluation["predictor_correlation_tsv"],
             }
         )
+        no_fdr_dataset_outputs.append(
+            {
+                "dataset_id": meta.id,
+                "mirna": meta.miRNA,
+                "cell_line": meta.cell_line,
+                "perturbation": meta.perturbation,
+                "geo_accession": meta.geo_accession,
+                "de_table_path": str(meta.full_path),
+                "joined_tsv": str(no_fdr_joined_path),
+                "dataset_dir": str(no_fdr_dataset_dir),
+                "predictor_output_paths": predictor_output_paths,
+                "plots": no_fdr_evaluation["plots"],
+                "predictor_correlation_tsv": no_fdr_evaluation["predictor_correlation_tsv"],
+            }
+        )
         logger.info(f"  Finished {meta.id}")
 
     logger.info("Writing metric tables...")
-    metric_tables = write_metric_tables(metric_rows, per_experiment_tables_dir, logger=logger.info)
     logger.info("Writing cross-dataset summaries...")
-    combined_outputs = write_cross_dataset_summaries(
-        metric_rows,
-        combined_tables_dir,
-        combined_plots_dir,
+    no_fdr_result = _finalize_run_bundle(
+        no_fdr_out_dir,
+        out_root=out_root,
+        config_path=config_path,
+        tags=config.get("tags"),
+        dataset_outputs=no_fdr_dataset_outputs,
+        tool_ids=tool_ids,
+        metric_rows=no_fdr_metric_rows,
+        joined_frames=no_fdr_joined_frames,
+        fdr_threshold=None,
+        abs_logfc_threshold=abs_logfc_threshold,
+        predictor_top_fraction=predictor_top_fraction,
+    )
+    comparison_runs = {
+        NO_FDR_COMPARISON_DIRNAME: {
+            "out_dir": str(no_fdr_out_dir),
+            "readme": str(no_fdr_result["readme_path"]),
+            "report_pdf": str(no_fdr_result["report_path"]),
+            "summary": str(no_fdr_result["summary_path"]),
+        }
+    }
+    main_result = _finalize_run_bundle(
+        out_dir,
+        out_root=out_root,
+        config_path=config_path,
+        tags=config.get("tags"),
+        dataset_outputs=dataset_outputs,
+        tool_ids=tool_ids,
+        metric_rows=metric_rows,
         joined_frames=joined_frames,
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
-        logger=logger.info,
+        predictor_top_fraction=predictor_top_fraction,
+        comparison_runs=comparison_runs,
     )
-    readme_path = write_run_readme(
-        out_dir,
-        config_path=config_path,
-        dataset_outputs=dataset_outputs,
-        tool_ids=tool_ids,
-        metric_tables=metric_tables,
-        combined_outputs=combined_outputs,
-        fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
-        predictor_top_fraction=float(eval_cfg.get("predictor_top_fraction", 0.10)),
-    )
-    report_path = write_run_pdf_report(
-        out_dir,
-        config_path=config_path,
-        dataset_outputs=dataset_outputs,
-        tool_ids=tool_ids,
-        metric_tables=metric_tables,
-        combined_outputs=combined_outputs,
-        fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
-        predictor_top_fraction=float(eval_cfg.get("predictor_top_fraction", 0.10)),
-    )
-
-    summary = {
-        "config": str(config_path),
-        "out_root": str(out_root),
-        "out_dir": str(out_dir),
-        "run_dir_name": out_dir.name,
-        "tags": config.get("tags", []),
-        "dataset_ids": [meta.id for meta in experiments],
-        "tool_ids": tool_ids,
-        "readme": str(readme_path),
-        "report_pdf": str(report_path),
-        "metric_tables": metric_tables,
-        "cross_dataset_outputs": combined_outputs,
-        "datasets": dataset_outputs,
-    }
-    summary_path = out_dir / "summary.json"
-    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    logger.info(f"Wrote summary: {summary_path}")
     return out_dir
 
 

@@ -47,6 +47,52 @@ def _metric_plot_limits(metric_name):
     return 0.0, 1.02
 
 
+def _has_fdr_threshold(fdr_threshold):
+    if fdr_threshold is None:
+        return False
+    try:
+        return math.isfinite(float(fdr_threshold))
+    except (TypeError, ValueError):
+        return False
+
+
+def _format_threshold_value(value):
+    return str(float(value))
+
+
+def describe_gt_rule(fdr_threshold, abs_logfc_threshold, *, markdown=False):
+    if _has_fdr_threshold(fdr_threshold):
+        fdr_text = f"FDR < {_format_threshold_value(fdr_threshold)}"
+    else:
+        fdr_text = "no FDR threshold"
+    effect_text = f"perturbation-aware effect > {_format_threshold_value(abs_logfc_threshold)}"
+    if markdown:
+        return (
+            f"`{fdr_text}` and {effect_text.replace('>', '`> ', 1) + '`'} "
+            "(`-logFC` for OE, `+logFC` for KO/KD)"
+        )
+    return f"{fdr_text} and {effect_text} (-logFC for OE, +logFC for KO/KD)"
+
+
+def _positive_mask(df, *, fdr_threshold, abs_logfc_threshold):
+    mask = df["expected_effect"] > float(abs_logfc_threshold)
+    if _has_fdr_threshold(fdr_threshold):
+        mask = mask & (df["FDR"] < float(fdr_threshold))
+    return mask
+
+
+def _positive_sort_spec(fdr_threshold):
+    if _has_fdr_threshold(fdr_threshold):
+        return ["FDR", "expected_effect"], [True, False]
+    return ["expected_effect", "FDR"], [False, True]
+
+
+def _selection_caption(fdr_threshold):
+    if _has_fdr_threshold(fdr_threshold):
+        return "selected by FDR and expected effect"
+    return "selected by expected effect only"
+
+
 def _emit_log(logger, message):
     if logger is not None:
         logger(message)
@@ -204,8 +250,10 @@ def _prepare_scored_frame(
     total_rows = int(len(keep))
     missing_score_count = int(keep[score_col].isna().sum())
     keep = _annotate_ground_truth(keep, perturbation=perturbation)
-    keep["is_positive"] = (
-        (keep["FDR"] < fdr_threshold) & (keep["expected_effect"] > abs_logfc_threshold)
+    keep["is_positive"] = _positive_mask(
+        keep,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
     ).astype(int)
     positives_total = int(keep["is_positive"].sum())
 
@@ -621,8 +669,10 @@ def _prepare_common_scored_frame(
         raise ValueError("No usable rows remain for common PR comparison.")
 
     keep = _annotate_ground_truth(keep, perturbation=perturbation)
-    keep["is_positive"] = (
-        (keep["FDR"] < fdr_threshold) & (keep["expected_effect"] > abs_logfc_threshold)
+    keep["is_positive"] = _positive_mask(
+        keep,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
     ).astype(int)
     keep = keep.dropna(subset=score_cols).copy()
     if keep.empty:
@@ -755,11 +805,14 @@ def _plot_algorithms_vs_genes_heatmap(
     work = joined[["gene_id", "logFC", "FDR", *score_cols, *rank_cols]].copy()
     work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
     work = _annotate_ground_truth(work, perturbation=perturbation)
-    work["is_positive"] = (
-        (work["FDR"] < fdr_threshold) & (work["expected_effect"] > abs_logfc_threshold)
+    work["is_positive"] = _positive_mask(
+        work,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
     ).astype(int)
+    sort_cols, ascending = _positive_sort_spec(fdr_threshold)
     work = work.sort_values(
-        ["is_positive", "FDR", "expected_effect"], ascending=[False, True, False],
+        ["is_positive", *sort_cols], ascending=[False, *ascending],
     ).reset_index(drop=True)
 
     rank_frame = pd.DataFrame(
@@ -865,14 +918,17 @@ def _plot_top_positive_heatmap(
     work = joined[["gene_id", "logFC", "FDR", *rank_cols]].copy()
     work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
     work = _annotate_ground_truth(work, perturbation=perturbation)
-    work["is_positive"] = (
-        (work["FDR"] < fdr_threshold) & (work["expected_effect"] > abs_logfc_threshold)
+    work["is_positive"] = _positive_mask(
+        work,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
     ).astype(int)
     work = work[work["is_positive"] == 1].copy()
     if work.empty:
         return False
 
-    work = work.sort_values(["FDR", "expected_effect"], ascending=[True, False]).reset_index(drop=True)
+    sort_cols, ascending = _positive_sort_spec(fdr_threshold)
+    work = work.sort_values(sort_cols, ascending=ascending).reset_index(drop=True)
     rows_to_keep = max(1, int(math.ceil(len(work) * positive_fraction)))
     work = work.head(rows_to_keep).copy()
 
@@ -937,7 +993,7 @@ def _plot_top_positive_heatmap(
         0.08,
         0.972,
         (
-            f"{_dataset_caption(dataset_id)}  |  {len(work):,} positive genes selected by FDR and expected effect"
+            f"{_dataset_caption(dataset_id)}  |  {len(work):,} positive genes {_selection_caption(fdr_threshold)}"
             "  |  predictor colors show dataset-local rank percentile"
         ),
         fontsize=8.6,
@@ -1067,10 +1123,7 @@ def _build_tool_report_markdown(
         f"- spearman: `{metrics['spearman']:.6f}`",
         "",
         "## Evaluation Rule",
-        (
-            f"- GT positives: `FDR < {fdr_threshold}` and perturbation-aware effect `> {abs_logfc_threshold}`"
-            " (`-logFC` for OE, `+logFC` for KO/KD)"
-        ),
+        f"- GT positives: {describe_gt_rule(fdr_threshold, abs_logfc_threshold, markdown=True)}",
         "- Predictor scores are aligned so that higher always means stronger before evaluation",
         "- Pearson and Spearman compare predictor score against perturbation-aware expected effect",
         "- APS, PR-AUC, AUROC, and GSEA are computed on scored rows only",
@@ -1224,10 +1277,7 @@ def _render_tool_report_pdf(
             ax,
             "Evaluation Rule",
             [
-                (
-                    f"GT positives: FDR < {fdr_threshold} and perturbation-aware effect > {abs_logfc_threshold} "
-                    "(-logFC for OE, +logFC for KO/KD)"
-                ),
+                f"GT positives: {describe_gt_rule(fdr_threshold, abs_logfc_threshold)}",
                 "Predictor scores are aligned so that higher always means stronger before evaluation.",
                 "Pearson and Spearman compare score against perturbation-aware expected effect.",
                 "APS, PR-AUC, AUROC, and GSEA are computed on scored rows only.",
@@ -1864,8 +1914,10 @@ def _plot_rank_class_distributions(joined_frames, *, out_path, fdr_threshold, ab
     if work.empty:
         return False
     work = _annotate_ground_truth(work)
-    work["is_positive"] = (
-        (work["FDR"] < fdr_threshold) & (work["expected_effect"] > abs_logfc_threshold)
+    work["is_positive"] = _positive_mask(
+        work,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
     ).astype(int)
 
     tool_ids = [_tool_id_from_score_col(rank_col.replace(GLOBAL_RANK_PREFIX, SCORE_PREFIX, 1)) for rank_col in rank_cols]
