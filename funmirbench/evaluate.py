@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import ListedColormap, TwoSlopeNorm
+from matplotlib.patches import Rectangle
 from sklearn.metrics import (
     auc,
     average_precision_score,
@@ -378,13 +379,13 @@ def _plot_gsea_enrichment(df, *, score_col, dataset_id, tool_id, out_path):
     hit_positions = positions[hits == 1]
 
     fig, axes = plt.subplots(
-        3,
+        2,
         1,
-        figsize=(7.2, 6.2),
+        figsize=(7.2, 5.0),
         sharex=True,
-        gridspec_kw={"height_ratios": [3.0, 0.8, 1.6], "hspace": 0.08},
+        gridspec_kw={"height_ratios": [3.6, 0.9], "hspace": 0.08},
     )
-    curve_ax, hit_ax, score_ax = axes
+    curve_ax, hit_ax = axes
     for ax in axes:
         ax.set_facecolor("white")
         ax.spines["top"].set_visible(False)
@@ -422,20 +423,27 @@ def _plot_gsea_enrichment(df, *, score_col, dataset_id, tool_id, out_path):
         color=NEUTRAL_COLOR,
     )
 
-    hit_ax.vlines(hit_positions, 0.0, 1.0, color=POSITIVE_COLOR, linewidth=0.8)
+    hit_ax.axhspan(0.0, 1.0, color="#E5E7EB", alpha=1.0, zorder=0)
+    if len(hit_positions):
+        hit_start = float(hit_positions.min()) - 0.5
+        hit_end = float(hit_positions.max()) + 0.5
+        hit_ax.add_patch(
+            Rectangle(
+                (hit_start, 0.0),
+                hit_end - hit_start,
+                1.0,
+                fill=False,
+                edgecolor="black",
+                linewidth=1.1,
+                zorder=2,
+            )
+        )
+    hit_ax.vlines(hit_positions, 0.0, 1.0, color=POSITIVE_COLOR, linewidth=0.9, zorder=3)
     hit_ax.set_ylim(0.0, 1.0)
     hit_ax.set_yticks([])
     hit_ax.set_ylabel("Hits", fontsize=9)
     hit_ax.spines["left"].set_visible(False)
-    hit_ax.spines["bottom"].set_visible(False)
-
-    ordered_scores = ordered[score_col].to_numpy(dtype=float)
-    score_ax.fill_between(positions, ordered_scores, 0.0, color="#BFD3EA", alpha=0.95)
-    score_ax.plot(positions, ordered_scores, color="#577590", linewidth=1.2)
-    score_ax.set_ylabel("Score", fontsize=9)
-    score_ax.set_xlabel("Ranked genes", fontsize=10)
-    score_ax.grid(True, axis="y", color=GRID_COLOR, linewidth=0.8, alpha=0.9)
-    score_ax.set_axisbelow(True)
+    hit_ax.set_xlabel("Ranked genes", fontsize=10)
 
     _save_figure(fig, out_path)
     return es
