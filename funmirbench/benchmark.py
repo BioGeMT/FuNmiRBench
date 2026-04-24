@@ -454,12 +454,15 @@ def write_run_readme(
         ]
     )
     combined_plot_descriptions = {
-        "cross_dataset_metric_distributions": "distribution of each metric across the selected datasets",
         "positive_coverage_vs_performance": "mean positive coverage against mean APS and mean AUROC",
         "positive_background_rank_distributions": "global-rank separation of GT positives from background genes",
     }
     for key, path in relative_combined_outputs.get("plots", {}).items():
-        lines.append(f"- `{path}`: {combined_plot_descriptions.get(key, key)}")
+        if key.startswith("cross_dataset_") and key.endswith("_distribution"):
+            metric_name = key[len("cross_dataset_") : -len("_distribution")]
+            lines.append(f"- `{path}`: cross-dataset distribution of `{metric_name}` across the selected datasets")
+        else:
+            lines.append(f"- `{path}`: {combined_plot_descriptions.get(key, key)}")
     lines.extend(
         [
             "",
@@ -719,7 +722,7 @@ def write_run_pdf_report(
             ax,
             "Included Combined Figures",
             [
-                "cross_dataset_metric_distributions.png: how each metric varies across the selected datasets",
+                "plots/combined/metrics/cross_dataset_<metric>_distribution.png: one figure per metric showing how that metric varies across the selected datasets",
                 "positive_coverage_vs_performance.png: mean positive coverage against mean APS and AUROC",
                 "positive_background_rank_distributions.png: whether positives rank above background on the global rank scale",
             ],
@@ -731,12 +734,13 @@ def write_run_pdf_report(
         plt.close(fig)
 
         plot_items = []
-        plot_descriptions = {
-            "cross_dataset_metric_distributions": (
-                "Cross-dataset metric distributions",
-                "Each panel shows the spread of one metric across datasets for every predictor. "
-                "Spearman uses the full -1 to 1 range so weak negative correlations remain visible."
-            ),
+        plot_descriptions = {}
+        for metric_name in ["coverage", "positive_coverage", "aps", "pr_auc", "spearman", "auroc"]:
+            plot_descriptions[f"cross_dataset_{metric_name}_distribution"] = (
+                f"Cross-dataset {metric_name.upper()} distribution",
+                f"Spread of {metric_name.upper()} across the selected datasets for every predictor.",
+            )
+        plot_descriptions.update({
             "positive_coverage_vs_performance": (
                 "Positive coverage vs performance",
                 "Mean positive coverage is plotted against mean APS and mean AUROC. "
@@ -747,7 +751,7 @@ def write_run_pdf_report(
                 "Global-rank distributions aggregated across datasets, split into GT positives and background genes. "
                 "Stronger predictors should push positives higher than background."
             ),
-        }
+        })
         for key, (title, caption) in plot_descriptions.items():
             path = combined_outputs.get("plots", {}).get(key)
             if path:

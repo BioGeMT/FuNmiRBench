@@ -121,12 +121,16 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
         joined_frames=joined_frames,
     )
     assert (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").is_file()
-    assert (tmp_path / "plots" / "metrics" / "cross_dataset_metric_distributions.png").is_file()
+    assert (tmp_path / "plots" / "metrics" / "cross_dataset_coverage_distribution.png").is_file()
+    assert (tmp_path / "plots" / "metrics" / "cross_dataset_spearman_distribution.png").is_file()
     assert (tmp_path / "plots" / "coverage" / "positive_coverage_vs_performance.png").is_file()
     assert (tmp_path / "plots" / "ranks" / "positive_background_rank_distributions.png").is_file()
     summary_text = (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").read_text(encoding="utf-8")
     assert "aps_mean" in summary_text
     assert outputs["tables"]["cross_dataset_predictor_summary"].endswith("cross_dataset_predictor_summary.tsv")
+    assert outputs["plots"]["cross_dataset_aps_distribution"].endswith(
+        "cross_dataset_aps_distribution.png"
+    )
     assert outputs["plots"]["positive_coverage_vs_performance"].endswith(
         "positive_coverage_vs_performance.png"
     )

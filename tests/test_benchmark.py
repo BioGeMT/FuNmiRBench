@@ -205,7 +205,7 @@ def test_example_end_to_end(tmp_path):
     assert summary["tool_ids"] == ["random", "cheating"]
 
     plots = list(out_dir.rglob("*.png"))
-    assert len(plots) == 54
+    assert len(plots) == 59
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "score_vs_expected_effect.png"
     ).is_file()
@@ -225,7 +225,22 @@ def test_example_end_to_end(tmp_path):
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "cheating" / "roc_curve.png"
     ).is_file()
     assert (
-        out_dir / "plots" / "combined" / "metrics" / "cross_dataset_metric_distributions.png"
+        out_dir / "plots" / "combined" / "metrics" / "cross_dataset_coverage_distribution.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "combined" / "metrics" / "cross_dataset_positive_coverage_distribution.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "combined" / "metrics" / "cross_dataset_aps_distribution.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "combined" / "metrics" / "cross_dataset_pr_auc_distribution.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "combined" / "metrics" / "cross_dataset_spearman_distribution.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "combined" / "metrics" / "cross_dataset_auroc_distribution.png"
     ).is_file()
     assert (
         out_dir / "plots" / "combined" / "coverage" / "positive_coverage_vs_performance.png"

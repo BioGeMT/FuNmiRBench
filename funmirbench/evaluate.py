@@ -2033,76 +2033,62 @@ def _plot_cross_dataset_metric_heatmap(summary_df, *, metric_names, out_path):
     _save_figure(fig, out_path)
 
 
-def _plot_cross_dataset_metric_distributions(metrics_df, *, metric_names, out_path):
-    fig, axes = plt.subplots(
-        len(metric_names),
-        1,
-        figsize=(7.2, max(7.2, len(metric_names) * 2.1)),
-        sharex=False,
-        gridspec_kw={"hspace": 0.4},
-    )
-    if len(metric_names) == 1:
-        axes = [axes]
-
+def _plot_cross_dataset_metric_distribution(metrics_df, *, metric_name, out_path):
+    fig, ax = plt.subplots(figsize=(7.2, 4.8))
     tool_ids = list(metrics_df["tool_id"].drop_duplicates())
     positions = np.arange(len(tool_ids), dtype=float)
+    _style_axes(ax, grid_axis="y")
+    data = []
+    for tool_id in tool_ids:
+        values = metrics_df.loc[metrics_df["tool_id"] == tool_id, metric_name].dropna().astype(float).tolist()
+        data.append(values)
+    box = ax.boxplot(
+        data,
+        positions=positions,
+        widths=0.55,
+        patch_artist=True,
+        showfliers=False,
+    )
+    for patch, tool_id in zip(box["boxes"], tool_ids):
+        color = _tool_color(tool_id)
+        patch.set_facecolor(color)
+        patch.set_alpha(0.35)
+        patch.set_edgecolor(color)
+    for median in box["medians"]:
+        median.set_color("#22303C")
+        median.set_linewidth(1.4)
+    for whisker in box["whiskers"]:
+        whisker.set_color("#7A8798")
+    for cap in box["caps"]:
+        cap.set_color("#7A8798")
 
-    for metric_index, (ax, metric_name) in enumerate(zip(axes, metric_names)):
-        _style_axes(ax, grid_axis="y")
-        data = []
-        for tool_id in tool_ids:
-            values = metrics_df.loc[metrics_df["tool_id"] == tool_id, metric_name].dropna().astype(float).tolist()
-            data.append(values)
-        box = ax.boxplot(
-            data,
-            positions=positions,
-            widths=0.55,
-            patch_artist=True,
-            showfliers=False,
+    for tool_index, values in enumerate(data):
+        if not values:
+            continue
+        jitter = np.linspace(-0.09, 0.09, num=len(values)) if len(values) > 1 else np.array([0.0])
+        ax.scatter(
+            np.full(len(values), positions[tool_index]) + jitter,
+            values,
+            s=18,
+            alpha=0.75,
+            color=_tool_color(tool_ids[tool_index]),
+            edgecolors="white",
+            linewidths=0.3,
+            zorder=3,
         )
-        for patch, tool_id in zip(box["boxes"], tool_ids):
-            color = _tool_color(tool_id)
-            patch.set_facecolor(color)
-            patch.set_alpha(0.35)
-            patch.set_edgecolor(color)
-        for median in box["medians"]:
-            median.set_color("#22303C")
-            median.set_linewidth(1.4)
-        for whisker in box["whiskers"]:
-            whisker.set_color("#7A8798")
-        for cap in box["caps"]:
-            cap.set_color("#7A8798")
 
-        for tool_index, values in enumerate(data):
-            if not values:
-                continue
-            jitter = np.linspace(-0.09, 0.09, num=len(values)) if len(values) > 1 else np.array([0.0])
-            ax.scatter(
-                np.full(len(values), positions[tool_index]) + jitter,
-                values,
-                s=18,
-                alpha=0.75,
-                color=_tool_color(tool_ids[tool_index]),
-                edgecolors="white",
-                linewidths=0.3,
-                zorder=3,
-            )
-
-        ax.set_ylim(0, 1.02)
-        ax.set_ylabel(metric_name.upper(), fontsize=10)
-        ax.set_xticks(positions)
-        ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
-
-    axes[0].set_title(
-        "Cross-dataset metric distributions",
+    ymin, ymax = _metric_plot_limits(metric_name)
+    ax.set_ylim(ymin, ymax)
+    ax.set_ylabel(metric_name.upper(), fontsize=10)
+    ax.set_xticks(positions)
+    ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+    ax.set_title(
+        f"Cross-dataset {metric_name.upper()} distribution",
         fontsize=11,
         fontweight="semibold",
         loc="left",
         pad=14,
     )
-    for ax, metric_name in zip(axes, metric_names):
-        ymin, ymax = _metric_plot_limits(metric_name)
-        ax.set_ylim(ymin, ymax)
     _save_figure(fig, out_path)
 
 
@@ -2274,9 +2260,16 @@ def write_cross_dataset_summaries(
     summary.to_csv(summary_path, sep="\t", index=False)
     _emit_log(logger, f"  Wrote cross-dataset summary table: {summary_path}")
 
-    distributions_path = metric_plots_dir / "cross_dataset_metric_distributions.png"
-    _plot_cross_dataset_metric_distributions(metrics_df, metric_names=metric_names, out_path=distributions_path)
-    _emit_log(logger, f"  Wrote cross-dataset metric distributions: {distributions_path}")
+    distribution_paths = {}
+    for metric_name in metric_names:
+        metric_path = metric_plots_dir / f"cross_dataset_{metric_name}_distribution.png"
+        _plot_cross_dataset_metric_distribution(
+            metrics_df,
+            metric_name=metric_name,
+            out_path=metric_path,
+        )
+        distribution_paths[f"cross_dataset_{metric_name}_distribution"] = str(metric_path)
+        _emit_log(logger, f"  Wrote cross-dataset {metric_name} distribution: {metric_path}")
 
     positive_coverage_scatter_path = coverage_plots_dir / "positive_coverage_vs_performance.png"
     _plot_positive_coverage_vs_performance(summary, out_path=positive_coverage_scatter_path)
@@ -2302,7 +2295,7 @@ def write_cross_dataset_summaries(
             "cross_dataset_predictor_summary": str(summary_path),
         },
         "plots": {
-            "cross_dataset_metric_distributions": str(distributions_path),
+            **distribution_paths,
             "positive_coverage_vs_performance": str(positive_coverage_scatter_path),
             **(
                 {"positive_background_rank_distributions": str(rank_distribution_path)}
