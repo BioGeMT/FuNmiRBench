@@ -44,6 +44,7 @@ CURVE_COLORS = [
     "#D97D0D",
     "#4C78A8",
 ]
+TOP_PREDICTION_CDF_N = 100
 TOOL_LABELS = {}
 TOOL_COLORS = {}
 
@@ -204,6 +205,14 @@ def _style_axes(ax, *, grid_axis="y"):
 def _save_figure(fig, out_path):
     fig.savefig(out_path, dpi=FIGURE_DPI, bbox_inches="tight", facecolor="white")
     plt.close(fig)
+
+
+def _ecdf(values):
+    ordered = np.sort(np.asarray(values, dtype=float))
+    if ordered.size == 0:
+        return ordered, ordered
+    cumulative = np.arange(1, ordered.size + 1, dtype=float) / float(ordered.size)
+    return ordered, cumulative
 
 
 def _safe_neglog10(series):
@@ -932,6 +941,93 @@ def _plot_predictor_gsea_curves(comparisons, *, dataset_id, out_path):
     ax.legend(
         frameon=False,
         fontsize=8.8,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    _save_figure(fig, out_path)
+
+
+def _plot_top_prediction_effect_cdfs(
+    joined, *, score_cols, tool_ids, dataset_id, out_path, top_n=TOP_PREDICTION_CDF_N,
+    perturbation=None,
+):
+    required_cols = {"logFC", *score_cols}
+    missing = [col for col in required_cols if col not in joined.columns]
+    if missing:
+        raise ValueError(f"Joined table missing required columns: {missing}")
+
+    keep_cols = ["logFC", "FDR", *score_cols]
+    if "gene_id" in joined.columns:
+        keep_cols.append("gene_id")
+    work = joined[keep_cols].copy()
+    work = work[work["logFC"].notna()].copy()
+    work = _annotate_ground_truth(work, perturbation=perturbation)
+    if work.empty:
+        raise ValueError("No usable rows remain for top-prediction effect CDF plot.")
+
+    fig, ax = plt.subplots(figsize=(6.8, 5.2))
+    _style_axes(ax, grid_axis="both")
+
+    background_x, background_y = _ecdf(work["expected_effect"])
+    ax.step(
+        background_x,
+        background_y,
+        where="post",
+        color=NEUTRAL_COLOR,
+        linewidth=1.7,
+        linestyle="--",
+        alpha=0.9,
+        label=f"All genes (n={len(work):,})",
+    )
+
+    for score_col, tool_id in zip(score_cols, tool_ids):
+        scored = work[work[score_col].notna()].copy()
+        if scored.empty:
+            continue
+        sort_cols = [score_col]
+        ascending = [False]
+        if "gene_id" in scored.columns:
+            sort_cols.append("gene_id")
+            ascending.append(True)
+        scored = scored.sort_values(sort_cols, ascending=ascending, kind="mergesort")
+        top_count = min(int(top_n), len(scored))
+        top_values = scored["expected_effect"].head(top_count).to_numpy(dtype=float)
+        x_values, y_values = _ecdf(top_values)
+        ax.step(
+            x_values,
+            y_values,
+            where="post",
+            color=_tool_color(tool_id),
+            linewidth=2.2,
+            label=f"{_tool_label(tool_id)} top {top_count}",
+        )
+
+    ax.axvline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle=":", alpha=0.8)
+    ax.set_xlabel("Perturbation-aware effect", fontsize=10)
+    ax.set_ylabel("Cumulative fraction", fontsize=10)
+    ax.set_ylim(0, 1.02)
+    ax.set_title(
+        f"Top {int(top_n)} prediction effect CDFs",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        (
+            f"{_dataset_caption(dataset_id)}"
+            f"  |  top {int(top_n)} per predictor"
+            "  |  higher values indicate stronger perturbation-consistent effect"
+        ),
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(
+        frameon=False,
+        fontsize=8.6,
         loc="upper left",
         bbox_to_anchor=(1.02, 1.0),
         borderaxespad=0.0,
@@ -1782,6 +1878,7 @@ def evaluate_joined_dataframe(
         comparison_roc_png = comparison_plots_dir / "roc_common.png"
         comparison_roc_all_png = comparison_plots_dir / "roc_all_scored.png"
         comparison_gsea_png = comparison_plots_dir / "gsea_common.png"
+        comparison_cdf_png = comparison_plots_dir / "top_100_effect_cdfs.png"
         common_pr = _prepare_common_scored_frame(
             joined,
             score_cols=score_cols,
@@ -1824,12 +1921,24 @@ def evaluate_joined_dataframe(
             dataset_id=dataset_id,
             out_path=comparison_gsea_png,
         )
+        _plot_top_prediction_effect_cdfs(
+            joined,
+            score_cols=score_cols,
+            tool_ids=tool_ids,
+            dataset_id=dataset_id,
+            out_path=comparison_cdf_png,
+            perturbation=perturbation,
+        )
         dataset_plots["predictor_pr_curves"] = str(comparison_pr_png)
         dataset_plots["predictor_pr_curves_all_scored"] = str(comparison_pr_all_png)
         dataset_plots["predictor_roc_curves"] = str(comparison_roc_png)
         dataset_plots["predictor_roc_curves_all_scored"] = str(comparison_roc_all_png)
         dataset_plots["predictor_gsea_curves"] = str(comparison_gsea_png)
-        _emit_log(logger, f"    Dataset: {dataset_id} | wrote PR/ROC/GSEA comparison plots")
+        dataset_plots["predictor_top100_effect_cdfs"] = str(comparison_cdf_png)
+        _emit_log(
+            logger,
+            f"    Dataset: {dataset_id} | wrote PR/ROC/GSEA comparison plots and top-100 effect CDF",
+        )
 
         corr_png = comparison_plots_dir / "predictor_correlation_heatmap.png"
         corr_tsv = reports_dir / f"{dataset_id}__predictor_correlation.tsv"

@@ -268,6 +268,7 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
     assert "predictor_roc_curves" in result["plots"]
     assert "predictor_roc_curves_all_scored" in result["plots"]
     assert "predictor_gsea_curves" in result["plots"]
+    assert "predictor_top100_effect_cdfs" in result["plots"]
     assert "top_10pct_positive_heatmap" in result["plots"]
     assert (tmp_path / "plots" / "predictors" / "mock" / "score_vs_expected_effect.png").is_file()
     assert (tmp_path / "plots" / "predictors" / "mock" / "gsea_enrichment.png").is_file()
@@ -279,6 +280,7 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
     assert (tmp_path / "plots" / "comparisons" / "roc_common.png").is_file()
     assert (tmp_path / "plots" / "comparisons" / "roc_all_scored.png").is_file()
     assert (tmp_path / "plots" / "comparisons" / "gsea_common.png").is_file()
+    assert (tmp_path / "plots" / "comparisons" / "top_100_effect_cdfs.png").is_file()
     assert (tmp_path / "plots" / "heatmaps" / "top_10pct_positive_genes.png").is_file()
 
 
@@ -325,6 +327,7 @@ def test_cross_predictor_plots_use_common_scored_rows(tmp_path, monkeypatch):
     monkeypatch.setattr(evaluate_module, "_plot_predictor_roc_curves", capture_roc)
     monkeypatch.setattr(evaluate_module, "_plot_predictor_roc_curves_own_scored", capture_roc_all)
     monkeypatch.setattr(evaluate_module, "_plot_predictor_gsea_curves", capture_gsea)
+    monkeypatch.setattr(evaluate_module, "_plot_top_prediction_effect_cdfs", lambda *args, **kwargs: None)
 
     evaluate_joined_dataframe(
         joined,
@@ -398,6 +401,7 @@ def test_per_dataset_visuals_use_local_ranks_not_global_ranks(tmp_path, monkeypa
     monkeypatch.setattr(evaluate_module, "_plot_predictor_roc_curves", lambda *args, **kwargs: None)
     monkeypatch.setattr(evaluate_module, "_plot_predictor_roc_curves_own_scored", lambda *args, **kwargs: None)
     monkeypatch.setattr(evaluate_module, "_plot_predictor_gsea_curves", lambda *args, **kwargs: None)
+    monkeypatch.setattr(evaluate_module, "_plot_top_prediction_effect_cdfs", lambda *args, **kwargs: None)
     monkeypatch.setattr(evaluate_module, "_write_tool_report", lambda *args, **kwargs: None)
 
     def capture_alg(joined_frame, *, score_cols, rank_cols, tool_ids, dataset_id, out_path, **kwargs):

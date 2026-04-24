@@ -205,7 +205,7 @@ def test_example_end_to_end(tmp_path):
     assert summary["tool_ids"] == ["random", "cheating"]
 
     plots = list(out_dir.rglob("*.png"))
-    assert len(plots) == 51
+    assert len(plots) == 54
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "score_vs_expected_effect.png"
     ).is_file()
@@ -250,6 +250,9 @@ def test_example_end_to_end(tmp_path):
     ).is_file()
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "gsea_common.png"
+    ).is_file()
+    assert (
+        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "top_100_effect_cdfs.png"
     ).is_file()
     assert stale_plot.exists()
     assert stale_report.exists()
