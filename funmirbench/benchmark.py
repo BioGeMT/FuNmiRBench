@@ -455,7 +455,7 @@ def write_run_readme(
     )
     combined_plot_descriptions = {
         "positive_coverage_vs_performance": "mean positive coverage against mean APS and mean AUROC",
-        "positive_background_rank_distributions": "global-rank separation of GT positives from background genes",
+        "positive_background_rank_distributions": "dataset-local rank separation of GT positives from background genes",
     }
     for key, path in relative_combined_outputs.get("plots", {}).items():
         if key.startswith("cross_dataset_") and key.endswith("_distribution"):
@@ -724,7 +724,7 @@ def write_run_pdf_report(
             [
                 "plots/combined/metrics/cross_dataset_<metric>_distribution.png: one figure per metric showing how that metric varies across the selected datasets",
                 "positive_coverage_vs_performance.png: mean positive coverage against mean APS and AUROC",
-                "positive_background_rank_distributions.png: whether positives rank above background on the global rank scale",
+                "positive_background_rank_distributions.png: whether positives rank above background on the dataset-local rank scale",
             ],
             x=0.06,
             y=0.45,
@@ -748,7 +748,7 @@ def write_run_pdf_report(
             ),
             "positive_background_rank_distributions": (
                 "Positive vs background rank distributions",
-                "Global-rank distributions aggregated across datasets, split into GT positives and background genes. "
+                "Dataset-local rank distributions aggregated across datasets, split into GT positives and background genes. "
                 "Stronger predictors should push positives higher than background."
             ),
         })
@@ -958,7 +958,6 @@ def run_benchmark(config_path):
         joined_path = dataset_dir / "joined.tsv"
         joined.to_csv(joined_path, sep="\t", index=False)
         logger.info(f"  Wrote joined table: {joined_path}")
-        joined_frames.append(joined.copy())
 
         logger.info(f"  Evaluating metrics and plots for {meta.id}...")
         evaluation = evaluate_joined_dataframe(
@@ -979,6 +978,7 @@ def run_benchmark(config_path):
             tool_labels=tool_labels,
             logger=logger.info,
         )
+        joined_frames.append(joined.copy())
         metric_rows.extend(evaluation["metric_rows"])
         dataset_outputs.append(
             {

@@ -292,6 +292,32 @@ def _rank_col_for_tool(tool_id, *, prefix=GLOBAL_RANK_PREFIX):
     return f"{prefix}{tool_id}"
 
 
+def _rank_distribution_specs(frame: pd.DataFrame):
+    specs = []
+    seen = set()
+    for column in frame.columns:
+        if column.startswith(LOCAL_RANK_PREFIX):
+            tool_id = column[len(LOCAL_RANK_PREFIX):]
+            specs.append((tool_id, column, "local"))
+            seen.add(tool_id)
+    for column in frame.columns:
+        if not column.startswith(GLOBAL_RANK_PREFIX):
+            continue
+        tool_id = column[len(GLOBAL_RANK_PREFIX):]
+        if tool_id in seen:
+            continue
+        specs.append((tool_id, column, "global"))
+        seen.add(tool_id)
+    for column in frame.columns:
+        if not column.startswith(SCORE_PREFIX):
+            continue
+        tool_id = column[len(SCORE_PREFIX):]
+        if tool_id in seen:
+            continue
+        specs.append((tool_id, column, "score"))
+    return specs
+
+
 def _top_fraction_mask(series, fraction, *, tie_breaker=None):
     valid = series.notna()
     if not bool(valid.any()):
@@ -1711,8 +1737,6 @@ def evaluate_joined_dataframe(
     for score_col, tool_id in zip(score_cols, tool_ids):
         global_rank_col = _rank_col_for_tool(tool_id)
         local_rank_col = _rank_col_for_tool(tool_id, prefix=LOCAL_RANK_PREFIX)
-        if global_rank_col not in joined.columns or local_rank_col not in joined.columns:
-            joined = joined.copy()
         if local_rank_col not in joined.columns:
             joined[local_rank_col] = _rank_scale_scores(joined[score_col])
         if global_rank_col not in joined.columns:
@@ -2155,11 +2179,11 @@ def _plot_positive_coverage_vs_performance(summary_df, *, out_path):
 
 def _plot_rank_class_distributions(joined_frames, *, out_path, fdr_threshold, abs_logfc_threshold):
     combined = pd.concat(joined_frames, ignore_index=True)
-    rank_cols = sorted(col for col in combined.columns if col.startswith(GLOBAL_RANK_PREFIX))
-    if not rank_cols:
+    rank_specs = _rank_distribution_specs(combined)
+    if not rank_specs:
         return False
 
-    keep_cols = ["logFC", "FDR", *rank_cols]
+    keep_cols = ["logFC", "FDR", *[column for _, column, _ in rank_specs]]
     for optional in ("dataset_id", "perturbation"):
         if optional in combined.columns:
             keep_cols.append(optional)
@@ -2174,52 +2198,94 @@ def _plot_rank_class_distributions(joined_frames, *, out_path, fdr_threshold, ab
         abs_logfc_threshold=abs_logfc_threshold,
     ).astype(int)
 
-    tool_ids = [_tool_id_from_score_col(rank_col.replace(GLOBAL_RANK_PREFIX, SCORE_PREFIX, 1)) for rank_col in rank_cols]
-    positive_data = [work.loc[work["is_positive"] == 1, rank_col].dropna().astype(float).tolist() for rank_col in rank_cols]
-    background_data = [work.loc[work["is_positive"] == 0, rank_col].dropna().astype(float).tolist() for rank_col in rank_cols]
+    tool_ids = []
+    positive_data = []
+    background_data = []
+    for tool_id, column, column_type in rank_specs:
+        if column_type == "score":
+            values = _rank_scale_scores(work[column])
+        else:
+            values = work[column].astype(float)
+        pos_values = values.loc[work["is_positive"] == 1].dropna().astype(float).tolist()
+        bg_values = values.loc[work["is_positive"] == 0].dropna().astype(float).tolist()
+        tool_ids.append(tool_id)
+        positive_data.append(pos_values)
+        background_data.append(bg_values)
     if not any(positive_data) or not any(background_data):
         return False
 
-    fig, axes = plt.subplots(2, 1, figsize=(8.6, 7.2), sharex=True, gridspec_kw={"hspace": 0.25})
-    panel_specs = [
-        (axes[0], positive_data, "GT positives"),
-        (axes[1], background_data, "Background genes"),
-    ]
-    positions = np.arange(len(tool_ids), dtype=float)
+    fig, ax = plt.subplots(figsize=(max(8.4, len(tool_ids) * 1.7), 5.8))
+    _style_axes(ax, grid_axis="y")
+    positions = np.arange(len(tool_ids), dtype=float) * 1.35
+    negative_positions = positions - 0.18
+    positive_positions = positions + 0.18
     colors = [_tool_color(tool_id) for tool_id in tool_ids]
+    valid_bg_positions = [pos for pos, values in zip(negative_positions, background_data) if values]
+    valid_bg_data = [values for values in background_data if values]
+    valid_pos_positions = [pos for pos, values in zip(positive_positions, positive_data) if values]
+    valid_pos_data = [values for values in positive_data if values]
 
-    for ax, panel_data, panel_title in panel_specs:
-        _style_axes(ax, grid_axis="y")
-        box = ax.boxplot(
-            panel_data,
-            positions=positions,
-            widths=0.55,
-            patch_artist=True,
-            showfliers=False,
+    if valid_bg_data:
+        bg_violin = ax.violinplot(
+            valid_bg_data,
+            positions=valid_bg_positions,
+            widths=0.30,
+            showmeans=False,
+            showextrema=False,
+            showmedians=True,
         )
-        for patch, color in zip(box["boxes"], colors):
-            patch.set_facecolor(color)
-            patch.set_alpha(0.35)
-            patch.set_edgecolor(color)
-        for median in box["medians"]:
-            median.set_color("#22303C")
-            median.set_linewidth(1.4)
-        for whisker in box["whiskers"]:
-            whisker.set_color("#7A8798")
-        for cap in box["caps"]:
-            cap.set_color("#7A8798")
-        ax.set_ylim(0, 1.02)
-        ax.set_ylabel("Global rank", fontsize=10)
-        ax.set_title(panel_title, fontsize=10.5, fontweight="semibold", loc="left", pad=10)
+        for body in bg_violin["bodies"]:
+            body.set_facecolor(NEGATIVE_COLOR)
+            body.set_edgecolor(NEGATIVE_COLOR)
+            body.set_alpha(0.45)
+        bg_violin["cmedians"].set_color("#22303C")
+        bg_violin["cmedians"].set_linewidth(1.5)
 
-    axes[1].set_xticks(positions)
-    axes[1].set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
-    axes[0].set_title(
+    if valid_pos_data:
+        pos_violin = ax.violinplot(
+            valid_pos_data,
+            positions=valid_pos_positions,
+            widths=0.30,
+            showmeans=False,
+            showextrema=False,
+            showmedians=True,
+        )
+        for body, color in zip(pos_violin["bodies"], [c for c, values in zip(colors, positive_data) if values]):
+            body.set_facecolor(color)
+            body.set_edgecolor(color)
+            body.set_alpha(0.40)
+        pos_violin["cmedians"].set_color("#22303C")
+        pos_violin["cmedians"].set_linewidth(1.5)
+
+    ax.set_ylim(0, 1.02)
+    ax.set_ylabel("Local rank within dataset", fontsize=10)
+    ax.set_xticks(positions)
+    ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+    ax.set_title(
         "Positive vs background rank distributions",
         fontsize=11,
         fontweight="semibold",
         loc="left",
         pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        "Aggregated across datasets; each predictor contributes only genes it scored.",
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    from matplotlib.patches import Patch
+    ax.legend(
+        handles=[
+            Patch(facecolor=NEGATIVE_COLOR, edgecolor=NEGATIVE_COLOR, alpha=0.45, label="Background genes"),
+            Patch(facecolor="#7AA6D8", edgecolor="#7AA6D8", alpha=0.40, label="GT positives"),
+        ],
+        frameon=False,
+        fontsize=8.8,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
     )
     _save_figure(fig, out_path)
     return True

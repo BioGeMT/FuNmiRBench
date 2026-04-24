@@ -143,6 +143,20 @@ def test_metric_plot_limits_allow_negative_spearman():
     assert evaluate_module._metric_plot_limits("aps") == (0.0, 1.02)
 
 
+def test_rank_distribution_specs_prefer_local_ranks():
+    frame = pd.DataFrame(
+        {
+            "local_rank_mock": [0.9, 0.1],
+            "global_rank_mock": [0.1, 0.9],
+            "global_rank_targetscan": [0.2, 0.3],
+        }
+    )
+    assert evaluate_module._rank_distribution_specs(frame) == [
+        ("mock", "local_rank_mock", "local"),
+        ("targetscan", "global_rank_targetscan", "global"),
+    ]
+
+
 def test_positive_count_caption_uses_scored_over_total():
     assert evaluate_module._positive_count_caption(67, 243) == "67/243"
 
