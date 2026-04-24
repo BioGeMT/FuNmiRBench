@@ -162,9 +162,6 @@ def test_example_end_to_end(tmp_path):
     assert (out_dir / "summary.json").is_file()
     assert (out_dir / "README.md").is_file()
     assert (out_dir / "REPORT.pdf").is_file()
-    assert (out_dir / "no_fdr_threshold" / "summary.json").is_file()
-    assert (out_dir / "no_fdr_threshold" / "README.md").is_file()
-    assert (out_dir / "no_fdr_threshold" / "REPORT.pdf").is_file()
     assert (out_dir / "tables" / "per_experiment" / "coverage_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "per_experiment" / "positive_coverage_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "per_experiment" / "aps_per_experiment.tsv").is_file()
@@ -198,7 +195,6 @@ def test_example_end_to_end(tmp_path):
     assert summary["cross_dataset_outputs"]["plots"]["positive_coverage_vs_performance"].endswith(
         "positive_coverage_vs_performance.png"
     )
-    assert summary["comparison_runs"]["no_fdr_threshold"]["out_dir"].endswith("no_fdr_threshold")
     assert "coverage_vs_performance" not in summary["cross_dataset_outputs"]["plots"]
     assert "cross_dataset_metric_heatmap" not in summary["cross_dataset_outputs"]["plots"]
     assert set(summary["dataset_ids"]) == {
@@ -209,7 +205,7 @@ def test_example_end_to_end(tmp_path):
     assert summary["tool_ids"] == ["random", "cheating"]
 
     plots = list(out_dir.rglob("*.png"))
-    assert len(plots) == 96
+    assert len(plots) == 48
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "score_vs_expected_effect.png"
     ).is_file()
@@ -252,11 +248,6 @@ def test_example_end_to_end(tmp_path):
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "gsea_common.png"
     ).is_file()
-    assert (
-        out_dir / "no_fdr_threshold" / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "precision_recall_common.png"
-    ).is_file()
-    no_fdr_readme = (out_dir / "no_fdr_threshold" / "README.md").read_text(encoding="utf-8")
-    assert "no FDR threshold" in no_fdr_readme
     assert stale_plot.exists()
     assert stale_report.exists()
 

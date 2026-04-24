@@ -41,6 +41,7 @@ CURVE_COLORS = [
     "#4C78A8",
 ]
 TOOL_LABELS = {}
+TOOL_COLORS = {}
 
 
 def _metric_plot_limits(metric_name):
@@ -49,24 +50,12 @@ def _metric_plot_limits(metric_name):
     return 0.0, 1.02
 
 
-def _has_fdr_threshold(fdr_threshold):
-    if fdr_threshold is None:
-        return False
-    try:
-        return math.isfinite(float(fdr_threshold))
-    except (TypeError, ValueError):
-        return False
-
-
 def _format_threshold_value(value):
     return str(float(value))
 
 
 def describe_gt_rule(fdr_threshold, abs_logfc_threshold, *, markdown=False):
-    if _has_fdr_threshold(fdr_threshold):
-        fdr_text = f"FDR < {_format_threshold_value(fdr_threshold)}"
-    else:
-        fdr_text = "no FDR threshold"
+    fdr_text = f"FDR < {_format_threshold_value(fdr_threshold)}"
     effect_text = f"perturbation-aware effect > {_format_threshold_value(abs_logfc_threshold)}"
     if markdown:
         return (
@@ -77,22 +66,17 @@ def describe_gt_rule(fdr_threshold, abs_logfc_threshold, *, markdown=False):
 
 
 def _positive_mask(df, *, fdr_threshold, abs_logfc_threshold):
-    mask = df["expected_effect"] > float(abs_logfc_threshold)
-    if _has_fdr_threshold(fdr_threshold):
-        mask = mask & (df["FDR"] < float(fdr_threshold))
-    return mask
+    return (df["expected_effect"] > float(abs_logfc_threshold)) & (df["FDR"] < float(fdr_threshold))
 
 
 def _positive_sort_spec(fdr_threshold):
-    if _has_fdr_threshold(fdr_threshold):
-        return ["FDR", "expected_effect"], [True, False]
-    return ["expected_effect", "FDR"], [False, True]
+    del fdr_threshold
+    return ["FDR", "expected_effect"], [True, False]
 
 
 def _selection_caption(fdr_threshold):
-    if _has_fdr_threshold(fdr_threshold):
-        return "selected by FDR and expected effect"
-    return "selected by expected effect only"
+    del fdr_threshold
+    return "selected by FDR and expected effect"
 
 
 def _emit_log(logger, message):
@@ -109,11 +93,27 @@ def _set_tool_labels(tool_labels=None):
     }
 
 
+def _set_tool_colors(tool_ids=None):
+    global TOOL_COLORS
+    TOOL_COLORS = {
+        str(tool_id): CURVE_COLORS[index % len(CURVE_COLORS)]
+        for index, tool_id in enumerate(tool_ids or [])
+    }
+
+
 def _tool_label(tool_id):
     resolved = TOOL_LABELS.get(str(tool_id))
     if resolved:
         return resolved
     return str(tool_id).replace("_", " ")
+
+
+def _tool_color(tool_id, *, fallback=POSITIVE_COLOR):
+    return TOOL_COLORS.get(str(tool_id), fallback)
+
+
+def _positive_count_caption(scored_positives, positives_total):
+    return f"{int(scored_positives):,}/{int(positives_total):,}"
 
 
 def _dataset_heading(dataset_id, *, suffix=None):
@@ -297,13 +297,14 @@ def _prepare_scored_frame(
     return keep, coverage_info
 
 
-def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_path):
+def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, positives_total, out_path):
     pearson = float(df[score_col].corr(df["expected_effect"], method="pearson"))
     spearman = float(df[score_col].corr(df["expected_effect"], method="spearman"))
     fig, ax = plt.subplots(figsize=(7.2, 5.0))
     positive_mask = df["is_positive"].astype(bool)
     negatives = df.loc[~positive_mask]
     positives = df.loc[positive_mask]
+    predictor_color = _tool_color(tool_id)
 
     _style_axes(ax, grid_axis="both")
     ax.scatter(
@@ -321,7 +322,7 @@ def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_pa
         positives["expected_effect"],
         s=28,
         alpha=0.9,
-        color=POSITIVE_COLOR,
+        color=predictor_color,
         edgecolors="white",
         linewidths=0.35,
         label="DE positives",
@@ -348,7 +349,7 @@ def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_pa
         (
             f"{_dataset_caption(dataset_id)}"
             f"  |  n={len(df):,} genes"
-            f"  |  positives={int(positive_mask.sum()):,}"
+            f"  |  positives={_positive_count_caption(int(positive_mask.sum()), positives_total)}"
         ),
         fontsize=9,
         color=NEUTRAL_COLOR,
@@ -368,7 +369,7 @@ def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_pa
     return pearson, spearman
 
 
-def _plot_gsea_enrichment(df, *, score_col, dataset_id, tool_id, out_path):
+def _plot_gsea_enrichment(df, *, score_col, dataset_id, tool_id, positives_total, out_path):
     ordered = df.sort_values([score_col, "gene_id"], ascending=[False, True]).reset_index(drop=True)
     hits = ordered["is_positive"].astype(int).to_numpy(dtype=int)
     total_hits = int(hits.sum())
@@ -407,12 +408,13 @@ def _plot_gsea_enrichment(df, *, score_col, dataset_id, tool_id, out_path):
 
     curve_ax.grid(True, axis="y", color=GRID_COLOR, linewidth=0.8, alpha=0.9)
     curve_ax.set_axisbelow(True)
-    curve_ax.plot(positions, running_es, color="#2F5D8C", linewidth=2.2)
+    predictor_color = _tool_color(tool_id)
+    curve_ax.plot(positions, running_es, color=predictor_color, linewidth=2.2)
     curve_ax.axhline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle="--", alpha=0.8)
     curve_ax.scatter(
         [positions[peak_index]],
         [running_es[peak_index]],
-        color=POSITIVE_COLOR if es >= 0 else "#4C78A8",
+        color="black",
         s=26,
         zorder=3,
     )
@@ -429,7 +431,7 @@ def _plot_gsea_enrichment(df, *, score_col, dataset_id, tool_id, out_path):
         0.965,
         (
             f"{_dataset_caption(dataset_id)}"
-            f"  |  positives={total_hits:,}/{len(ordered):,}"
+            f"  |  positives={_positive_count_caption(total_hits, positives_total)}"
             f"  |  ES={es:.3f}"
         ),
         fontsize=9,
@@ -477,6 +479,7 @@ def _plot_single_predictor_pr_curve(item, *, dataset_id, out_path):
     precision, recall, _ = precision_recall_curve(item["y_true"], item["y_score"])
     pr_auc = auc(recall, precision)
     baseline = float(item["y_true"].mean())
+    predictor_color = _tool_color(item["tool_id"])
 
     fig, ax = plt.subplots(figsize=(6.1, 4.9))
     _style_axes(ax, grid_axis="both")
@@ -484,7 +487,7 @@ def _plot_single_predictor_pr_curve(item, *, dataset_id, out_path):
         recall,
         precision,
         linewidth=2.2,
-        color=CURVE_COLORS[0],
+        color=predictor_color,
         label=f"PR-AUC {pr_auc:.3f}",
     )
     ax.axhline(
@@ -511,7 +514,7 @@ def _plot_single_predictor_pr_curve(item, *, dataset_id, out_path):
         (
             f"{_dataset_caption(dataset_id)}"
             f"  |  n={len(item['y_true']):,}"
-            f"  |  positives={int(item['y_true'].sum()):,}"
+            f"  |  positives={_positive_count_caption(int(item['y_true'].sum()), item['positives_total'])}"
             f"  |  cov={item['coverage']:.0%}"
         ),
         fontsize=9,
@@ -524,6 +527,7 @@ def _plot_single_predictor_pr_curve(item, *, dataset_id, out_path):
 def _plot_single_predictor_roc_curve(item, *, dataset_id, out_path):
     fpr, tpr, _ = roc_curve(item["y_true"], item["y_score"])
     auroc = roc_auc_score(item["y_true"], item["y_score"])
+    predictor_color = _tool_color(item["tool_id"])
 
     fig, ax = plt.subplots(figsize=(6.1, 4.9))
     _style_axes(ax, grid_axis="both")
@@ -531,7 +535,7 @@ def _plot_single_predictor_roc_curve(item, *, dataset_id, out_path):
         fpr,
         tpr,
         linewidth=2.2,
-        color=CURVE_COLORS[0],
+        color=predictor_color,
         label=f"AUROC {auroc:.3f}",
     )
     ax.plot(
@@ -559,7 +563,7 @@ def _plot_single_predictor_roc_curve(item, *, dataset_id, out_path):
         (
             f"{_dataset_caption(dataset_id)}"
             f"  |  n={len(item['y_true']):,}"
-            f"  |  positives={int(item['y_true'].sum()):,}"
+            f"  |  positives={_positive_count_caption(int(item['y_true'].sum()), item['positives_total'])}"
             f"  |  cov={item['coverage']:.0%}"
         ),
         fontsize=9,
@@ -573,7 +577,7 @@ def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
     fig, ax = plt.subplots(figsize=(6.4, 5.1))
     _style_axes(ax, grid_axis="both")
     baseline = None
-    for index, item in enumerate(comparisons):
+    for item in comparisons:
         precision, recall, _ = precision_recall_curve(item["y_true"], item["y_score"])
         pr_auc = auc(recall, precision)
         if baseline is None:
@@ -586,7 +590,7 @@ def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
                 f"({pr_auc:.3f})"
             ),
             linewidth=2.2,
-            color=CURVE_COLORS[index % len(CURVE_COLORS)],
+            color=_tool_color(item["tool_id"]),
         )
     if baseline is not None:
         ax.axhline(
@@ -628,7 +632,7 @@ def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
 def _plot_predictor_pr_curves_own_scored(comparisons, *, dataset_id, out_path):
     fig, ax = plt.subplots(figsize=(6.6, 5.2))
     _style_axes(ax, grid_axis="both")
-    for index, item in enumerate(comparisons):
+    for item in comparisons:
         precision, recall, _ = precision_recall_curve(item["y_true"], item["y_score"])
         pr_auc = auc(recall, precision)
         baseline = float(item["y_true"].mean())
@@ -640,7 +644,7 @@ def _plot_predictor_pr_curves_own_scored(comparisons, *, dataset_id, out_path):
                 f"({pr_auc:.3f}, base {baseline:.3f})"
             ),
             linewidth=2.2,
-            color=CURVE_COLORS[index % len(CURVE_COLORS)],
+            color=_tool_color(item["tool_id"]),
         )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
@@ -711,7 +715,7 @@ def _prepare_common_scored_frame(
 def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
     fig, ax = plt.subplots(figsize=(6.4, 5.1))
     _style_axes(ax, grid_axis="both")
-    for index, item in enumerate(comparisons):
+    for item in comparisons:
         fpr, tpr, _ = roc_curve(item["y_true"], item["y_score"])
         auroc = roc_auc_score(item["y_true"], item["y_score"])
         ax.plot(
@@ -719,7 +723,7 @@ def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
             tpr,
             label=f"{_tool_label(item['tool_id'])} ({auroc:.3f})",
             linewidth=2.2,
-            color=CURVE_COLORS[index % len(CURVE_COLORS)],
+            color=_tool_color(item["tool_id"]),
         )
     ax.plot(
         [0, 1],
@@ -761,7 +765,7 @@ def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
 def _plot_predictor_gsea_curves(comparisons, *, dataset_id, out_path):
     fig, ax = plt.subplots(figsize=(6.8, 5.2))
     _style_axes(ax, grid_axis="both")
-    for index, item in enumerate(comparisons):
+    for item in comparisons:
         order_frame = {"y_true": item["y_true"], "y_score": item["y_score"]}
         sort_cols = ["y_score"]
         ascending = [False]
@@ -789,7 +793,7 @@ def _plot_predictor_gsea_curves(comparisons, *, dataset_id, out_path):
             running_es,
             label=f"{_tool_label(item['tool_id'])} (ES {es:.3f})",
             linewidth=2.1,
-            color=CURVE_COLORS[index % len(CURVE_COLORS)],
+            color=_tool_color(item["tool_id"]),
         )
     ax.axhline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle="--", alpha=0.8)
     ax.set_xlabel("Ranked genes", fontsize=10)
@@ -1486,6 +1490,7 @@ def evaluate_joined_dataframe(
     for path in (dataset_plots_dir, predictor_plots_dir, comparison_plots_dir, heatmap_plots_dir):
         path.mkdir(parents=True, exist_ok=True)
     tool_ids = [_tool_id_from_score_col(sc) for sc in score_cols]
+    _set_tool_colors(tool_ids)
     global_rank_cols = []
     local_rank_cols = []
     for score_col, tool_id in zip(score_cols, tool_ids):
@@ -1526,6 +1531,7 @@ def evaluate_joined_dataframe(
             score_col=score_col,
             dataset_id=dataset_id,
             tool_id=tool_id,
+            positives_total=coverage_info["positives_total"],
             out_path=scatter_png,
         )
         enrichment_score = _plot_gsea_enrichment(
@@ -1533,6 +1539,7 @@ def evaluate_joined_dataframe(
             score_col=score_col,
             dataset_id=dataset_id,
             tool_id=tool_id,
+            positives_total=coverage_info["positives_total"],
             out_path=gsea_png,
         )
         pr_auc, aps = _compute_pr_metrics(scored["is_positive"], scored[score_col])
@@ -1543,6 +1550,7 @@ def evaluate_joined_dataframe(
                 "y_true": scored["is_positive"],
                 "y_score": scored[score_col],
                 "coverage": coverage_info["coverage"],
+                "positives_total": coverage_info["positives_total"],
             },
             dataset_id=dataset_id,
             out_path=pr_curve_png,
@@ -1553,6 +1561,7 @@ def evaluate_joined_dataframe(
                 "y_true": scored["is_positive"],
                 "y_score": scored[score_col],
                 "coverage": coverage_info["coverage"],
+                "positives_total": coverage_info["positives_total"],
             },
             dataset_id=dataset_id,
             out_path=roc_curve_png,
@@ -1816,7 +1825,8 @@ def _plot_cross_dataset_metric_distributions(metrics_df, *, metric_names, out_pa
             patch_artist=True,
             showfliers=False,
         )
-        for patch, color in zip(box["boxes"], CURVE_COLORS * ((len(tool_ids) // len(CURVE_COLORS)) + 1)):
+        for patch, tool_id in zip(box["boxes"], tool_ids):
+            color = _tool_color(tool_id)
             patch.set_facecolor(color)
             patch.set_alpha(0.35)
             patch.set_edgecolor(color)
@@ -1837,7 +1847,7 @@ def _plot_cross_dataset_metric_distributions(metrics_df, *, metric_names, out_pa
                 values,
                 s=18,
                 alpha=0.75,
-                color=CURVE_COLORS[tool_index % len(CURVE_COLORS)],
+                color=_tool_color(tool_ids[tool_index]),
                 edgecolors="white",
                 linewidths=0.3,
                 zorder=3,
@@ -1870,7 +1880,7 @@ def _plot_metric_vs_performance(summary_df, *, x_metric_col, x_label, title, out
         _style_axes(ax, grid_axis="both")
         values = summary_df[metric_col].astype(float).to_numpy()
         for index, tool_id in enumerate(summary_df["tool_id"].tolist()):
-            color = CURVE_COLORS[index % len(CURVE_COLORS)]
+            color = _tool_color(tool_id)
             ax.scatter(
                 x_values[index],
                 values[index],
@@ -1955,7 +1965,7 @@ def _plot_rank_class_distributions(joined_frames, *, out_path, fdr_threshold, ab
         (axes[1], background_data, "Background genes"),
     ]
     positions = np.arange(len(tool_ids), dtype=float)
-    colors = [CURVE_COLORS[index % len(CURVE_COLORS)] for index in range(len(tool_ids))]
+    colors = [_tool_color(tool_id) for tool_id in tool_ids]
 
     for ax, panel_data, panel_title in panel_specs:
         _style_axes(ax, grid_axis="y")
@@ -2019,6 +2029,7 @@ def write_cross_dataset_summaries(
             "tables": {},
             "plots": {},
         }
+    _set_tool_colors(metrics_df["tool_id"].drop_duplicates().tolist())
 
     metric_names = ["coverage", "positive_coverage", "aps", "pr_auc", "spearman", "auroc"]
     summary = metrics_df.groupby("tool_id")[metric_names].agg(["count", "mean", "median", "std", "min", "max"])

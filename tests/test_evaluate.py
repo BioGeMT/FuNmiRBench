@@ -139,6 +139,17 @@ def test_metric_plot_limits_allow_negative_spearman():
     assert evaluate_module._metric_plot_limits("aps") == (0.0, 1.02)
 
 
+def test_positive_count_caption_uses_scored_over_total():
+    assert evaluate_module._positive_count_caption(67, 243) == "67/243"
+
+
+def test_tool_colors_follow_predictor_order():
+    evaluate_module._set_tool_colors(["targetscan", "mirdb", "random"])
+    assert evaluate_module._tool_color("targetscan") == evaluate_module.CURVE_COLORS[0]
+    assert evaluate_module._tool_color("mirdb") == evaluate_module.CURVE_COLORS[1]
+    assert evaluate_module._tool_color("random") == evaluate_module.CURVE_COLORS[2]
+
+
 def test_evaluate_rejects_single_class_labels(tmp_path):
     joined = pd.DataFrame(
         {
@@ -184,34 +195,6 @@ def test_evaluate_uses_perturbation_aware_gt_labels(tmp_path):
     )
     assert result["metric_rows"][0]["aps"] == pytest.approx(1.0)
     assert result["metric_rows"][0]["auroc"] == pytest.approx(1.0)
-
-
-def test_evaluate_can_disable_fdr_threshold(tmp_path):
-    joined = pd.DataFrame(
-        {
-            "dataset_id": ["D001", "D001", "D001"],
-            "mirna": ["hsa-miR-demo"] * 3,
-            "perturbation": ["OE", "OE", "OE"],
-            "gene_id": ["ENSG1", "ENSG2", "ENSG3"],
-            "logFC": [-2.0, -1.5, 0.1],
-            "FDR": [0.8, 0.01, 0.9],
-            "score_mock": [0.9, 0.8, 0.1],
-        }
-    )
-    result = evaluate_joined_dataframe(
-        joined,
-        plots_dir=tmp_path / "plots",
-        reports_dir=tmp_path / "reports",
-        fdr_threshold=None,
-        abs_logfc_threshold=1.0,
-        predictor_top_fraction=0.10,
-        perturbation="OE",
-    )
-    metric_row = result["metric_rows"][0]
-    assert metric_row["aps"] == pytest.approx(1.0)
-    assert metric_row["auroc"] == pytest.approx(1.0)
-    report_text = (tmp_path / "reports" / "D001__mock_evaluation_report.md").read_text(encoding="utf-8")
-    assert "no FDR threshold" in report_text
 
 
 def test_evaluate_uses_official_tool_name_in_report(tmp_path):
