@@ -214,6 +214,33 @@ def test_evaluate_can_disable_fdr_threshold(tmp_path):
     assert "no FDR threshold" in report_text
 
 
+def test_evaluate_uses_official_tool_name_in_report(tmp_path):
+    joined = pd.DataFrame(
+        {
+            "dataset_id": ["D001", "D001", "D001"],
+            "mirna": ["hsa-miR-demo"] * 3,
+            "perturbation": ["OE", "OE", "OE"],
+            "gene_id": ["ENSG1", "ENSG2", "ENSG3"],
+            "logFC": [-2.0, -1.5, 0.2],
+            "FDR": [0.01, 0.02, 0.8],
+            "score_mock": [0.9, 0.7, 0.1],
+        }
+    )
+    evaluate_joined_dataframe(
+        joined,
+        plots_dir=tmp_path / "plots",
+        reports_dir=tmp_path / "reports",
+        fdr_threshold=0.05,
+        abs_logfc_threshold=1.0,
+        predictor_top_fraction=0.10,
+        perturbation="OE",
+        tool_labels={"mock": "Mock Official Name"},
+    )
+    report_text = (tmp_path / "reports" / "D001__mock_evaluation_report.md").read_text(encoding="utf-8")
+    assert "Mock Official Name" in report_text
+    assert "# Evaluation Report: D001 | Mock Official Name" in report_text
+
+
 def test_evaluate_writes_combined_comparison_plots(tmp_path):
     joined = pd.DataFrame(
         {

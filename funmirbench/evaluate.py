@@ -40,6 +40,7 @@ CURVE_COLORS = [
     "#D97D0D",
     "#4C78A8",
 ]
+TOOL_LABELS = {}
 
 
 def _metric_plot_limits(metric_name):
@@ -99,7 +100,19 @@ def _emit_log(logger, message):
         logger(message)
 
 
+def _set_tool_labels(tool_labels=None):
+    global TOOL_LABELS
+    TOOL_LABELS = {
+        str(tool_id): str(label).strip()
+        for tool_id, label in (tool_labels or {}).items()
+        if str(label).strip()
+    }
+
+
 def _tool_label(tool_id):
+    resolved = TOOL_LABELS.get(str(tool_id))
+    if resolved:
+        return resolved
     return str(tool_id).replace("_", " ")
 
 
@@ -1449,10 +1462,12 @@ def evaluate_joined_dataframe(
     perturbation=None, geo_accession=None,
     de_table_path=None, joined_tsv=None,
     predictor_output_paths=None,
+    tool_labels=None,
     logger=None,
 ):
     plots_dir.mkdir(parents=True, exist_ok=True)
     reports_dir.mkdir(parents=True, exist_ok=True)
+    _set_tool_labels(tool_labels)
 
     score_cols = sorted(c for c in joined.columns if c.startswith(SCORE_PREFIX))
     if not score_cols:
@@ -1987,10 +2002,12 @@ def write_cross_dataset_summaries(
     joined_frames=None,
     fdr_threshold=0.05,
     abs_logfc_threshold=1.0,
+    tool_labels=None,
     logger=None,
 ):
     tables_dir.mkdir(parents=True, exist_ok=True)
     plots_dir.mkdir(parents=True, exist_ok=True)
+    _set_tool_labels(tool_labels)
     metric_plots_dir = plots_dir / "metrics"
     coverage_plots_dir = plots_dir / "coverage"
     rank_plots_dir = plots_dir / "ranks"

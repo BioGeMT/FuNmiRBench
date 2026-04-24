@@ -816,6 +816,7 @@ def _finalize_run_bundle(
     tool_ids,
     metric_rows,
     joined_frames,
+    tool_labels,
     fdr_threshold,
     abs_logfc_threshold,
     predictor_top_fraction,
@@ -834,6 +835,7 @@ def _finalize_run_bundle(
         joined_frames=joined_frames,
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
+        tool_labels=tool_labels,
         logger=logger.info,
     )
     readme_path = write_run_readme(
@@ -943,6 +945,10 @@ def run_benchmark(config_path):
     no_fdr_layout = _init_run_layout(no_fdr_out_dir)
 
     tool_ids = list(predictions)
+    tool_labels = {
+        str(tool_id): str(meta.get("official_name") or tool_id)
+        for tool_id, meta in predictions.items()
+    }
     metric_rows = []
     dataset_outputs = []
     joined_frames = []
@@ -997,6 +1003,7 @@ def run_benchmark(config_path):
             de_table_path=str(meta.full_path),
             joined_tsv=joined_path,
             predictor_output_paths=predictor_output_paths,
+            tool_labels=tool_labels,
             logger=logger.info,
         )
         logger.info(f"  Evaluating no-FDR comparison metrics and plots for {meta.id}...")
@@ -1015,6 +1022,7 @@ def run_benchmark(config_path):
             de_table_path=str(meta.full_path),
             joined_tsv=no_fdr_joined_path,
             predictor_output_paths=predictor_output_paths,
+            tool_labels=tool_labels,
             logger=logger.info,
         )
         metric_rows.extend(evaluation["metric_rows"])
@@ -1062,6 +1070,7 @@ def run_benchmark(config_path):
         tool_ids=tool_ids,
         metric_rows=no_fdr_metric_rows,
         joined_frames=no_fdr_joined_frames,
+        tool_labels=tool_labels,
         fdr_threshold=None,
         abs_logfc_threshold=abs_logfc_threshold,
         predictor_top_fraction=predictor_top_fraction,
@@ -1083,6 +1092,7 @@ def run_benchmark(config_path):
         tool_ids=tool_ids,
         metric_rows=metric_rows,
         joined_frames=joined_frames,
+        tool_labels=tool_labels,
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
         predictor_top_fraction=predictor_top_fraction,
