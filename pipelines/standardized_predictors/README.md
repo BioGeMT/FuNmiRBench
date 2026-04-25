@@ -14,5 +14,6 @@ conda activate standardized_predictors
 Current predictor pipelines:
 
 - `targetscan/`
-- `mock/`
+- `random/`
 - `cheating/`
+- `perfect/`

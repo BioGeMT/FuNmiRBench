@@ -17,10 +17,12 @@ data/experiments/processed/*
 !data/experiments/processed/18745741/*.tsv
 data/experiments/raw/*
 data/predictions/*
-!data/predictions/mock/
-data/predictions/mock/*
+!data/predictions/random/
+data/predictions/random/*
 !data/predictions/cheating/
 data/predictions/cheating/*
+!data/predictions/perfect/
+data/predictions/perfect/*
 data/joined/
 data/plots/
 

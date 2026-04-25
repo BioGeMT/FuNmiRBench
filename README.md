@@ -58,11 +58,12 @@ already includes:
 - experiment metadata in `metadata/mirna_experiment_info.tsv`
 - predictor metadata in `metadata/predictions_info.tsv`
 
-Generate the two demo predictor outputs:
+Generate the demo predictor outputs:
 
 ```bash
-uv run pipelines/standardized_predictors/mock/pipeline.py
+uv run pipelines/standardized_predictors/random/pipeline.py
 uv run pipelines/standardized_predictors/cheating/pipeline.py
+uv run pipelines/standardized_predictors/perfect/pipeline.py
 ```
 
 Then run the default benchmark:
@@ -80,7 +81,7 @@ The default config already points at:
 - `metadata/mirna_experiment_info.tsv`
 - `metadata/predictions_info.tsv`
 
-and selects 3 real experiment datasets plus 2 demo predictors.
+and selects 3 real experiment datasets plus 4 demo predictors and TargetScan.
 
 ## Workflow
 
@@ -179,17 +180,31 @@ uv run funmirbench-sync-metadata --kind experiments
 Predictor score files live under `data/predictions/` and are discovered through
 `metadata/predictions_info.tsv`.
 
-The repo ships two demo predictor pipelines:
+The repo ships three demo predictor pipelines:
 
 ```bash
-uv run pipelines/standardized_predictors/mock/pipeline.py
+uv run pipelines/standardized_predictors/random/pipeline.py
 uv run pipelines/standardized_predictors/cheating/pipeline.py
+uv run pipelines/standardized_predictors/perfect/pipeline.py
 ```
 
 This creates:
 
-- `data/predictions/mock/mock_standardized.tsv`
+- `data/predictions/random/random_standardized.tsv`
+- `data/predictions/random/random_3000_standardized.tsv`
 - `data/predictions/cheating/cheating_standardized.tsv`
+- `data/predictions/perfect/perfect_standardized.tsv`
+
+The built-in demo predictors are intentionally different:
+
+- `random`: deterministic random baseline over the full available miRNA-gene pairs
+- `random_3000`: deterministic random baseline capped at 3000 genes per dataset
+- `cheating`: demo-only directional scores informed by the benchmark DE tables
+- `perfect`: dataset-aware oracle scores that exactly separate benchmark positives from negatives
+
+`cheating` and `perfect` are threshold-sensitive demo predictors. Their standardized outputs are
+generated against a specific `(FDR threshold, effect threshold)` pair, and the benchmark now checks
+that those build thresholds match the current `evaluation` config before running.
 
 The demo predictors already have registry rows in `metadata/predictions_info.tsv`.
 
@@ -204,7 +219,8 @@ Benchmark config summary:
 - `experiments`: which experiment rows to include
 - `predictors`: which predictor rows to include
 - `evaluation`: thresholds and ranking settings
-- `out_dir`: results directory
+- `tags`: optional labels included in the per-run output folder name
+- `out_dir`: results root directory; each benchmark run creates its own subfolder under this root
 
 Run it with:
 
@@ -220,6 +236,17 @@ If you want to prefetch the full curated experiment cache yourself, you can also
 ```bash
 uv run funmirbench-experiments-store
 ```
+
+During evaluation, each predictor is scored only on miRNA-gene pairs that exist in that
+predictor's standardized file. Missing pairs are not filled with zero for metrics. Each run writes
+coverage information to `tables/coverage_per_experiment.tsv`, and the per-predictor Markdown/PDF
+reports also record total rows, scored rows, missing rows, and coverage. For per-dataset
+heatmaps and agreement plots, FuNmiRBench uses a dataset-local tie-aware rank over the scored
+rows. For cross-dataset rank-distribution plots, it keeps a separate global tie-aware rank
+derived from each predictor's full standardized file. Predictor-agreement top fractions use an
+exact top-k selection per predictor with a deterministic tie-break instead of a quantile
+threshold. Combined PR, ROC, and GSEA comparison plots are computed on the common set of genes
+scored by all compared predictors.
 
 YAML paths can be:
 
@@ -237,12 +264,14 @@ experiments:
   id: [GSE109725_OE_miR_204_5p, GSE118315_KO_miR_124_3p, GSE210778_OE_miR_375_3p]
 
 predictors:
-  tool_id: [predictor_1, predictor_2]
+  tool_id: [random, random_3000, cheating, perfect, targetscan]
 
 evaluation:
   fdr_threshold: 0.05
   abs_logfc_threshold: 1.0
   predictor_top_fraction: 0.10
+
+tags: [demo]
 
 out_dir: results/
 ```
@@ -257,19 +286,29 @@ normal workflow is just to edit or uncomment filters.
 
 ## Outputs
 
-After a benchmark run, `results/` contains:
+After a benchmark run, `results/` contains one new run folder, for example:
 
-- `joined/`: joined DE + predictor score tables
-- `tables/`: APS, PR-AUC, AUROC, and Spearman summary tables
-- `plots/<dataset_id>/`: per-dataset plots
-- `reports/`: per-predictor text reports and predictor-correlation TSVs
+- `results/tag-demo__exp3__pred2__oe1__ko1__kd0__cell3/`
+
+Inside each run folder you get:
+
+- `README.md`: human-readable run guide and quick-start map for the output folder
+- `REPORT.pdf`: main run-level PDF report with explanations and selected combined plots
+- `datasets/<dataset_id>/joined.tsv`: joined DE + predictor score table for that dataset
+- `datasets/<dataset_id>/plots/predictors/<tool_id>/`: per-tool plots for that dataset
+- `datasets/<dataset_id>/plots/comparisons/`: multi-predictor comparison plots for that dataset
+- `datasets/<dataset_id>/plots/heatmaps/`: dataset-level heatmaps
+- `datasets/<dataset_id>/reports/`: per-dataset Markdown/PDF reports and correlation TSVs
+- `tables/per_experiment/`: per-experiment metric tables
+- `tables/combined/`: cross-dataset predictor summary table
+- `plots/combined/metrics/`, `plots/combined/coverage/`, `plots/combined/ranks/`: cross-dataset comparison plots grouped by theme
 - `summary.json`: run summary
 
 When 2 or more predictors are selected, each dataset gets:
 
-- one score-vs-logFC scatter per predictor
-- one combined PR curve
-- one combined ROC curve
+- one score-vs-expected-effect scatter per predictor
+- one combined PR curve on common scored pairs
+- one combined ROC curve on common scored pairs
 - one algorithms-vs-genes heatmap
 - one predictor-correlation heatmap
 
