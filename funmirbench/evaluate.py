@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap, TwoSlopeNorm
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Patch, Rectangle
 from sklearn.metrics import (
     auc,
     average_precision_score,
@@ -23,6 +23,7 @@ SCORE_PREFIX = "score_"
 GLOBAL_RANK_PREFIX = "global_rank_"
 LOCAL_RANK_PREFIX = "local_rank_"
 FIGURE_DPI = 300
+REPORT_PAGE_SIZE = (8.27, 11.69)
 NEGATIVE_COLOR = "#B8C4D6"
 POSITIVE_COLOR = "#D04E4E"
 NEUTRAL_COLOR = "#5B6577"
@@ -207,6 +208,13 @@ def _save_figure(fig, out_path):
     plt.close(fig)
 
 
+def _save_pdf_page(pdf, fig):
+    fig.set_size_inches(*REPORT_PAGE_SIZE, forward=True)
+    fig.patch.set_facecolor("white")
+    pdf.savefig(fig, facecolor="white")
+    plt.close(fig)
+
+
 def _ecdf(values):
     ordered = np.sort(np.asarray(values, dtype=float))
     if ordered.size == 0:
@@ -292,29 +300,27 @@ def _rank_col_for_tool(tool_id, *, prefix=GLOBAL_RANK_PREFIX):
     return f"{prefix}{tool_id}"
 
 
-def _rank_distribution_specs(frame: pd.DataFrame):
+def _rank_distribution_specs(frame: pd.DataFrame, *, rank_types=None):
     specs = []
+    rank_types = tuple(rank_types) if rank_types is not None else ("local", "global", "score")
     seen = set()
-    for column in frame.columns:
-        if column.startswith(LOCAL_RANK_PREFIX):
-            tool_id = column[len(LOCAL_RANK_PREFIX):]
-            specs.append((tool_id, column, "local"))
+    handlers = {
+        "local": LOCAL_RANK_PREFIX,
+        "global": GLOBAL_RANK_PREFIX,
+        "score": SCORE_PREFIX,
+    }
+    for rank_type in rank_types:
+        prefix = handlers.get(rank_type)
+        if prefix is None:
+            raise ValueError(f"Unsupported rank distribution type: {rank_type}")
+        for column in frame.columns:
+            if not column.startswith(prefix):
+                continue
+            tool_id = column[len(prefix):]
+            if tool_id in seen:
+                continue
+            specs.append((tool_id, column, rank_type))
             seen.add(tool_id)
-    for column in frame.columns:
-        if not column.startswith(GLOBAL_RANK_PREFIX):
-            continue
-        tool_id = column[len(GLOBAL_RANK_PREFIX):]
-        if tool_id in seen:
-            continue
-        specs.append((tool_id, column, "global"))
-        seen.add(tool_id)
-    for column in frame.columns:
-        if not column.startswith(SCORE_PREFIX):
-            continue
-        tool_id = column[len(SCORE_PREFIX):]
-        if tool_id in seen:
-            continue
-        specs.append((tool_id, column, "score"))
     return specs
 
 
@@ -1450,7 +1456,8 @@ def _render_tool_report_pdf(
 ):
     with PdfPages(pdf_path) as pdf:
         def new_page():
-            page_fig, page_ax = plt.subplots(figsize=(8.27, 11.69))
+            page_fig = plt.figure(figsize=REPORT_PAGE_SIZE)
+            page_ax = page_fig.add_axes([0.0, 0.0, 1.0, 1.0])
             page_ax.axis("off")
             page_fig.patch.set_facecolor("white")
             return page_fig, page_ax
@@ -1591,8 +1598,7 @@ def _render_tool_report_pdf(
             y=0.42,
             width=0.38,
         )
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
+        _save_pdf_page(pdf, fig)
 
         plot_specs = [
             ("Score vs expected effect", scatter_png),
@@ -1602,10 +1608,8 @@ def _render_tool_report_pdf(
         ]
         existing_plots = [(label, path) for label, path in plot_specs if path and pathlib.Path(path).is_file()]
         if existing_plots:
-            fig, ax = plt.subplots(figsize=(8.27, 11.69))
-            ax.axis("off")
-            fig.patch.set_facecolor("white")
-            ax.text(
+            fig, _ = new_page()
+            fig.text(
                 0.06,
                 0.975,
                 f"{dataset_id} | {_tool_label(tool_id)} | Plots",
@@ -1615,7 +1619,7 @@ def _render_tool_report_pdf(
                 va="top",
                 ha="left",
             )
-            ax.text(
+            fig.text(
                 0.06,
                 0.945,
                 "These are the main per-tool visuals for this dataset: ranking quality, classification quality, and enrichment behavior.",
@@ -1623,7 +1627,6 @@ def _render_tool_report_pdf(
                 color="#22303C",
                 va="top",
                 ha="left",
-                wrap=True,
             )
             layout_specs = [
                 ("Score vs expected effect", [0.08, 0.58, 0.84, 0.24]),
@@ -1649,8 +1652,7 @@ def _render_tool_report_pdf(
                 image_ax = fig.add_axes(bounds)
                 image_ax.imshow(image)
                 image_ax.axis("off")
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+            _save_pdf_page(pdf, fig)
 
 
 def _write_tool_report(
@@ -2177,9 +2179,33 @@ def _plot_positive_coverage_vs_performance(summary_df, *, out_path):
     )
 
 
-def _plot_rank_class_distributions(joined_frames, *, out_path, fdr_threshold, abs_logfc_threshold):
+def _rank_distribution_metadata(rank_type):
+    if rank_type == "local":
+        return {
+            "title": "Positive vs background local rank distributions",
+            "axis_label": "Local rank within dataset",
+            "subtitle": (
+                "Aggregated across datasets; dense rank is recomputed within each dataset. "
+                "GT positives use each predictor's color, background genes are gray."
+            ),
+        }
+    if rank_type == "global":
+        return {
+            "title": "Positive vs background global rank distributions",
+            "axis_label": "Global rank across predictor file",
+            "subtitle": (
+                "Aggregated across datasets; dense rank comes from each predictor's full standardized file. "
+                "GT positives use each predictor's color, background genes are gray."
+            ),
+        }
+    raise ValueError(f"Unsupported rank distribution type: {rank_type}")
+
+
+def _plot_rank_class_distributions(
+    joined_frames, *, out_path, fdr_threshold, abs_logfc_threshold, rank_type
+):
     combined = pd.concat(joined_frames, ignore_index=True)
-    rank_specs = _rank_distribution_specs(combined)
+    rank_specs = _rank_distribution_specs(combined, rank_types=(rank_type,))
     if not rank_specs:
         return False
 
@@ -2257,12 +2283,13 @@ def _plot_rank_class_distributions(joined_frames, *, out_path, fdr_threshold, ab
         pos_violin["cmedians"].set_color("#22303C")
         pos_violin["cmedians"].set_linewidth(1.5)
 
+    meta = _rank_distribution_metadata(rank_type)
     ax.set_ylim(0, 1.02)
-    ax.set_ylabel("Local rank within dataset", fontsize=10)
+    ax.set_ylabel(meta["axis_label"], fontsize=10)
     ax.set_xticks(positions)
     ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
     ax.set_title(
-        "Positive vs background rank distributions",
+        meta["title"],
         fontsize=11,
         fontweight="semibold",
         loc="left",
@@ -2271,15 +2298,19 @@ def _plot_rank_class_distributions(joined_frames, *, out_path, fdr_threshold, ab
     fig.text(
         0.125,
         0.955,
-        "Aggregated across datasets; each predictor contributes only genes it scored.",
+        meta["subtitle"],
         fontsize=9,
         color=NEUTRAL_COLOR,
     )
-    from matplotlib.patches import Patch
     ax.legend(
         handles=[
             Patch(facecolor=NEGATIVE_COLOR, edgecolor=NEGATIVE_COLOR, alpha=0.45, label="Background genes"),
-            Patch(facecolor="#7AA6D8", edgecolor="#7AA6D8", alpha=0.40, label="GT positives"),
+            Patch(
+                facecolor="#C8D6EA",
+                edgecolor="#6E89A8",
+                alpha=0.50,
+                label="GT positives (predictor color)",
+            ),
         ],
         frameon=False,
         fontsize=8.8,
@@ -2344,17 +2375,31 @@ def write_cross_dataset_summaries(
         f"  Wrote positive coverage vs performance plot: {positive_coverage_scatter_path}",
     )
 
-    rank_distribution_path = rank_plots_dir / "positive_background_rank_distributions.png"
-    wrote_rank_distributions = False
+    rank_distribution_paths = {}
     if joined_frames:
-        wrote_rank_distributions = _plot_rank_class_distributions(
-            joined_frames,
-            out_path=rank_distribution_path,
-            fdr_threshold=fdr_threshold,
-            abs_logfc_threshold=abs_logfc_threshold,
-        )
-        if wrote_rank_distributions:
-            _emit_log(logger, f"  Wrote rank distribution plot: {rank_distribution_path}")
+        for rank_type, plot_key, filename in (
+            (
+                "local",
+                "positive_background_local_rank_distributions",
+                "positive_background_local_rank_distributions.png",
+            ),
+            (
+                "global",
+                "positive_background_global_rank_distributions",
+                "positive_background_global_rank_distributions.png",
+            ),
+        ):
+            rank_distribution_path = rank_plots_dir / filename
+            wrote_rank_distribution = _plot_rank_class_distributions(
+                joined_frames,
+                out_path=rank_distribution_path,
+                fdr_threshold=fdr_threshold,
+                abs_logfc_threshold=abs_logfc_threshold,
+                rank_type=rank_type,
+            )
+            if wrote_rank_distribution:
+                rank_distribution_paths[plot_key] = str(rank_distribution_path)
+                _emit_log(logger, f"  Wrote {rank_type} rank distribution plot: {rank_distribution_path}")
 
     return {
         "tables": {
@@ -2363,10 +2408,6 @@ def write_cross_dataset_summaries(
         "plots": {
             **distribution_paths,
             "positive_coverage_vs_performance": str(positive_coverage_scatter_path),
-            **(
-                {"positive_background_rank_distributions": str(rank_distribution_path)}
-                if wrote_rank_distributions
-                else {}
-            ),
+            **rank_distribution_paths,
         },
     }

@@ -17,6 +17,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 from funmirbench import DatasetMeta
 from funmirbench.evaluate import (
+    REPORT_PAGE_SIZE,
     describe_gt_rule,
     evaluate_joined_dataframe,
     write_cross_dataset_summaries,
@@ -455,7 +456,12 @@ def write_run_readme(
     )
     combined_plot_descriptions = {
         "positive_coverage_vs_performance": "mean positive coverage against mean APS and mean AUROC",
-        "positive_background_rank_distributions": "dataset-local rank separation of GT positives from background genes",
+        "positive_background_local_rank_distributions": (
+            "dataset-local rank separation of GT positives from background genes"
+        ),
+        "positive_background_global_rank_distributions": (
+            "predictor-global rank separation of GT positives from background genes"
+        ),
     }
     for key, path in relative_combined_outputs.get("plots", {}).items():
         if key.startswith("cross_dataset_") and key.endswith("_distribution"):
@@ -490,10 +496,17 @@ def write_run_pdf_report(
 
     with PdfPages(report_path) as pdf:
         def new_page():
-            page_fig, page_ax = plt.subplots(figsize=(8.27, 11.69))
+            page_fig = plt.figure(figsize=REPORT_PAGE_SIZE)
+            page_ax = page_fig.add_axes([0.0, 0.0, 1.0, 1.0])
             page_ax.axis("off")
             page_fig.patch.set_facecolor("white")
             return page_fig, page_ax
+
+        def save_page(fig):
+            fig.set_size_inches(*REPORT_PAGE_SIZE, forward=True)
+            fig.patch.set_facecolor("white")
+            pdf.savefig(fig, facecolor="white")
+            plt.close(fig)
 
         def add_header(ax, title, subtitle=None):
             ax.text(
@@ -619,8 +632,7 @@ def write_run_pdf_report(
             y=0.36,
             width=0.86,
         )
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
+        save_page(fig)
 
         fig, ax = new_page()
         add_header(ax, "Cross-Dataset Summary", "Mean values are across the selected datasets only.")
@@ -684,8 +696,7 @@ def write_run_pdf_report(
                 ha="left",
                 family="DejaVu Sans",
             )
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
+        save_page(fig)
 
         fig, ax = new_page()
         add_header(ax, "Dataset Inventory", "Datasets included in this benchmark run.")
@@ -724,14 +735,14 @@ def write_run_pdf_report(
             [
                 "plots/combined/metrics/cross_dataset_<metric>_distribution.png: one figure per metric showing how that metric varies across the selected datasets",
                 "positive_coverage_vs_performance.png: mean positive coverage against mean APS and AUROC",
-                "positive_background_rank_distributions.png: whether positives rank above background on the dataset-local rank scale",
+                "positive_background_local_rank_distributions.png: whether positives rank above background on the dataset-local rank scale",
+                "positive_background_global_rank_distributions.png: whether positives rank above background on the predictor-global rank scale",
             ],
             x=0.06,
             y=0.45,
             width=0.88,
         )
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
+        save_page(fig)
 
         plot_items = []
         plot_descriptions = {}
@@ -746,10 +757,15 @@ def write_run_pdf_report(
                 "Mean positive coverage is plotted against mean APS and mean AUROC. "
                 "This is especially helpful for sparse predictors where overall coverage alone can be misleading."
             ),
-            "positive_background_rank_distributions": (
-                "Positive vs background rank distributions",
+            "positive_background_local_rank_distributions": (
+                "Positive vs background local rank distributions",
                 "Dataset-local rank distributions aggregated across datasets, split into GT positives and background genes. "
                 "Stronger predictors should push positives higher than background."
+            ),
+            "positive_background_global_rank_distributions": (
+                "Positive vs background global rank distributions",
+                "Predictor-global rank distributions aggregated across datasets, split into GT positives and background genes. "
+                "This keeps each predictor on the rank scale of its full standardized file."
             ),
         })
         for key, (title, caption) in plot_descriptions.items():
@@ -761,10 +777,8 @@ def write_run_pdf_report(
             if not path.is_file():
                 continue
             image = plt.imread(path)
-            fig, ax = plt.subplots(figsize=(8.27, 11.69))
-            ax.axis("off")
-            fig.patch.set_facecolor("white")
-            ax.text(
+            fig, _ = new_page()
+            fig.text(
                 0.06,
                 0.975,
                 title,
@@ -774,7 +788,7 @@ def write_run_pdf_report(
                 va="top",
                 ha="left",
             )
-            ax.text(
+            fig.text(
                 0.06,
                 0.94,
                 caption,
@@ -782,12 +796,11 @@ def write_run_pdf_report(
                 color="#22303C",
                 va="top",
                 ha="left",
-                wrap=True,
             )
-            ax.imshow(image)
-            ax.set_position([0.08, 0.08, 0.84, 0.78])
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+            image_ax = fig.add_axes([0.08, 0.08, 0.84, 0.78])
+            image_ax.imshow(image)
+            image_ax.axis("off")
+            save_page(fig)
 
     return report_path
 

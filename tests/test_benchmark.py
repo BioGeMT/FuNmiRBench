@@ -2,6 +2,7 @@
 
 import json
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -11,6 +12,16 @@ import pytest
 from funmirbench import benchmark
 from funmirbench.build_cheating_predictions import build_cheating_scores
 from funmirbench.build_predictions import build_random_scores, write_tsv
+
+
+PDF_MEDIA_BOX_PATTERN = re.compile(rb"/MediaBox\s*\[\s*0\s+0\s+([0-9.]+)\s+([0-9.]+)\s*\]")
+
+
+def _pdf_media_boxes(pdf_path):
+    return [
+        (float(width), float(height))
+        for width, height in PDF_MEDIA_BOX_PATTERN.findall(pdf_path.read_bytes())
+    ]
 
 
 def test_selected_experiment_paths_applies_filters(tmp_path):
@@ -173,6 +184,14 @@ def test_example_end_to_end(tmp_path):
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__random_evaluation_report.pdf"
     ).is_file()
+    report_pdf = out_dir / "REPORT.pdf"
+    dataset_pdf = (
+        out_dir
+        / "datasets"
+        / "GSE109725_OE_miR_204_5p"
+        / "reports"
+        / "GSE109725_OE_miR_204_5p__random_evaluation_report.pdf"
+    )
 
     joined_files = sorted((out_dir / "datasets").glob("*/joined.tsv"))
     assert [path.parent.name for path in joined_files] == [
@@ -204,8 +223,22 @@ def test_example_end_to_end(tmp_path):
     }
     assert summary["tool_ids"] == ["random", "cheating"]
 
+    run_media_boxes = _pdf_media_boxes(report_pdf)
+    assert len(run_media_boxes) > 1
+    assert len(set(run_media_boxes)) == 1
+    run_width, run_height = run_media_boxes[0]
+    assert run_width == pytest.approx(72.0 * benchmark.REPORT_PAGE_SIZE[0], abs=0.02)
+    assert run_height == pytest.approx(72.0 * benchmark.REPORT_PAGE_SIZE[1], abs=0.02)
+
+    dataset_media_boxes = _pdf_media_boxes(dataset_pdf)
+    assert len(dataset_media_boxes) == 2
+    assert len(set(dataset_media_boxes)) == 1
+    dataset_width, dataset_height = dataset_media_boxes[0]
+    assert dataset_width == pytest.approx(72.0 * benchmark.REPORT_PAGE_SIZE[0], abs=0.02)
+    assert dataset_height == pytest.approx(72.0 * benchmark.REPORT_PAGE_SIZE[1], abs=0.02)
+
     plots = list(out_dir.rglob("*.png"))
-    assert len(plots) == 59
+    assert len(plots) == 60
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "score_vs_expected_effect.png"
     ).is_file()
@@ -246,7 +279,10 @@ def test_example_end_to_end(tmp_path):
         out_dir / "plots" / "combined" / "coverage" / "positive_coverage_vs_performance.png"
     ).is_file()
     assert (
-        out_dir / "plots" / "combined" / "ranks" / "positive_background_rank_distributions.png"
+        out_dir / "plots" / "combined" / "ranks" / "positive_background_local_rank_distributions.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "combined" / "ranks" / "positive_background_global_rank_distributions.png"
     ).is_file()
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "heatmaps" / "top_10pct_positive_genes.png"

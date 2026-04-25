@@ -1,5 +1,7 @@
 """Tests for funmirbench.evaluate."""
 
+import re
+
 import pandas as pd
 import pytest
 
@@ -9,6 +11,16 @@ from funmirbench.evaluate import (
     write_cross_dataset_summaries,
     write_metric_tables,
 )
+
+
+PDF_MEDIA_BOX_PATTERN = re.compile(rb"/MediaBox\s*\[\s*0\s+0\s+([0-9.]+)\s+([0-9.]+)\s*\]")
+
+
+def _pdf_media_boxes(pdf_path):
+    return [
+        (float(width), float(height))
+        for width, height in PDF_MEDIA_BOX_PATTERN.findall(pdf_path.read_bytes())
+    ]
 
 
 def test_write_metric_tables_keeps_rows_with_missing_ids(tmp_path):
@@ -124,7 +136,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
     assert (tmp_path / "plots" / "metrics" / "cross_dataset_coverage_distribution.png").is_file()
     assert (tmp_path / "plots" / "metrics" / "cross_dataset_spearman_distribution.png").is_file()
     assert (tmp_path / "plots" / "coverage" / "positive_coverage_vs_performance.png").is_file()
-    assert (tmp_path / "plots" / "ranks" / "positive_background_rank_distributions.png").is_file()
+    assert (tmp_path / "plots" / "ranks" / "positive_background_global_rank_distributions.png").is_file()
     summary_text = (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").read_text(encoding="utf-8")
     assert "aps_mean" in summary_text
     assert outputs["tables"]["cross_dataset_predictor_summary"].endswith("cross_dataset_predictor_summary.tsv")
@@ -134,6 +146,10 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
     assert outputs["plots"]["positive_coverage_vs_performance"].endswith(
         "positive_coverage_vs_performance.png"
     )
+    assert outputs["plots"]["positive_background_global_rank_distributions"].endswith(
+        "positive_background_global_rank_distributions.png"
+    )
+    assert "positive_background_local_rank_distributions" not in outputs["plots"]
     assert "cross_dataset_metric_heatmap" not in outputs["plots"]
     assert "coverage_vs_performance" not in outputs["plots"]
 
@@ -499,6 +515,12 @@ def test_evaluate_uses_only_existing_pairs_and_reports_coverage(tmp_path):
     assert "precision_recall_curve:" in report_text
     assert "roc_curve:" in report_text
     assert "gsea_enrichment:" in report_text
+    media_boxes = _pdf_media_boxes(report_pdf)
+    assert len(media_boxes) == 2
+    assert len(set(media_boxes)) == 1
+    width, height = media_boxes[0]
+    assert width == pytest.approx(72.0 * evaluate_module.REPORT_PAGE_SIZE[0], abs=0.02)
+    assert height == pytest.approx(72.0 * evaluate_module.REPORT_PAGE_SIZE[1], abs=0.02)
 
 
 def test_evaluate_uses_supplied_logger(tmp_path):
