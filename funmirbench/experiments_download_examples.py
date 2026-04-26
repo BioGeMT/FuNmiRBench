@@ -7,24 +7,37 @@ import logging
 import pathlib
 
 import requests
+import gzip
+import os
+import shutil
+import subprocess
 
 from funmirbench.logger import parse_log_level, setup_logging
 
 
 EXAMPLES = {
-    "ensembl-v109-refs": {
-        "description": "Shared Homo sapiens Ensembl v109 genome FASTA and GTF for reads examples.",
+    "mirbase-hsa-mature": {
+        "description": "miRBase mature human miRNA names for config validation.",
         "targets": [
             {
-                "url": "https://ftp.ensembl.org/pub/release-109/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz",
+                "url": "https://www.mirbase.org/download/mature.fa",
+                "dest": pathlib.Path("data/experiments/raw/refs/mirbase/mature.fa"),
+            },
+        ],
+    },
+    "ensembl-v115-refs": {
+        "description": "Shared Homo sapiens Ensembl v115 genome FASTA and GTF for reads examples.",
+        "targets": [
+            {
+                "url": "https://ftp.ensembl.org/pub/release-115/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz",
                 "dest": pathlib.Path(
-                    "data/experiments/raw/refs/ensembl_v109/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
+                    "data/experiments/raw/refs/ensembl_v115/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
                 ),
             },
             {
-                "url": "https://ftp.ensembl.org/pub/release-109/gtf/homo_sapiens/Homo_sapiens.GRCh38.109.gtf.gz",
+                "url": "https://ftp.ensembl.org/pub/release-115/gtf/homo_sapiens/Homo_sapiens.GRCh38.115.gtf.gz",
                 "dest": pathlib.Path(
-                    "data/experiments/raw/refs/ensembl_v109/Homo_sapiens.GRCh38.109.gtf.gz"
+                    "data/experiments/raw/refs/ensembl_v115/Homo_sapiens.GRCh38.115.gtf.gz"
                 ),
             },
         ],
@@ -38,38 +51,38 @@ EXAMPLES = {
             }
         ],
     },
-    "gse93717-reads": {
-        "description": "Real FASTQ files for GSE93717 miR-941 overexpression.",
+    "gse129146-reads": {
+        "description": "Real FASTQ files for GSE129146 miR-455-3p overexpression.",
         "targets": [
             {
-                "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR518/005/SRR5181705/SRR5181705.fastq.gz",
-                "dest": pathlib.Path("data/experiments/raw/GSE93717/SRR5181705.fastq.gz"),
+                "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR883/000/SRR8832550/SRR8832550.fastq.gz",
+                "dest": pathlib.Path("data/experiments/raw/GSE129146/SRR8832550.fastq.gz"),
             },
             {
-                "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR518/006/SRR5181706/SRR5181706.fastq.gz",
-                "dest": pathlib.Path("data/experiments/raw/GSE93717/SRR5181706.fastq.gz"),
+                "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR883/001/SRR8832551/SRR8832551.fastq.gz",
+                "dest": pathlib.Path("data/experiments/raw/GSE129146/SRR8832551.fastq.gz"),
             },
             {
-                "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR518/007/SRR5181707/SRR5181707.fastq.gz",
-                "dest": pathlib.Path("data/experiments/raw/GSE93717/SRR5181707.fastq.gz"),
+                "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR883/002/SRR8832552/SRR8832552.fastq.gz",
+                "dest": pathlib.Path("data/experiments/raw/GSE129146/SRR8832552.fastq.gz"),
             },
             {
-                "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR518/008/SRR5181708/SRR5181708.fastq.gz",
-                "dest": pathlib.Path("data/experiments/raw/GSE93717/SRR5181708.fastq.gz"),
+                "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR883/003/SRR8832553/SRR8832553.fastq.gz",
+                "dest": pathlib.Path("data/experiments/raw/GSE129146/SRR8832553.fastq.gz"),
             },
             {
-                "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR518/009/SRR5181709/SRR5181709.fastq.gz",
-                "dest": pathlib.Path("data/experiments/raw/GSE93717/SRR5181709.fastq.gz"),
+                "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR883/004/SRR8832554/SRR8832554.fastq.gz",
+                "dest": pathlib.Path("data/experiments/raw/GSE129146/SRR8832554.fastq.gz"),
             },
             {
-                "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR518/000/SRR5181710/SRR5181710.fastq.gz",
-                "dest": pathlib.Path("data/experiments/raw/GSE93717/SRR5181710.fastq.gz"),
+                "url": "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR883/005/SRR8832555/SRR8832555.fastq.gz",
+                "dest": pathlib.Path("data/experiments/raw/GSE129146/SRR8832555.fastq.gz"),
             },
         ],
     },
 }
 
-DEFAULT_SELECTION = ["ensembl-v109-refs", "gse253003-counts", "gse93717-reads"]
+DEFAULT_SELECTION = ["mirbase-hsa-mature", "ensembl-v115-refs", "gse253003-counts", "gse129146-reads"]
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +106,116 @@ def download_file(url: str, dest: pathlib.Path, *, force: bool) -> None:
                 handle.write(chunk)
     logger.info("saved %s", dest)
 
+def default_thread_count(*, cap: int, floor: int = 4) -> int:
+    cpus = os.cpu_count() or 1
+    return max(1, min(cap, max(floor, cpus // 2)))
+
+
+def require_local_binary(name: str) -> None:
+    if shutil.which(name) is None:
+        raise RuntimeError(f"Required executable {name!r} was not found on PATH.")
+
+
+def materialize_reference_file(path: pathlib.Path, *, force: bool = False) -> pathlib.Path:
+    if path.suffix != ".gz":
+        return path
+
+    out_path = path.with_suffix("")
+    if out_path.exists() and not force:
+        logger.info("skip decompressed %s", out_path)
+        return out_path
+
+    logger.info("decompress %s -> %s", path, out_path)
+    with gzip.open(path, "rb") as src, out_path.open("wb") as dst:
+        shutil.copyfileobj(src, dst)
+
+    return out_path
+
+def build_hsa_mature_mirna_list(repo: pathlib.Path) -> None:
+    mature_fa = repo / "data/experiments/raw/refs/mirbase/mature.fa"
+    out_path = repo / "data/experiments/raw/refs/mirbase/hsa_mature_mirnas.txt"
+
+    if not mature_fa.exists():
+        raise ValueError(f"miRBase mature FASTA does not exist: {mature_fa}")
+
+    names = []
+    with mature_fa.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.startswith(">"):
+                continue
+
+            name = line[1:].split()[0].strip()
+
+            if name.startswith("hsa-"):
+                names.append(name)
+
+    if not names:
+        raise ValueError(f"No hsa mature miRNAs found in {mature_fa}")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(sorted(set(names))) + "\n", encoding="utf-8")
+    logger.info("saved %s (%s hsa mature miRNAs)", out_path, len(set(names)))
+
+def star_index_exists(path: pathlib.Path) -> bool:
+    required = ["Genome", "SA", "SAindex", "genomeParameters.txt"]
+    return path.exists() and path.is_dir() and all((path / name).exists() for name in required)
+
+
+def build_star_index(
+    *,
+    genome_fasta: pathlib.Path,
+    gtf_path: pathlib.Path,
+    index_dir: pathlib.Path,
+    force: bool,
+    threads: int | None = None,
+) -> None:
+    require_local_binary("STAR")
+
+    if star_index_exists(index_dir) and not force:
+        logger.info("skip STAR index %s", index_dir)
+        return
+
+    if index_dir.exists() and force:
+        shutil.rmtree(index_dir)
+
+    index_dir.mkdir(parents=True, exist_ok=True)
+    threads = threads or default_thread_count(cap=32)
+
+    command = [
+        "STAR",
+        "--runMode",
+        "genomeGenerate",
+        "--runThreadN",
+        str(threads),
+        "--genomeDir",
+        str(index_dir),
+        "--genomeFastaFiles",
+        str(genome_fasta),
+        "--sjdbGTFfile",
+        str(gtf_path),
+    ]
+
+    logger.info("build STAR index: %s", " ".join(command))
+    subprocess.run(command, check=True)
+
+def build_downloaded_reference_indexes(repo: pathlib.Path, *, force: bool) -> None:
+    ref_dir = repo / "data/experiments/raw/refs/ensembl_v115"
+
+    genome_gz = ref_dir / "Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
+    gtf_gz = ref_dir / "Homo_sapiens.GRCh38.115.gtf.gz"
+
+    if not genome_gz.exists() or not gtf_gz.exists():
+        return
+
+    genome_fasta = materialize_reference_file(genome_gz, force=force)
+    gtf_path = materialize_reference_file(gtf_gz, force=force)
+
+    build_star_index(
+        genome_fasta=genome_fasta,
+        gtf_path=gtf_path,
+        index_dir=ref_dir / "star_index",
+        force=force,
+    )
 
 def resolve_selection(selection: list[str]) -> list[str]:
     if not selection or "all" in selection:
@@ -105,10 +228,18 @@ def resolve_selection(selection: list[str]) -> list[str]:
 
 def download_examples(selection: list[str], *, repo: pathlib.Path | None = None, force: bool = False) -> None:
     repo = (repo or repo_root()).resolve()
-    for name in resolve_selection(selection):
+    selected = resolve_selection(selection)
+
+    for name in selected:
         logger.info("== %s ==", name)
         for target in EXAMPLES[name]["targets"]:
             download_file(target["url"], repo / target["dest"], force=force)
+
+    if "ensembl-v115-refs" in selected:
+        build_downloaded_reference_indexes(repo, force=force)
+
+    if "mirbase-hsa-mature" in selected:
+        build_hsa_mature_mirna_list(repo)
 
 
 def parse_args() -> argparse.Namespace:
