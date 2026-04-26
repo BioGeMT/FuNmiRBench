@@ -37,6 +37,12 @@ def read_tsv(path: pathlib.Path) -> pd.DataFrame:
     return pd.read_csv(path, sep="\t", dtype=str).fillna("")
 
 
+def read_candidate_metadata_with_source(path: pathlib.Path) -> pd.DataFrame:
+    df = read_tsv(path)
+    df["_source_path"] = str(path)
+    df["_source_mtime"] = path.stat().st_mtime
+    return df
+
 def collect_input_paths(kind: str, inputs: list[pathlib.Path], repo: pathlib.Path) -> list[pathlib.Path]:
     pattern = REGISTRIES[kind]["default_pattern"]
     if not inputs:
@@ -99,9 +105,26 @@ def sync_metadata(
         raise ValueError(f"No candidate metadata TSV files found for kind={kind!r}.")
 
     existing = read_tsv(registry)
-    incoming_frames = [read_tsv(path) for path in input_paths]
+    incoming_frames = [read_candidate_metadata_with_source(path) for path in input_paths]
     incoming = pd.concat(incoming_frames, ignore_index=True)
-    merged = merge_registry(existing, incoming, key=cfg["key"])
+
+    key = cfg["key"]
+    if key in incoming.columns:
+        duplicate_keys = incoming[key][incoming[key].duplicated(keep=False)].unique().tolist()
+        if duplicate_keys:
+            logger.warning(
+                "Found duplicate incoming %s values; keeping the most recent candidate_metadata.tsv for each: %s",
+                key,
+                duplicate_keys,
+            )
+            incoming = (
+                incoming.sort_values("_source_mtime")
+                .drop_duplicates(subset=[key], keep="last")
+                .reset_index(drop=True)
+            )
+
+    incoming = incoming.drop(columns=["_source_path", "_source_mtime"], errors="ignore")
+    merged = merge_registry(existing, incoming, key=key)
     merged.to_csv(registry, sep="\t", index=False)
     return {
         "kind": kind,
