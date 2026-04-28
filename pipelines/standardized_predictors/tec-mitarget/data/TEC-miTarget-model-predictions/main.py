@@ -1,18 +1,16 @@
+from pathlib import Path
+
 import pandas as pd
 
-for i in range(10):
-    dir_path = f'test_split_{i}'
-    outPathAll = dir_path + '/predict.tsv'
-    # outPathPos = dir_path + '/predict-positive.tsv'
 
-    df=pd.read_csv(outPathAll,sep='\t')
-    idx = df.groupby(['query_ids', 'target_ids'])['predictions'].idxmax()
-    df=df.loc[idx]
-    df = df[["query_ids", "target_ids", "predictions"]]
-    df.to_csv(outPathAll[:-4]+'-gene-level.tsv', sep="\t", index=False)
-   
-    # df=pd.read_csv(outPathPos,sep='\t')
-    # idx = df.groupby(['query_ids', 'target_ids'])['predictions'].idxmax()
-    # df=df.loc[idx]
-    # df = df[["query_ids", "target_ids", "predictions"]]
-    # df.to_csv(outPathPos[:-4]+'-gene-level.tsv', sep="\t", index=False)
+script_dir = Path(__file__).resolve().parent
+
+for i in range(10):
+    split_dir = script_dir / f"test_split_{i}"
+    predict_path = split_dir / "predict.tsv"
+    output_path = split_dir / "predict-gene-level.tsv"
+
+    df = pd.read_csv(predict_path, sep="\t")
+    idx = df.groupby(["query_ids", "target_ids"])["predictions"].idxmax()
+    df = df.loc[idx, ["query_ids", "target_ids", "predictions"]]
+    df.to_csv(output_path, sep="\t", index=False)
