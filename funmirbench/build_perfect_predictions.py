@@ -11,6 +11,9 @@ from funmirbench.build_cheating_predictions import (
     DEFAULT_FDR_THRESHOLD,
     DEMO_DATASET_IDS,
     _expected_effect_from_logfc,
+    _nonpositive_directional_base,
+    _positive_quality,
+    _significance_signal,
 )
 from funmirbench.build_predictions import write_tsv
 from funmirbench.de_table import find_gene_id_column, read_de_table
@@ -80,9 +83,9 @@ def build_perfect_scores(
             continue
 
         expected_effect = _expected_effect_from_logfc(keep["logFC"], experiment_type)
-        significance_signal = (-keep["FDR"].clip(lower=1e-300).map(math.log10)).clip(lower=0.0, upper=6.0) / 6.0
-        effect_signal = expected_effect.clip(lower=0.0, upper=3.0) / 3.0
-        keep["quality"] = 0.70 * effect_signal + 0.30 * significance_signal
+        significance_signal = _significance_signal(keep["FDR"])
+        keep["positive_quality"] = _positive_quality(expected_effect, significance_signal)
+        keep["nonpositive_quality"] = _nonpositive_directional_base(expected_effect)
         keep["is_positive"] = (
             (keep["FDR"] < fdr_threshold) & (expected_effect > abs_logfc_threshold)
         ).astype(int)
@@ -90,11 +93,11 @@ def build_perfect_scores(
 
         positive_mask = keep["is_positive"].astype(bool)
         if bool(positive_mask.any()):
-            positive_rank = _rank_scale(keep.loc[positive_mask, "quality"])
-            keep.loc[positive_mask, "score"] = 0.5 + 0.5 * positive_rank
+            positive_rank = _rank_scale(keep.loc[positive_mask, "positive_quality"])
+            keep.loc[positive_mask, "score"] = 2.0 / 3.0 + (1.0 / 3.0) * positive_rank
         if bool((~positive_mask).any()):
-            negative_rank = _rank_scale(keep.loc[~positive_mask, "quality"])
-            keep.loc[~positive_mask, "score"] = 0.499999 * negative_rank
+            nonpositive_rank = _rank_scale(keep.loc[~positive_mask, "nonpositive_quality"])
+            keep.loc[~positive_mask, "score"] = (2.0 / 3.0 - 1e-6) * nonpositive_rank
 
         for gene_id, score in zip(keep["gene_id"], keep["score"]):
             scores[(dataset_id, mirna, gene_id)] = float(score)
