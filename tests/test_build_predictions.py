@@ -125,15 +125,16 @@ def test_build_dataset_random_scores_caps_each_dataset_independently(tmp_path):
     assert sum(1 for key in scores if key[0] == "D002") == 3
 
 
-def test_build_cheating_scores_use_perturbation_direction(tmp_path):
+def test_build_cheating_scores_use_directional_ordering(tmp_path):
     de_path = tmp_path / "de.tsv"
     de_path.write_text(
         "\n".join(
             [
                 "gene_id\tlogFC\tFDR",
                 "ENSG00000000001\t-2.0\t0.001",
-                "ENSG00000000002\t0.2\t0.50",
-                "ENSG00000000003\t2.0\t0.001",
+                "ENSG00000000002\t-0.2\t0.50",
+                "ENSG00000000003\t0.2\t0.50",
+                "ENSG00000000004\t2.0\t0.001",
                 "",
             ]
         ),
@@ -155,17 +156,20 @@ def test_build_cheating_scores_use_perturbation_direction(tmp_path):
     scores = build_cheating_scores(experiments_tsv, tmp_path, dataset_ids=["D001"])
 
     positive = scores[("hsa-miR-test", "ENSG00000000001")]
-    negative_a = scores[("hsa-miR-test", "ENSG00000000002")]
-    negative_b = scores[("hsa-miR-test", "ENSG00000000003")]
+    weak_consistent = scores[("hsa-miR-test", "ENSG00000000002")]
+    weak_opposite = scores[("hsa-miR-test", "ENSG00000000003")]
+    strong_opposite = scores[("hsa-miR-test", "ENSG00000000004")]
 
-    assert 0.55 <= positive <= 0.95
-    assert 0.0 <= negative_a <= 0.95
-    assert 0.0 <= negative_b <= 0.95
-    assert positive > negative_a
-    assert positive > negative_b
+    assert 0.68 <= positive <= 1.0
+    assert 0.0 <= weak_consistent <= 0.68
+    assert 0.0 <= weak_opposite <= 0.68
+    assert 0.0 <= strong_opposite <= 0.68
+    assert positive > weak_consistent
+    assert weak_consistent > weak_opposite
+    assert weak_opposite > strong_opposite
 
 
-def test_build_perfect_scores_are_dataset_aware_and_strictly_separate_labels(tmp_path):
+def test_build_perfect_scores_are_dataset_aware_directional_and_strictly_separate_labels(tmp_path):
     de_path = tmp_path / "de.tsv"
     de_path.write_text(
         "\n".join(
@@ -173,8 +177,9 @@ def test_build_perfect_scores_are_dataset_aware_and_strictly_separate_labels(tmp
                 "gene_id\tlogFC\tFDR",
                 "ENSG00000000001\t-2.0\t0.001",
                 "ENSG00000000002\t-1.2\t0.040",
-                "ENSG00000000003\t-2.5\t0.20",
+                "ENSG00000000003\t-0.4\t0.20",
                 "ENSG00000000004\t0.3\t0.001",
+                "ENSG00000000005\t2.5\t0.20",
                 "",
             ]
         ),
@@ -200,6 +205,7 @@ def test_build_perfect_scores_are_dataset_aware_and_strictly_separate_labels(tmp
         ("D001", "hsa-miR-test", "ENSG00000000002"),
         ("D001", "hsa-miR-test", "ENSG00000000003"),
         ("D001", "hsa-miR-test", "ENSG00000000004"),
+        ("D001", "hsa-miR-test", "ENSG00000000005"),
     }
     positives = [
         scores[("D001", "hsa-miR-test", "ENSG00000000001")],
@@ -208,5 +214,8 @@ def test_build_perfect_scores_are_dataset_aware_and_strictly_separate_labels(tmp
     negatives = [
         scores[("D001", "hsa-miR-test", "ENSG00000000003")],
         scores[("D001", "hsa-miR-test", "ENSG00000000004")],
+        scores[("D001", "hsa-miR-test", "ENSG00000000005")],
     ]
     assert min(positives) > max(negatives)
+    assert scores[("D001", "hsa-miR-test", "ENSG00000000003")] > scores[("D001", "hsa-miR-test", "ENSG00000000004")]
+    assert scores[("D001", "hsa-miR-test", "ENSG00000000004")] > scores[("D001", "hsa-miR-test", "ENSG00000000005")]

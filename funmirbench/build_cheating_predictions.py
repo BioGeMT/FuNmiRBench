@@ -38,6 +38,31 @@ def _resolve_table_path(root, value):
     return path
 
 
+def _rank_scale(series):
+    values = series.astype(float)
+    ranks = values.rank(method="dense", ascending=True)
+    max_rank = ranks.max(skipna=True)
+    if pd.isna(max_rank):
+        return pd.Series(float("nan"), index=series.index)
+    if float(max_rank) <= 1.0:
+        return pd.Series(1.0, index=series.index, dtype=float)
+    return (ranks - 1.0) / (float(max_rank) - 1.0)
+
+
+def _significance_signal(fdr_series):
+    return (-fdr_series.clip(lower=1e-300).map(math.log10)).clip(lower=0.0, upper=6.0) / 6.0
+
+
+def _positive_quality(expected_effect, significance_signal):
+    effect_signal = expected_effect.clip(lower=0.0, upper=3.0) / 3.0
+    return 0.70 * effect_signal + 0.30 * significance_signal
+
+
+def _nonpositive_directional_base(expected_effect):
+    clipped = expected_effect.clip(lower=-3.0, upper=0.999999)
+    return (clipped + 3.0) / 4.0
+
+
 def build_cheating_scores(
     experiments_tsv,
     root,
@@ -54,7 +79,8 @@ def build_cheating_scores(
         raise ValueError("No experiments selected for cheating predictor generation.")
 
     labels_by_pair = {}
-    directional_signal_by_pair = {}
+    positive_signal_by_pair = {}
+    nonpositive_signal_by_pair = {}
     for _, row in df.iterrows():
         dataset_id = str(row["id"])
         mirna = str(row["mirna_name"])
@@ -82,36 +108,47 @@ def build_cheating_scores(
         keep["FDR"] = keep["FDR"].astype(float)
         keep = keep[keep["FDR"] > 0].copy()
         expected_effect = _expected_effect_from_logfc(keep["logFC"], experiment_type)
-        effect_signal = expected_effect.clip(lower=0.0, upper=3.0) / 3.0
-        significance_signal = (-keep["FDR"].map(math.log10)).clip(lower=0.0, upper=6.0) / 6.0
-        keep["directional_signal"] = 0.70 * effect_signal + 0.30 * significance_signal
+        significance_signal = _significance_signal(keep["FDR"])
+        keep["positive_signal"] = _positive_quality(expected_effect, significance_signal)
+        keep["nonpositive_signal"] = _nonpositive_directional_base(expected_effect)
         keep["is_positive"] = (
             (keep["FDR"] < fdr_threshold) & (expected_effect > abs_logfc_threshold)
         ).astype(int)
 
-        for gene_id, directional_signal, is_positive in zip(
-            keep["gene_id"], keep["directional_signal"], keep["is_positive"]
+        for gene_id, positive_signal, nonpositive_signal, is_positive in zip(
+            keep["gene_id"],
+            keep["positive_signal"],
+            keep["nonpositive_signal"],
+            keep["is_positive"],
         ):
             key = (mirna, gene_id)
-            directional_signal_by_pair[key] = max(
-                float(directional_signal),
-                directional_signal_by_pair.get(key, 0.0),
+            positive_signal_by_pair[key] = max(
+                float(positive_signal),
+                positive_signal_by_pair.get(key, 0.0),
+            )
+            nonpositive_signal_by_pair[key] = max(
+                float(nonpositive_signal),
+                nonpositive_signal_by_pair.get(key, 0.0),
             )
             labels_by_pair[key] = max(int(is_positive), labels_by_pair.get(key, 0))
 
     scores = {}
     for mirna, gene_id in sorted(labels_by_pair):
         label = labels_by_pair[(mirna, gene_id)]
-        directional_signal = directional_signal_by_pair.get((mirna, gene_id), 0.0)
+        positive_signal = positive_signal_by_pair.get((mirna, gene_id), 0.0)
+        nonpositive_signal = nonpositive_signal_by_pair.get((mirna, gene_id), 0.0)
         a = stable_hash_float(f"{mirna}::{gene_id}::a")
         b = stable_hash_float(f"{mirna}::{gene_id}::b")
         c = stable_hash_float(f"{mirna}::{gene_id}::c")
         noise = 0.60 * a + 0.40 * b
-        score = 0.10 + 0.55 * directional_signal + 0.10 * label + 0.35 * noise
+        if label:
+            score = 0.68 + 0.24 * positive_signal + 0.08 * noise
+        else:
+            score = 0.02 + 0.56 * nonpositive_signal + 0.10 * noise
         if label and c < 0.18:
-            score -= 0.10
+            score -= 0.08
         elif not label and c < max(negative_leak_fraction, 0.08):
-            score += 0.08
+            score += 0.10
         score = min(max(score, 0.0), 1.0)
         scores[(mirna, gene_id)] = float(score)
     return scores
