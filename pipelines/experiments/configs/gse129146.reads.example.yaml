@@ -6,7 +6,7 @@ gse: GSE129146
 source:
   mode: reads
   
-  # Default: use the shared Ensembl v109 genome reference sources downloaded by
+  # Default: use the shared Ensembl v115 genome reference sources downloaded by
   # `uv run funmirbench-experiments-download-examples`.
   genome_fasta_path: data/experiments/raw/refs/ensembl_v115/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
   gtf_path: data/experiments/raw/refs/ensembl_v115/Homo_sapiens.GRCh38.115.gtf.gz
@@ -25,17 +25,17 @@ comparison:
     - sample_id: mock_control3
       reads_1: data/experiments/raw/GSE129146/SRR8832552.fastq.gz
   treated_samples:
-    - sample_id: miR941_mimics1
+    - sample_id: miR455_mimics1
       reads_1: data/experiments/raw/GSE129146/SRR8832553.fastq.gz
-    - sample_id: miR941_mimics2
+    - sample_id: miR455_mimics2
       reads_1: data/experiments/raw/GSE129146/SRR8832554.fastq.gz
-    - sample_id: miR941_mimics3
+    - sample_id: miR455_mimics3
       reads_1: data/experiments/raw/GSE129146/SRR8832555.fastq.gz
 
 metadata:
   organism: Homo sapiens
   tested_cell_line: MCF-7
-  treatment: overexperssion of miR-455-3p
+  treatment: overexpression of miR-455-3p
   tissue: Breast
   method: RNA-seq
   article_pubmed_id: https://pubmed.ncbi.nlm.nih.gov/31492753/
