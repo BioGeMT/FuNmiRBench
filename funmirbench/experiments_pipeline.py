@@ -524,7 +524,7 @@ def build_star_index(
     require_local_binary("STAR")
     threads = int(source_cfg.get("star_threads", default_thread_count(cap=32)))
     logger.info("Building STAR index with %s threads...", threads)
-    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     extra_args = [str(arg) for arg in source_cfg.get("star_index_extra_args", [])]
     command = [
         "STAR",
@@ -929,6 +929,19 @@ def run_reads_mode(
     sample_order = [sample["sample_id"] for sample in control_samples + treated_samples]
     paired_end = infer_library_layout(control_samples + treated_samples) == "paired"
 
+    logger.info("Preparing references...")
+    reference_assets = prepare_reads_reference_assets(
+        dataset_id=config["dataset_id"],
+        source_cfg=source_cfg,
+        config_path=config_path,
+        repo=repo,
+        run_dir=run_dir,
+        force=force,
+    )
+
+    star_index = pathlib.Path(reference_assets["star_index"])
+    gtf_path = pathlib.Path(reference_assets["gtf_path"])
+
     raw_fastqc_outputs: dict[str, dict] = {}
     raw_fastqc_commands: dict[str, list[str]] = {}
     raw_fastqc_stdout: dict[str, str] = {}
@@ -987,18 +1000,6 @@ def run_reads_mode(
     control_samples = [trimmed_samples_by_id[sample["sample_id"]] for sample in control_samples]
     treated_samples = [trimmed_samples_by_id[sample["sample_id"]] for sample in treated_samples]
 
-    logger.info("Preparing references...")
-    reference_assets = prepare_reads_reference_assets(
-        dataset_id=config["dataset_id"],
-        source_cfg=source_cfg,
-        config_path=config_path,
-        repo=repo,
-        run_dir=run_dir,
-        force=force,
-    )
-    star_index = pathlib.Path(reference_assets["star_index"])
-    gtf_path = pathlib.Path(reference_assets["gtf_path"])
-
     bam_paths: dict[str, pathlib.Path] = {}
     star_commands: dict[str, list[str]] = {}
     star_stdout: dict[str, str] = {}
@@ -1025,6 +1026,9 @@ def run_reads_mode(
         sample_order=sample_order,
         paired_end=paired_end,
     )
+
+
+
     counts_matrix_path = build_featurecounts_matrix(
         featurecounts_path=featurecounts_output,
         bam_paths=bam_paths,
