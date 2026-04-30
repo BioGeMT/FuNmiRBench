@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import logging
 import pathlib
-
 import requests
 import gzip
 import os
@@ -20,7 +19,7 @@ EXAMPLES = {
         "description": "miRBase mature human miRNA names for config validation.",
         "targets": [
             {
-                "url": "https://www.mirbase.org/download/mature.fa",
+                "url": "https://mirbase.org/download_version_files/22.1/mature.fa",
                 "dest": pathlib.Path("data/experiments/raw/refs/mirbase/mature.fa"),
             },
         ],
@@ -106,30 +105,6 @@ def download_file(url: str, dest: pathlib.Path, *, force: bool) -> None:
                 handle.write(chunk)
     logger.info("saved %s", dest)
 
-def default_thread_count(*, cap: int, floor: int = 4) -> int:
-    cpus = os.cpu_count() or 1
-    return max(1, min(cap, max(floor, cpus // 2)))
-
-
-def require_local_binary(name: str) -> None:
-    if shutil.which(name) is None:
-        raise RuntimeError(f"Required executable {name!r} was not found on PATH.")
-
-
-def materialize_reference_file(path: pathlib.Path, *, force: bool = False) -> pathlib.Path:
-    if path.suffix != ".gz":
-        return path
-
-    out_path = path.with_suffix("")
-    if out_path.exists() and not force:
-        logger.info("skip decompressed %s", out_path)
-        return out_path
-
-    logger.info("decompress %s -> %s", path, out_path)
-    with gzip.open(path, "rb") as src, out_path.open("wb") as dst:
-        shutil.copyfileobj(src, dst)
-
-    return out_path
 
 def build_hsa_mature_mirna_list(repo: pathlib.Path) -> None:
     mature_fa = repo / "data/experiments/raw/refs/mirbase/mature.fa"
@@ -156,67 +131,6 @@ def build_hsa_mature_mirna_list(repo: pathlib.Path) -> None:
     out_path.write_text("\n".join(sorted(set(names))) + "\n", encoding="utf-8")
     logger.info("saved %s (%s hsa mature miRNAs)", out_path, len(set(names)))
 
-def star_index_exists(path: pathlib.Path) -> bool:
-    required = ["Genome", "SA", "SAindex", "genomeParameters.txt"]
-    return path.exists() and path.is_dir() and all((path / name).exists() for name in required)
-
-
-def build_star_index(
-    *,
-    genome_fasta: pathlib.Path,
-    gtf_path: pathlib.Path,
-    index_dir: pathlib.Path,
-    force: bool,
-    threads: int | None = None,
-) -> None:
-    require_local_binary("STAR")
-
-    if star_index_exists(index_dir) and not force:
-        logger.info("skip STAR index %s", index_dir)
-        return
-
-    if index_dir.exists() and force:
-        shutil.rmtree(index_dir)
-
-    index_dir.mkdir(parents=True, exist_ok=True)
-    threads = threads or default_thread_count(cap=32)
-
-    command = [
-        "STAR",
-        "--runMode",
-        "genomeGenerate",
-        "--runThreadN",
-        str(threads),
-        "--genomeDir",
-        str(index_dir),
-        "--genomeFastaFiles",
-        str(genome_fasta),
-        "--sjdbGTFfile",
-        str(gtf_path),
-    ]
-
-    logger.info("build STAR index: %s", " ".join(command))
-    subprocess.run(command, check=True)
-
-def build_downloaded_reference_indexes(repo: pathlib.Path, *, force: bool) -> None:
-    ref_dir = repo / "data/experiments/raw/refs/ensembl_v115"
-
-    genome_gz = ref_dir / "Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
-    gtf_gz = ref_dir / "Homo_sapiens.GRCh38.115.gtf.gz"
-
-    if not genome_gz.exists() or not gtf_gz.exists():
-        return
-
-    genome_fasta = materialize_reference_file(genome_gz, force=force)
-    gtf_path = materialize_reference_file(gtf_gz, force=force)
-
-    build_star_index(
-        genome_fasta=genome_fasta,
-        gtf_path=gtf_path,
-        index_dir=ref_dir / "star_index",
-        force=force,
-    )
-
 def resolve_selection(selection: list[str]) -> list[str]:
     if not selection or "all" in selection:
         return DEFAULT_SELECTION
@@ -235,15 +149,12 @@ def download_examples(selection: list[str], *, repo: pathlib.Path | None = None,
         for target in EXAMPLES[name]["targets"]:
             download_file(target["url"], repo / target["dest"], force=force)
 
-    if "ensembl-v115-refs" in selected:
-        build_downloaded_reference_indexes(repo, force=force)
-
     if "mirbase-hsa-mature" in selected:
         build_hsa_mature_mirna_list(repo)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Download real example GEO inputs for the ingestion pipeline.")
+    parser = argparse.ArgumentParser(description="Download example experiment inputs and shared reference resources.")
     parser.add_argument(
         "--example",
         action="append",
