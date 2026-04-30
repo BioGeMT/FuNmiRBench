@@ -25,6 +25,7 @@ data/predictions/cheating/*
 data/predictions/perfect/*
 data/joined/
 data/plots/
+data/experiments/raw/refs/*
 
 # Benchmark results
 results/
