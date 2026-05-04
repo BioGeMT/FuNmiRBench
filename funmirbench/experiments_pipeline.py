@@ -18,10 +18,13 @@ import pandas as pd
 import requests
 import yaml
 
+
 from funmirbench.logger import parse_log_level, setup_logging
 
 GSE_URL_TEMPLATE = "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={gse}"
-
+DEFAULT_HSA_MATURE_MIRNAS_PATH = pathlib.Path(
+    "data/experiments/raw/refs/mirbase/hsa_mature_mirnas.txt"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -103,6 +106,56 @@ def require_fields(config: dict, fields: list[str]) -> None:
     if missing:
         raise ValueError(f"Config is missing required top-level fields: {missing}")
 
+def load_hsa_mature_mirna_names(repo: pathlib.Path) -> set[str]:
+    path = repo / DEFAULT_HSA_MATURE_MIRNAS_PATH
+
+    if not path.exists():
+        raise ValueError(
+            f"miRBase hsa mature miRNA list does not exist: {path}. "
+            "Run `uv run funmirbench-experiments-download-examples --example mirbase-hsa-mature` first."
+        )
+
+    names = {
+        normalize_space(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if normalize_space(line)
+    }
+
+    if not names:
+        raise ValueError(f"miRBase hsa mature miRNA list is empty: {path}")
+
+    return names
+
+
+def validate_mirna_name(config: dict, *, repo: pathlib.Path) -> None:
+    mirna_name = normalize_space(config.get("mirna_name", ""))
+
+    if not mirna_name:
+        raise ValueError("Config mirna_name is required.")
+
+    mature_names = load_hsa_mature_mirna_names(repo)
+
+    if mirna_name not in mature_names:
+        query = mirna_name.lower()
+        query_no_hsa = query.removeprefix("hsa-")
+
+        suggestions = sorted(
+            name for name in mature_names
+            if query in name.lower()
+            or query_no_hsa in name.lower()
+            or name.lower() in query
+        )[:10]
+
+        message = (
+            f"Config mirna_name {mirna_name!r} was not found in the miRBase "
+            "Homo sapiens mature miRNA list. Use a canonical mature miRBase name "
+            "with the 'hsa-' prefix and exact casing, for example 'hsa-miR-21-5p'."
+        )
+
+        if suggestions:
+            message += f" Did you mean one of: {', '.join(suggestions)}?"
+
+        raise ValueError(message)
 
 def open_text_auto(path: pathlib.Path):
     if path.suffix == ".gz":
@@ -439,6 +492,13 @@ def find_reusable_star_index(
             return star_index
     return None
 
+def star_index_exists(path: pathlib.Path) -> bool:
+    required = ["Genome", "SA", "SAindex", "genomeParameters.txt"]
+    return path.exists() and path.is_dir() and all((path / name).exists() for name in required)
+
+
+def shared_star_index_for_genome(genome_fasta: pathlib.Path) -> pathlib.Path:
+    return genome_fasta.parent / "star_index"
 
 def materialize_reference_file(path: pathlib.Path, *, dest_dir: pathlib.Path) -> pathlib.Path:
     if path.suffix != ".gz":
@@ -459,12 +519,12 @@ def build_star_index(
     run_dir: pathlib.Path,
     genome_fasta: pathlib.Path,
     gtf_path: pathlib.Path,
+    out_dir: pathlib.Path,
 ) -> tuple[pathlib.Path, list[str], pathlib.Path, pathlib.Path]:
     require_local_binary("STAR")
     threads = int(source_cfg.get("star_threads", default_thread_count(cap=32)))
     logger.info("Building STAR index with %s threads...", threads)
-    out_dir = run_dir / "reference" / "star_index"
-    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     extra_args = [str(arg) for arg in source_cfg.get("star_index_extra_args", [])]
     command = [
         "STAR",
@@ -522,25 +582,24 @@ def prepare_reads_reference_assets(
     reused_star_index = False
     command_paths: dict[str, str | list[str]] = {}
 
-    materialized_gtf = materialize_reference_file(gtf_input, dest_dir=run_dir / "reference")
 
-    reusable_index = None if force else find_reusable_star_index(
-        repo=repo,
-        dataset_id=dataset_id,
-        current_run_dir=run_dir,
-    )
-    if reusable_index is not None:
-        logger.info("Reusing STAR index from %s...", reusable_index.parent.parent.name)
-        star_index = reusable_index
+    materialized_gtf = materialize_reference_file(gtf_input, dest_dir=gtf_input.parent)
+    genome_fasta_path = materialize_reference_file(genome_fasta_input, dest_dir=genome_fasta_input.parent)
+
+    shared_star_index = shared_star_index_for_genome(genome_fasta_path)
+
+    if star_index_exists(shared_star_index) and not force:
+        logger.info("Reusing shared STAR index from %s...", shared_star_index)
+        star_index = shared_star_index
         reused_star_index = True
     else:
-        genome_fasta_path = materialize_reference_file(genome_fasta_input, dest_dir=run_dir / "reference")
         star_index, command, stdout_path, stderr_path = build_star_index(
             source_cfg=source_cfg,
             repo=repo,
             run_dir=run_dir,
             genome_fasta=genome_fasta_path,
             gtf_path=materialized_gtf,
+            out_dir=shared_star_index,
         )
         generated_star_index = True
         command_paths.update(
@@ -555,7 +614,7 @@ def prepare_reads_reference_assets(
     return {
         "star_index": star_index,
         "gtf_path": materialized_gtf,
-        "genome_fasta": str(genome_fasta_path) if genome_fasta_path else "",
+        "genome_fasta": str(genome_fasta_path),
         "generated_star_index": generated_star_index,
         "reused_star_index": reused_star_index,
         **command_paths,
@@ -583,6 +642,12 @@ def run_fastqc(
 ) -> tuple[dict, list[str], pathlib.Path, pathlib.Path]:
     require_local_binary("fastqc")
     threads = int(source_cfg.get("fastqc_threads", default_thread_count(cap=16)))
+    logger.info(
+        "Running FastQC (%s) for sample %s with %s threads...",
+        stage_name,
+        sample["sample_id"],
+        threads,
+    )
     out_dir = run_dir / "fastqc" / stage_name / sample["sample_id"]
     out_dir.mkdir(parents=True, exist_ok=True)
     inputs = [reads_1]
@@ -622,6 +687,11 @@ def run_fastp(
 ) -> tuple[dict, list[str], pathlib.Path, pathlib.Path]:
     require_local_binary("fastp")
     threads = int(source_cfg.get("fastp_threads", default_thread_count(cap=16)))
+    logger.info(
+        "Running fastp for sample %s with %s threads...",
+        sample["sample_id"],
+        threads,
+    )
     out_dir = run_dir / "trimmed" / sample["sample_id"]
     out_dir.mkdir(parents=True, exist_ok=True)
     paired = bool(sample["reads_2"])
@@ -726,6 +796,7 @@ def run_featurecounts(
 ) -> tuple[pathlib.Path, list[str], pathlib.Path, pathlib.Path]:
     require_local_binary("featureCounts")
     threads = int(source_cfg.get("featurecounts_threads", default_thread_count(cap=16)))
+    logger.info("Running featureCounts with %s threads...", threads)
     feature_type = normalize_space(source_cfg.get("featurecounts_feature_type", "")) or "exon"
     gene_attribute = normalize_space(source_cfg.get("featurecounts_gene_attribute", "")) or "gene_id"
     output_path = run_dir / "featurecounts_counts.tsv"
@@ -858,6 +929,19 @@ def run_reads_mode(
     sample_order = [sample["sample_id"] for sample in control_samples + treated_samples]
     paired_end = infer_library_layout(control_samples + treated_samples) == "paired"
 
+    logger.info("Preparing references...")
+    reference_assets = prepare_reads_reference_assets(
+        dataset_id=config["dataset_id"],
+        source_cfg=source_cfg,
+        config_path=config_path,
+        repo=repo,
+        run_dir=run_dir,
+        force=force,
+    )
+
+    star_index = pathlib.Path(reference_assets["star_index"])
+    gtf_path = pathlib.Path(reference_assets["gtf_path"])
+
     raw_fastqc_outputs: dict[str, dict] = {}
     raw_fastqc_commands: dict[str, list[str]] = {}
     raw_fastqc_stdout: dict[str, str] = {}
@@ -916,18 +1000,6 @@ def run_reads_mode(
     control_samples = [trimmed_samples_by_id[sample["sample_id"]] for sample in control_samples]
     treated_samples = [trimmed_samples_by_id[sample["sample_id"]] for sample in treated_samples]
 
-    logger.info("Preparing references...")
-    reference_assets = prepare_reads_reference_assets(
-        dataset_id=config["dataset_id"],
-        source_cfg=source_cfg,
-        config_path=config_path,
-        repo=repo,
-        run_dir=run_dir,
-        force=force,
-    )
-    star_index = pathlib.Path(reference_assets["star_index"])
-    gtf_path = pathlib.Path(reference_assets["gtf_path"])
-
     bam_paths: dict[str, pathlib.Path] = {}
     star_commands: dict[str, list[str]] = {}
     star_stdout: dict[str, str] = {}
@@ -954,6 +1026,9 @@ def run_reads_mode(
         sample_order=sample_order,
         paired_end=paired_end,
     )
+
+
+
     counts_matrix_path = build_featurecounts_matrix(
         featurecounts_path=featurecounts_output,
         bam_paths=bam_paths,
@@ -1019,8 +1094,10 @@ def run_reads_mode(
 def run_ingestion_config(config_path: pathlib.Path, repo: pathlib.Path | None = None, *, force: bool = False) -> dict:
     config_path = config_path.expanduser().resolve()
     repo = (repo or repo_root()).resolve()
+
     config = load_yaml(config_path)
     require_fields(config, ["dataset_id", "mirna_name", "experiment_type"])
+    validate_mirna_name(config, repo=repo)
 
     dataset_id = config["dataset_id"]
     run_dir = repo / "pipelines" / "experiments" / "runs" / f"{utc_now_stamp()}_{dataset_id}"
