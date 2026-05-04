@@ -112,7 +112,7 @@ def load_hsa_mature_mirna_names(repo: pathlib.Path) -> set[str]:
     if not path.exists():
         raise ValueError(
             f"miRBase hsa mature miRNA list does not exist: {path}. "
-            "Run experiments_download_examples.py first."
+            "Run `uv run funmirbench-experiments-download-examples --example mirbase-hsa-mature` first."
         )
 
     names = {
