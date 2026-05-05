@@ -1,0 +1,2 @@
+id	mirna_name	mirna_sequence	article_pubmed_id	organism	tested_cell_line	treatment	tissue	method	experiment_type	gse_url	de_table_path	raw_data_dir	control_samples	condition_samples
+GSE124530_OE_let_7c_5p	hsa-let-7c-5p	UGAGGUAGUAGGUUGUAUGGUU	https://pubmed.ncbi.nlm.nih.gov/30670076	Homo sapiens	HeLa	Overexpression of hsa-let-7c-5p	Cervix	RNA-seq	OE	https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE124530	data/experiments/processed/18745741/GSE124530_edger_out_oe_hsa_let_7c_5p_oe_7c5p.tsv		GSM3535919,GSM3535920	GSM3535869,GSM3535870
