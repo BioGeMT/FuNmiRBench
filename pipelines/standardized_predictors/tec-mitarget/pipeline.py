@@ -1,7 +1,20 @@
 import argparse
 import logging
 from pathlib import Path
-from utils import configure_logging, download_file, load_prediction_files, create_mirna_name_to_mimat_mapping, map_mirna_names_to_mimat, create_refseq_to_ensembl_mapping, map_refseq_to_ensembl, build_output_table, repo_root, resolve_path_relative_to_root
+
+from utils import (
+    aggregate_mre_predictions_to_transcripts,
+    build_output_table,
+    configure_logging,
+    create_mirna_name_to_mimat_mapping,
+    create_refseq_to_ensembl_mapping,
+    download_file,
+    load_prediction_files,
+    map_mirna_names_to_mimat,
+    map_refseq_to_ensembl,
+    repo_root,
+    resolve_path_relative_to_root,
+)
 
 logger = logging.getLogger("pipeline")
 
@@ -11,8 +24,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--predictions-root", type=Path, default=pipeline_dir / "data" / "TEC-miTarget-model-predictions", help="Root dir containing test_split_* folders")
     parser.add_argument("--resources-dir", type=Path, default=pipeline_dir / "data" / "resources", help="Directory for downloaded miRBase/BioMart files")
-    parser.add_argument("--output", type=Path, default=root / "data" / "predictions" / "tec-mitarget" / "tec_mitarget_standardised.tsv", help="Output TSV path")
-    parser.add_argument("--log-file", type=Path, default=pipeline_dir / "tec_mitarget.log", help="Log file path")
+    parser.add_argument("--output", type=Path, default=root / "data" / "predictions" / "tec-mitarget" / "tec_mitarget_standardized.tsv", help="Output TSV path")
+    parser.add_argument("--log-file", type=Path, default=pipeline_dir / "tec_mitarget_pipeline.log", help="Log file path")
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level. Default: INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] )
 
     args = parser.parse_args()
@@ -37,17 +50,25 @@ def main() -> None:
     biomart_path = download_file(biomart_url, biomart_path, params={"query": biomart_query}, timeout=300)
 
     splits = range(0, 10)
-    prediction_file_name = "predict-gene-level.tsv"
+    mre_prediction_file_name = "predict.tsv"
     query_column = "query_ids"
     target_column = "target_ids"
     prediction_column = "predictions"
     prediction_paths = [
-        args.predictions_root / f"test_split_{split}" / prediction_file_name
+        args.predictions_root / f"test_split_{split}" / mre_prediction_file_name
         for split in splits
     ]
-    logger.info("Loading predictions")
+    logger.info("Loading MRE-level predictions from %s", mre_prediction_file_name)
     pred_df = load_prediction_files(
         prediction_paths,
+        query_column,
+        target_column,
+        prediction_column,
+    )
+
+    logger.info("Creating transcript-level predictions using max aggregation")
+    pred_df = aggregate_mre_predictions_to_transcripts(
+        pred_df,
         query_column,
         target_column,
         prediction_column,

@@ -1,0 +1,20 @@
+2026-05-06 17:22:55 | INFO | pipeline | Starting pipeline
+2026-05-06 17:22:55 | INFO | utils | Using pipelines/standardized_predictors/tec-mitarget/data/resources/mirbase/mature.fa
+2026-05-06 17:22:55 | INFO | utils | Using pipelines/standardized_predictors/tec-mitarget/data/resources/biomart/hsapiens_refseq_to_ensembl.tsv
+2026-05-06 17:22:55 | INFO | pipeline | Loading MRE-level predictions from predict.tsv
+2026-05-06 17:22:56 | INFO | utils | Keeping valid rows: 76345/76345
+2026-05-06 17:22:56 | INFO | utils | Keeping unique rows: 46933/76345
+2026-05-06 17:22:56 | INFO | pipeline | Creating transcript-level predictions using max aggregation
+2026-05-06 17:22:56 | INFO | utils | Aggregated MRE-level predictions to transcript-level predictions with max rule: 46933 MRE rows -> 4240 transcript rows
+2026-05-06 17:22:56 | INFO | pipeline | Creating miRNA name to MIMAT ID mapping
+2026-05-06 17:22:56 | INFO | pipeline | Creating RefSeq to Ensembl ID, Gene name mapping
+2026-05-06 17:22:56 | INFO | utils | Keeping valid rows: 74593/554612
+2026-05-06 17:22:56 | INFO | utils | Keeping unique rows: 74568/74593
+2026-05-06 17:22:56 | INFO | utils | Keeping non-conflicting rows: 63157/74568
+2026-05-06 17:22:58 | INFO | pipeline | Mapping miRNA names to MIMAT IDs
+2026-05-06 17:22:58 | INFO | utils | Mapped rows: 4186/4240
+2026-05-06 17:22:58 | INFO | pipeline | Mapping RefSeq IDs to Ensembl IDs and Gene names
+2026-05-06 17:22:58 | INFO | utils | Mapped rows: 3947/4186
+2026-05-06 17:22:58 | INFO | pipeline | Building final schema output table
+2026-05-06 17:22:58 | INFO | utils | Final rows after Ensembl ID : miRNA MIMAT : score deduplication: 3947/3947
+2026-05-06 17:22:58 | INFO | pipeline | Output written to: data/predictions/tec-mitarget/tec_mitarget_standardized.tsv

@@ -6,9 +6,9 @@ This directory contains the standardization pipeline for TEC-miTarget gene-level
 
 - `pipeline.py`: CLI entrypoint for the pipeline.
 - `utils.py`: shared helpers for logging, downloads, cleaning, mapping, and output construction.
-- `tec_mitarget.log`: example log from a completed run.
+- `tec_mitarget_pipeline.log`: example log from a completed run.
 
-The prediction files used by this pipeline were shared by the respective authors via email and are stored under `data/TEC-miTarget-model-predictions`.
+The raw MRE-level prediction files used by this pipeline were shared by the respective authors via email and are stored as `test_split_*/predict.tsv` files under `data/TEC-miTarget-model-predictions`.
 
 ## What The Pipeline Does
 
@@ -19,13 +19,13 @@ The pipeline:
    - `Gene stable ID`
    - `Gene name`
    - `RefSeq mRNA ID`
-3. Loads TEC-miTarget prediction files from `test_split_0` through `test_split_9`.
+3. Loads raw TEC-miTarget MRE-level `predict.tsv` files from `test_split_0` through `test_split_9`.
 4. Drops rows with missing or invalid values in:
    - `query_ids`
    - `target_ids`
    - `predictions`
 5. Deduplicates prediction rows on those same three columns.
-6. Raises if the same `(query_ids, target_ids)` pair has conflicting prediction scores.
+6. Aggregates MRE-level predictions to transcript-level predictions with the max rule over each `(query_ids, target_ids)` pair.
 7. Builds a miRNA mapping from human miRBase names (`hsa-*`) to `MIMAT` IDs.
 8. Builds a RefSeq-to-gene mapping from BioMart after:
    - dropping invalid rows
@@ -55,7 +55,7 @@ The output TSV contains:
 By default, the standardized file is written to:
 
 ```text
-data/predictions/tec-mitarget/tec_mitarget_standardised.tsv
+data/predictions/tec-mitarget/tec_mitarget_standardized.tsv
 ```
 
 relative to the repository root.
@@ -65,20 +65,20 @@ relative to the repository root.
 From the repository root:
 
 ```bash
-python pipelines/standardized_predictors/tec-mitarget/pipeline.py
+uv run python pipelines/standardized_predictors/tec-mitarget/pipeline.py
 ```
 
 ## CLI Arguments
 
 ```bash
-python pipelines/standardized_predictors/tec-mitarget/pipeline.py \
+uv run python pipelines/standardized_predictors/tec-mitarget/pipeline.py \
   --predictions-root pipelines/standardized_predictors/tec-mitarget/data/TEC-miTarget-model-predictions \
   --resources-dir pipelines/standardized_predictors/tec-mitarget/data/resources \
-  --output data/predictions/tec-mitarget/tec_mitarget_standardised.tsv \
-  --log-file pipelines/standardized_predictors/tec-mitarget/tec_mitarget.log \
+  --output data/predictions/tec-mitarget/tec_mitarget_standardized.tsv \
+  --log-file pipelines/standardized_predictors/tec-mitarget/tec_mitarget_pipeline.log \
   --log-level INFO
 ```
 
 ## Logging
 
-Logging is written both to stdout and to the log file passed via `--log-file`.
+Logging is written both to stdout and to the log file passed via `--log-file`. 

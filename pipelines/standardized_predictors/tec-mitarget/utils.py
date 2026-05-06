@@ -122,9 +122,41 @@ def load_prediction_files(
     combined = pd.concat(dfs, ignore_index=True)
     combined = _drop_invalid_rows(combined, cols)
     combined = _drop_duplicate_rows(combined, cols)
-    _check_conflicting_prediction_scores(combined, query_column, target_column, prediction_column)
 
     return combined
+
+def aggregate_mre_predictions_to_transcripts(
+    df: pd.DataFrame,
+    query_column: str,
+    target_column: str,
+    prediction_column: str,
+) -> pd.DataFrame:
+    before = len(df)
+    out = df.copy()
+    numeric_predictions = pd.to_numeric(out[prediction_column], errors="coerce")
+    invalid_predictions = numeric_predictions.isna()
+    if invalid_predictions.any():
+        raise ValueError(
+            "Non-numeric prediction scores found during MRE-to-transcript aggregation: "
+            f"{invalid_predictions.sum()}"
+        )
+
+    out[prediction_column] = numeric_predictions
+    idx = out.groupby([query_column, target_column])[prediction_column].idxmax()
+    out = out.loc[idx, [query_column, target_column, prediction_column]]
+    _check_conflicting_prediction_scores(
+        out,
+        query_column,
+        target_column,
+        prediction_column,
+    )
+    logger.info(
+        "Aggregated MRE-level predictions to transcript-level predictions with max rule: "
+        "%d MRE rows -> %d transcript rows",
+        before,
+        len(out),
+    )
+    return out
 
 def _drop_conflicting_refseq_rows(
     df: pd.DataFrame,

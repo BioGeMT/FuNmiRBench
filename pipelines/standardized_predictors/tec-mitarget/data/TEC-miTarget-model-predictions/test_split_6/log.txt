@@ -1,7 +1,0 @@
-[2023-06-01-23:18:19] Using CUDA device 0 - Tesla V100-SXM2-32GB
-[2023-06-01-23:18:19] Loading model from ./model/best_model/model.sav
-[2023-06-01-23:18:33] Making Predictions...
-[2023-06-01-23:21:27] AUPR: 0.8348307681755123
-[2023-06-01-23:21:27] AUROC: 0.8264426821713984
-[2023-06-01-23:21:27] accuracy: 0.7921,sensitivity: 0.7698,specificity: 0.8129,ppv: 0.7942,npv: 0.7902,F1 score: 0.7818
-
