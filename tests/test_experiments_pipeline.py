@@ -1,5 +1,6 @@
 """Tests for the config-driven experiment ingestion workflow."""
 
+import gzip
 import json
 import pathlib
 import re
@@ -10,6 +11,12 @@ import pytest
 import yaml
 
 from funmirbench import experiments_pipeline
+
+
+def write_gzip_text(path: pathlib.Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        handle.write(text)
 
 
 def test_run_count_matrix_mode_writes_benchmark_ready_table(tmp_path):
@@ -33,10 +40,7 @@ def test_run_count_matrix_mode_writes_benchmark_ready_table(tmp_path):
         "source": {
             "mode": "count_matrix",
             "count_matrix_path": str(counts_path),
-            "count_matrix_url": "",
             "gene_id_column": "gene_id",
-            "min_total_count": 1,
-            "prior_count": 1.0,
         },
         "comparison": {
             "control_columns": ["ctrl_a", "ctrl_b"],
@@ -145,7 +149,7 @@ def test_run_count_matrix_mode_accepts_repo_root_relative_paths(tmp_path):
         }
     ).to_csv(counts_path, sep="\t", index=False)
 
-    config_dir = tmp_path / "pipelines" / "geo" / "configs"
+    config_dir = tmp_path / "pipelines" / "experiments" / "configs"
     config_dir.mkdir(parents=True, exist_ok=True)
     config = {
         "dataset_id": "repo_relative_demo",
@@ -165,6 +169,10 @@ def test_run_count_matrix_mode_accepts_repo_root_relative_paths(tmp_path):
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
     def fake_subprocess_run(command, cwd, capture_output, text, check, env=None):
+        del cwd
+        assert capture_output is True
+        assert text is True
+        assert check is False
         assert env is not None
         output_path = pathlib.Path(command[command.index("--output") + 1])
         pd.DataFrame(
@@ -188,56 +196,90 @@ def test_run_count_matrix_mode_accepts_repo_root_relative_paths(tmp_path):
     assert pathlib.Path(result["de_table_path"]).is_file()
 
 
-def test_run_reads_mode_builds_counts_and_writes_de_table(tmp_path):
+def test_run_reads_mode_runs_full_pipeline_and_writes_de_table(tmp_path):
     reads_files = {}
     for name in ["ctrl_a", "ctrl_b", "trt_a", "trt_b"]:
         path = tmp_path / f"{name}.fastq.gz"
         path.write_text("dummy\n", encoding="utf-8")
         reads_files[name] = path
 
-    salmon_index = tmp_path / "salmon_index"
-    salmon_index.mkdir()
-    (salmon_index / "versionInfo.json").write_text("{}", encoding="utf-8")
-
-    tx2gene_path = tmp_path / "tx2gene.tsv"
-    pd.DataFrame(
-        {
-            "transcript_id": ["tx1", "tx2", "tx3"],
-            "gene_id": ["ENSG1", "ENSG2", "ENSG3"],
-        }
-    ).to_csv(tx2gene_path, sep="\t", index=False)
+    genome_fasta = tmp_path / "genome.fa.gz"
+    write_gzip_text(genome_fasta, ">chr1\nAAAA\n")
+    gtf_path = tmp_path / "genes.gtf"
+    gtf_path.write_text(
+        "\n".join(
+            [
+                'chr1\tsrc\texon\t1\t4\t.\t+\t.\tgene_id "ENSG1"; transcript_id "tx1";',
+                'chr1\tsrc\texon\t5\t8\t.\t+\t.\tgene_id "ENSG2"; transcript_id "tx2";',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     def fake_subprocess_run(command, cwd, capture_output, text, check, env=None):
+        del cwd
         assert capture_output is True
         assert text is True
         assert check is False
         assert env is not None
 
-        if "salmon" in command and "quant" in command:
-            out_dir = pathlib.Path(command[command.index("-o") + 1])
+        if command[0] == "fastqc":
+            out_dir = pathlib.Path(command[command.index("--outdir") + 1])
             out_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "report_fastqc.html").write_text("ok\n", encoding="utf-8")
+            (out_dir / "report_fastqc.zip").write_text("ok\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="fastqc ok\n", stderr="")
+
+        if command[0] == "fastp":
+            reads_1_out = pathlib.Path(command[command.index("-o") + 1])
+            reads_1_out.parent.mkdir(parents=True, exist_ok=True)
+            reads_1_out.write_text("trimmed\n", encoding="utf-8")
+            html_path = pathlib.Path(command[command.index("--html") + 1])
+            json_path = pathlib.Path(command[command.index("--json") + 1])
+            html_path.write_text("ok\n", encoding="utf-8")
+            json_path.write_text("{}\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="fastp ok\n", stderr="")
+
+        if command[0] == "STAR" and "--runMode" in command:
+            out_dir = pathlib.Path(command[command.index("--genomeDir") + 1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "Genome").write_text("ok\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="index ok\n", stderr="")
+
+        if command[0] == "STAR":
+            out_prefix = pathlib.Path(command[command.index("--outFileNamePrefix") + 1])
+            out_prefix.mkdir(parents=True, exist_ok=True)
+            (out_prefix / "Aligned.sortedByCoord.out.bam").write_text("bam\n", encoding="utf-8")
+            (out_prefix / "Log.final.out").write_text("star\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="star ok\n", stderr="")
+
+        if command[0] == "featureCounts":
+            output_path = pathlib.Path(command[command.index("-o") + 1])
+            bam_paths = [value for value in command if str(value).endswith(".bam")]
             pd.DataFrame(
                 {
-                    "Name": ["tx1", "tx2", "tx3"],
-                    "Length": [1000, 1000, 1000],
-                    "EffectiveLength": [900, 900, 900],
-                    "TPM": [1.0, 2.0, 3.0],
-                    "NumReads": [10, 20, 30],
+                    "Geneid": ["ENSG1", "ENSG2"],
+                    "Chr": ["chr1", "chr1"],
+                    "Start": [1, 5],
+                    "End": [4, 8],
+                    "Strand": ["+", "+"],
+                    "Length": [4, 4],
+                    **{bam: [50, 10] for bam in bam_paths},
                 }
-            ).to_csv(out_dir / "quant.sf", sep="\t", index=False)
-            return subprocess.CompletedProcess(command, 0, stdout="salmon ok\n", stderr="")
+            ).to_csv(output_path, sep="\t", index=False)
+            return subprocess.CompletedProcess(command, 0, stdout="featurecounts ok\n", stderr="")
 
         if "Rscript" in command:
-            sample_sheet = pathlib.Path(command[command.index("--sample-sheet") + 1])
+            sample_sheet = pathlib.Path(command[command.index("--counts") - 1]) if False else None
+            del sample_sheet
             output_path = pathlib.Path(command[command.index("--output") + 1])
-            samples = pd.read_csv(sample_sheet, sep="\t")
-            assert set(samples["condition"]) == {"control", "treated"}
             pd.DataFrame(
                 {
-                    "gene_id": ["ENSG1", "ENSG2", "ENSG3"],
-                    "logFC": [2.5, 0.1, -0.2],
-                    "PValue": [0.001, 0.1, 0.5],
-                    "FDR": [0.003, 0.2, 0.7],
+                    "gene_id": ["ENSG1", "ENSG2"],
+                    "logFC": [2.5, -0.2],
+                    "PValue": [0.001, 0.4],
+                    "FDR": [0.003, 0.5],
                 }
             ).to_csv(output_path, sep="\t", index=False)
             return subprocess.CompletedProcess(command, 0, stdout="deseq2 ok\n", stderr="")
@@ -250,10 +292,12 @@ def test_run_reads_mode_builds_counts_and_writes_de_table(tmp_path):
         "experiment_type": "OE",
         "source": {
             "mode": "reads",
-            "salmon_index": str(salmon_index),
-            "tx2gene_tsv": str(tx2gene_path),
-            "library_type": "A",
-            "salmon_threads": 2,
+            "genome_fasta_path": str(genome_fasta),
+            "gtf_path": str(gtf_path),
+            "fastqc_threads": 2,
+            "fastp_threads": 2,
+            "star_threads": 2,
+            "featurecounts_threads": 2,
         },
         "comparison": {
             "control_samples": [
@@ -290,71 +334,91 @@ def test_run_reads_mode_builds_counts_and_writes_de_table(tmp_path):
 
     run_dir = pathlib.Path(result["run_dir"])
     assert (run_dir / "reads_samples.tsv").is_file()
-    assert (run_dir / "salmon_ctrl_a.stdout.txt").is_file()
-    assert (run_dir / "salmon_ctrl_a.stderr.txt").is_file()
-    assert (run_dir / "salmon" / "ctrl_a" / "quant.sf").is_file()
-    assert (run_dir / "deseq2.stdout.txt").is_file()
-    assert (run_dir / "deseq2.stderr.txt").is_file()
-    assert (run_dir / "salmon_samples.tsv").is_file()
+    assert (run_dir / "sample_column_mapping.tsv").is_file()
+    assert (run_dir / "counts_matrix.tsv").is_file()
+    assert (run_dir / "featurecounts_counts.tsv").is_file()
+    assert (run_dir / "fastqc" / "raw" / "ctrl_a" / "report_fastqc.html").is_file()
+    assert (run_dir / "fastqc" / "trimmed" / "ctrl_a" / "report_fastqc.html").is_file()
+    assert (run_dir / "trimmed" / "ctrl_a" / "ctrl_a.fastq.gz").is_file()
+    assert (run_dir / "star" / "ctrl_a" / "Aligned.sortedByCoord.out.bam").is_file()
+    assert (run_dir / "reference" / "star_index" / "Genome").is_file()
 
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
     assert manifest["source_mode"] == "reads"
     assert manifest["runtime"] == "local"
-    assert pathlib.Path(manifest["salmon_index"]) == salmon_index
-    assert pathlib.Path(manifest["tx2gene_tsv"]) == tx2gene_path
-    assert set(manifest["sample_quant_dirs"]) == {"ctrl_a", "ctrl_b", "trt_a", "trt_b"}
+    assert pathlib.Path(manifest["star_index"]) == run_dir / "reference" / "star_index"
+    assert manifest["generated_star_index"] is True
+    assert manifest["reused_star_index"] is False
+    assert pathlib.Path(manifest["gtf_path"]) == gtf_path
+    assert manifest["pipeline_stages"] == ["fastqc_raw", "fastp", "fastqc_trimmed", "star", "featurecounts", "deseq2"]
+    assert set(manifest["sample_bams"]) == {"ctrl_a", "ctrl_b", "trt_a", "trt_b"}
+    assert set(manifest["raw_fastqc_outputs"]) == {"ctrl_a", "ctrl_b", "trt_a", "trt_b"}
+    assert set(manifest["trimmed_reads"]) == {"ctrl_a", "ctrl_b", "trt_a", "trt_b"}
+    assert manifest["control_columns"] == ["ctrl_a", "ctrl_b"]
+    assert manifest["treated_columns"] == ["trt_a", "trt_b"]
 
 
-def test_run_reads_mode_can_download_sra_and_prepare_references(tmp_path):
-    transcript_fasta = tmp_path / "transcripts.fa"
-    transcript_fasta.write_text(">tx1\nAAAA\n>tx2\nCCCC\n", encoding="utf-8")
+def test_run_reads_mode_reuses_existing_star_index_for_same_dataset(tmp_path):
+    genome_fasta = tmp_path / "genome.fa.gz"
+    write_gzip_text(genome_fasta, ">chr1\nAAAA\n")
 
-    gtf_path = tmp_path / "genes.gtf"
-    gtf_path.write_text(
-        "\n".join(
-            [
-                'chr1\tsrc\ttranscript\t1\t4\t.\t+\t.\tgene_id "ENSG1"; transcript_id "tx1";',
-                'chr1\tsrc\ttranscript\t5\t8\t.\t+\t.\tgene_id "ENSG2"; transcript_id "tx2";',
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
+    gtf_path = tmp_path / "genes.gtf.gz"
+    write_gzip_text(
+        gtf_path,
+        'chr1\tsrc\texon\t1\t4\t.\t+\t.\tgene_id "ENSG1"; transcript_id "tx1";\n',
     )
 
     def fake_subprocess_run(command, cwd, capture_output, text, check, env=None):
+        del cwd
         assert capture_output is True
         assert text is True
         assert check is False
         assert env is not None
 
-        joined = " ".join(str(part) for part in command)
-        if "salmon index" in joined:
-            out_dir = pathlib.Path(command[command.index("-i") + 1])
+        if command[0] == "fastqc":
+            out_dir = pathlib.Path(command[command.index("--outdir") + 1])
             out_dir.mkdir(parents=True, exist_ok=True)
-            (out_dir / "versionInfo.json").write_text("{}", encoding="utf-8")
+            (out_dir / "report_fastqc.html").write_text("ok\n", encoding="utf-8")
+            (out_dir / "report_fastqc.zip").write_text("ok\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="fastqc ok\n", stderr="")
+
+        if command[0] == "fastp":
+            reads_1_out = pathlib.Path(command[command.index("-o") + 1])
+            reads_1_out.parent.mkdir(parents=True, exist_ok=True)
+            reads_1_out.write_text("trimmed\n", encoding="utf-8")
+            html_path = pathlib.Path(command[command.index("--html") + 1])
+            json_path = pathlib.Path(command[command.index("--json") + 1])
+            html_path.write_text("ok\n", encoding="utf-8")
+            json_path.write_text("{}\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="fastp ok\n", stderr="")
+
+        if command[0] == "STAR" and "--runMode" in command:
+            out_dir = pathlib.Path(command[command.index("--genomeDir") + 1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "Genome").write_text("ok\n", encoding="utf-8")
             return subprocess.CompletedProcess(command, 0, stdout="index ok\n", stderr="")
 
-        if "prefetch" in joined and "fasterq-dump" in joined:
-            shell = command[-1]
-            outdir = pathlib.Path(re.search(r"--outdir ([^ ]+)", shell).group(1))
-            accession = shell.rsplit(" ", 1)[-1]
-            outdir.mkdir(parents=True, exist_ok=True)
-            (outdir / f"{accession}.fastq").write_text("@r1\nAAAA\n+\n####\n", encoding="utf-8")
-            return subprocess.CompletedProcess(command, 0, stdout="sra ok\n", stderr="")
+        if command[0] == "STAR":
+            out_prefix = pathlib.Path(command[command.index("--outFileNamePrefix") + 1])
+            out_prefix.mkdir(parents=True, exist_ok=True)
+            (out_prefix / "Aligned.sortedByCoord.out.bam").write_text("bam\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="star ok\n", stderr="")
 
-        if "salmon" in command and "quant" in command:
-            out_dir = pathlib.Path(command[command.index("-o") + 1])
-            out_dir.mkdir(parents=True, exist_ok=True)
+        if command[0] == "featureCounts":
+            output_path = pathlib.Path(command[command.index("-o") + 1])
+            bam_paths = [value for value in command if str(value).endswith(".bam")]
             pd.DataFrame(
                 {
-                    "Name": ["tx1", "tx2"],
-                    "Length": [1000, 1000],
-                    "EffectiveLength": [900, 900],
-                    "TPM": [5.0, 3.0],
-                    "NumReads": [50, 20],
+                    "Geneid": ["ENSG1", "ENSG2"],
+                    "Chr": ["chr1", "chr1"],
+                    "Start": [1, 5],
+                    "End": [4, 8],
+                    "Strand": ["+", "+"],
+                    "Length": [4, 4],
+                    **{bam: [40, 5] for bam in bam_paths},
                 }
-            ).to_csv(out_dir / "quant.sf", sep="\t", index=False)
-            return subprocess.CompletedProcess(command, 0, stdout="salmon ok\n", stderr="")
+            ).to_csv(output_path, sep="\t", index=False)
+            return subprocess.CompletedProcess(command, 0, stdout="featurecounts ok\n", stderr="")
 
         if "Rscript" in command:
             output_path = pathlib.Path(command[command.index("--output") + 1])
@@ -371,20 +435,21 @@ def test_run_reads_mode_can_download_sra_and_prepare_references(tmp_path):
         raise AssertionError(f"Unexpected command: {command}")
 
     config = {
-        "dataset_id": "reads_sra_demo",
+        "dataset_id": "reads_reuse_demo",
         "mirna_name": "hsa-miR-323a-3p",
         "experiment_type": "OE",
         "source": {
             "mode": "reads",
-            "transcript_fasta_path": str(transcript_fasta),
+            "genome_fasta_path": str(genome_fasta),
             "gtf_path": str(gtf_path),
-            "library_type": "A",
-            "salmon_threads": 2,
-            "sra_threads": 2,
+            "fastqc_threads": 2,
+            "fastp_threads": 2,
+            "star_threads": 2,
+            "featurecounts_threads": 2,
         },
         "comparison": {
-            "control_samples": [{"sample_id": "ctrl_a", "sra_accession": "SRR000001"}],
-            "treated_samples": [{"sample_id": "trt_a", "sra_accession": "SRR000002"}],
+            "control_samples": [{"sample_id": "ctrl_a", "reads_1": str(tmp_path / "ctrl_a.fastq.gz")}],
+            "treated_samples": [{"sample_id": "trt_a", "reads_1": str(tmp_path / "trt_a.fastq.gz")}],
         },
         "metadata": {
             "organism": "Homo sapiens",
@@ -394,24 +459,63 @@ def test_run_reads_mode_can_download_sra_and_prepare_references(tmp_path):
             "treatment": "miR-323a-3p",
         },
     }
-    config_path = tmp_path / "reads_sra.yaml"
+    (tmp_path / "ctrl_a.fastq.gz").write_text("ctrl\n", encoding="utf-8")
+    (tmp_path / "trt_a.fastq.gz").write_text("trt\n", encoding="utf-8")
+    config_path = tmp_path / "reads_reuse.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(experiments_pipeline.subprocess, "run", fake_subprocess_run)
     monkeypatch.setattr(experiments_pipeline.shutil, "which", lambda name: f"/usr/bin/{name}")
+    stamps = iter(["20260416_000001", "20260416_000002"])
+    monkeypatch.setattr(experiments_pipeline, "utc_now_stamp", lambda: next(stamps))
     try:
+        first = experiments_pipeline.run_ingestion_config(config_path, repo=tmp_path)
         result = experiments_pipeline.run_ingestion_config(config_path, repo=tmp_path)
     finally:
         monkeypatch.undo()
 
+    first_run_dir = pathlib.Path(first["run_dir"])
     run_dir = pathlib.Path(result["run_dir"])
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
     assert manifest["runtime"] == "local"
-    assert manifest["generated_salmon_index"] is True
-    assert manifest["generated_tx2gene_tsv"] is True
-    assert manifest["downloaded_samples"] == ["ctrl_a", "trt_a"]
-    assert (run_dir / "reference" / "tx2gene.tsv").is_file()
-    assert (run_dir / "reference" / "salmon_index" / "versionInfo.json").is_file()
-    assert (run_dir / "reads" / "ctrl_a" / "SRR000001.fastq").is_file()
-    assert (run_dir / "reads" / "trt_a" / "SRR000002.fastq").is_file()
+    assert manifest["generated_star_index"] is False
+    assert manifest["reused_star_index"] is True
+    assert pathlib.Path(manifest["featurecounts_output"]).is_file()
+    assert pathlib.Path(manifest["count_matrix_source"]).is_file()
+    assert (first_run_dir / "reference" / "star_index" / "Genome").is_file()
+    assert pathlib.Path(manifest["star_index"]) == first_run_dir / "reference" / "star_index"
+
+
+def test_run_reads_mode_rejects_mixed_layouts(tmp_path):
+    single = tmp_path / "single.fastq.gz"
+    single.write_text("single\n", encoding="utf-8")
+    paired_1 = tmp_path / "paired_1.fastq.gz"
+    paired_2 = tmp_path / "paired_2.fastq.gz"
+    paired_1.write_text("paired1\n", encoding="utf-8")
+    paired_2.write_text("paired2\n", encoding="utf-8")
+
+    genome_fasta = tmp_path / "genome.fa.gz"
+    write_gzip_text(genome_fasta, ">chr1\nAAAA\n")
+    gtf_path = tmp_path / "genes.gtf"
+    gtf_path.write_text('chr1\tsrc\texon\t1\t4\t.\t+\t.\tgene_id "ENSG1"; transcript_id "tx1";\n', encoding="utf-8")
+
+    config = {
+        "dataset_id": "mixed_layout_demo",
+        "mirna_name": "hsa-miR-323a-3p",
+        "experiment_type": "OE",
+        "source": {
+            "mode": "reads",
+            "genome_fasta_path": str(genome_fasta),
+            "gtf_path": str(gtf_path),
+        },
+        "comparison": {
+            "control_samples": [{"sample_id": "ctrl", "reads_1": str(single)}],
+            "treated_samples": [{"sample_id": "trt", "reads_1": str(paired_1), "reads_2": str(paired_2)}],
+        },
+    }
+    config_path = tmp_path / "mixed_layout.yaml"
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Mixed single-end and paired-end"):
+        experiments_pipeline.run_ingestion_config(config_path, repo=tmp_path)

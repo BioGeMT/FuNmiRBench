@@ -577,6 +577,7 @@ def step_write_standardized_predictions(
     mismatch_examples = []
     mismatch_example_keys = set()
     null_score_examples = []
+    duplicate_examples = []
     unique_rows: Dict[Tuple[str, str], Dict[str, str | float]] = {}
     pre_mismatch_pair_counts: Counter[Tuple[str, str]] = Counter()
     post_mismatch_pair_counts: Counter[Tuple[str, str]] = Counter()
@@ -627,14 +628,17 @@ def step_write_standardized_predictions(
             post_mismatch_pair_counts[key] += 1
             if key in unique_rows:
                 stats["duplicate_gene_mirna_rows"] += 1
-                if raw_score < float(unique_rows[key]["Score"]):
-                    unique_rows[key] = {
-                        "Ensembl_ID": gene_id_ens,
-                        "Gene_Name": gene_to_name_ens.get(gene_id_ens) or row["Gene Symbol"].strip(),
-                        "miRNA_ID": mirna_entry.mirna_id,
-                        "miRNA_Name": mirna_entry.mirna_name,
-                        "Score": raw_score,
-                    }
+                if len(duplicate_examples) < 10:
+                    duplicate_examples.append(
+                        (
+                            gene_id_ens,
+                            mirna_entry.mirna_id,
+                            representative_mirna,
+                            float(unique_rows[key]["Score"]),
+                            raw_score,
+                            tx_raw,
+                        )
+                    )
                 continue
 
             unique_rows[key] = {
@@ -682,7 +686,7 @@ def step_write_standardized_predictions(
         f"{rep_gene_mismatch_count:,}",
     )
     logger.info(
-        "Filtering summary: %s summary rows dropped by the TargetScan/Ensembl gene mismatch filter | duplicate gene-miRNA pairs %s -> %s",
+        "Filtering summary: %s summary rows dropped by the TargetScan/Ensembl gene mismatch filter | duplicate gene-miRNA pairs before mismatch filter=%s | surviving duplicate gene-miRNA pairs after mismatch filter=%s",
         f"{stats['rows_gene_id_mismatch']:,}",
         f"{duplicate_pairs_before_mismatch:,}",
         f"{duplicate_pairs_after_mismatch:,}",
@@ -691,6 +695,27 @@ def step_write_standardized_predictions(
         logger.info("Sample rows dropped for TargetScan/Ensembl gene-ID mismatch (tx -> TargetScan gene -> Ensembl gene):")
         for tx_raw, targetscan_gene_id, gene_id_ens in mismatch_examples:
             logger.info("  %s -> %s -> %s", tx_raw, targetscan_gene_id, gene_id_ens)
+
+    if stats["duplicate_gene_mirna_rows"]:
+        details = "; ".join(
+            (
+                f"{gene_id}/{mirna_id} ({mirna_name}) "
+                f"existing_score={existing_score:.6g} new_score={new_score:.6g} "
+                f"tx={tx_raw}"
+            )
+            for gene_id, mirna_id, mirna_name, existing_score, new_score, tx_raw in duplicate_examples
+        )
+        logger.error(
+            "Unexpected duplicate gene-miRNA rows remain after all filters: duplicate_rows=%s | duplicate_pairs=%s",
+            f"{stats['duplicate_gene_mirna_rows']:,}",
+            f"{duplicate_pairs_after_mismatch:,}",
+        )
+        raise ValueError(
+            "Unexpected duplicate gene-miRNA rows remain after all TargetScan filters: "
+            f"{stats['duplicate_gene_mirna_rows']} duplicate rows across "
+            f"{duplicate_pairs_after_mismatch} duplicate pairs. "
+            f"Sample rows: {details}"
+        )
 
     with out_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
@@ -708,11 +733,10 @@ def step_write_standardized_predictions(
             )
 
     logger.info(
-        "%s -> wrote %d unique gene-miRNA rows from %d kept transcript-level rows; collapsed_duplicate_rows=%d. output=%s",
+        "%s -> wrote %d unique gene-miRNA rows from %d kept transcript-level rows; output=%s",
         PREDICTOR_NAME,
         len(unique_rows),
         stats["rows_after_filters"],
-        stats["duplicate_gene_mirna_rows"],
         out_path,
     )
 
