@@ -1,4 +1,4 @@
-"""Sync candidate metadata rows into tracked experiment or predictor registries."""
+"""Sync candidate experiment metadata rows into the experiment registry."""
 
 from __future__ import annotations
 
@@ -14,23 +14,13 @@ from funmirbench.logger import parse_log_level, setup_logging
 
 logger = logging.getLogger(__name__)
 
+REGISTRY_PATH = pathlib.Path("metadata") / "mirna_experiment_info.tsv"
+CANDIDATE_PATTERN = "candidate_metadata.tsv"
+REGISTRY_KEY = "id"
+
 
 def repo_root() -> pathlib.Path:
     return pathlib.Path(__file__).resolve().parents[1]
-
-
-REGISTRIES = {
-    "experiments": {
-        "path": pathlib.Path("metadata") / "mirna_experiment_info.tsv",
-        "key": "id",
-        "default_pattern": "candidate_metadata.tsv",
-    },
-    "predictors": {
-        "path": pathlib.Path("metadata") / "predictions_info.tsv",
-        "key": "tool_id",
-        "default_pattern": "candidate_metadata.tsv",
-    },
-}
 
 
 def read_tsv(path: pathlib.Path) -> pd.DataFrame:
@@ -43,91 +33,79 @@ def read_candidate_metadata_with_source(path: pathlib.Path) -> pd.DataFrame:
     df["_source_mtime"] = path.stat().st_mtime
     return df
 
-def collect_input_paths(kind: str, inputs: list[pathlib.Path], repo: pathlib.Path) -> list[pathlib.Path]:
-    pattern = REGISTRIES[kind]["default_pattern"]
+
+def collect_input_paths(inputs: list[pathlib.Path], repo: pathlib.Path) -> list[pathlib.Path]:
     if not inputs:
-        if kind == "experiments":
-            base = repo / "pipelines" / "experiments" / "runs"
-            if not base.exists():
-                return []
-            return sorted(base.glob(f"*/{pattern}"))
-        return []
+        base = repo / "pipelines" / "experiments" / "runs"
+        if not base.exists():
+            return []
+        return sorted(base.glob(f"*/{CANDIDATE_PATTERN}"))
 
     paths = []
+    seen: set[str] = set()
     for item in inputs:
         resolved = item.expanduser().resolve()
-        if resolved.is_dir():
-            paths.extend(sorted(resolved.rglob(pattern)))
-        else:
-            paths.append(resolved)
-    unique = []
-    seen = set()
-    for path in paths:
-        if str(path) not in seen:
-            unique.append(path)
-            seen.add(str(path))
-    return unique
+        candidates = sorted(resolved.rglob(CANDIDATE_PATTERN)) if resolved.is_dir() else [resolved]
+        for path in candidates:
+            if str(path) not in seen:
+                paths.append(path)
+                seen.add(str(path))
+    return paths
 
 
-def merge_registry(existing: pd.DataFrame, incoming: pd.DataFrame, *, key: str) -> pd.DataFrame:
-    if key not in existing.columns:
-        raise ValueError(f"Registry is missing key column {key!r}.")
-    if key not in incoming.columns:
-        raise ValueError(f"Incoming rows are missing key column {key!r}.")
+def merge_registry(existing: pd.DataFrame, incoming: pd.DataFrame) -> pd.DataFrame:
+    if REGISTRY_KEY not in existing.columns:
+        raise ValueError(f"Registry is missing key column {REGISTRY_KEY!r}.")
+    if REGISTRY_KEY not in incoming.columns:
+        raise ValueError(f"Incoming rows are missing key column {REGISTRY_KEY!r}.")
 
     for column in existing.columns:
         if column not in incoming.columns:
             incoming[column] = ""
     incoming = incoming[existing.columns].copy()
 
-    incoming_keys = incoming[key].tolist()
+    incoming_keys = incoming[REGISTRY_KEY].tolist()
     if len(set(incoming_keys)) != len(incoming_keys):
-        raise ValueError(f"Incoming metadata contains duplicate {key} values: {incoming_keys}")
+        raise ValueError(f"Incoming metadata contains duplicate {REGISTRY_KEY} values: {incoming_keys}")
 
-    existing = existing.copy()
-    existing = existing[~existing[key].isin(incoming[key])].copy()
-    merged = pd.concat([existing, incoming], ignore_index=True)
-    return merged
+    existing = existing[~existing[REGISTRY_KEY].isin(incoming[REGISTRY_KEY])].copy()
+    return pd.concat([existing, incoming], ignore_index=True)
 
 
 def sync_metadata(
     *,
-    kind: str,
     inputs: list[pathlib.Path],
     repo: pathlib.Path | None = None,
     registry_path: pathlib.Path | None = None,
 ) -> dict:
     repo = (repo or repo_root()).resolve()
-    cfg = REGISTRIES[kind]
-    registry = (registry_path or (repo / cfg["path"])).resolve()
-    input_paths = collect_input_paths(kind, inputs, repo)
+    registry = (registry_path or (repo / REGISTRY_PATH)).resolve()
+    input_paths = collect_input_paths(inputs, repo)
     if not input_paths:
-        raise ValueError(f"No candidate metadata TSV files found for kind={kind!r}.")
+        raise ValueError("No candidate metadata TSV files found.")
 
     existing = read_tsv(registry)
     incoming_frames = [read_candidate_metadata_with_source(path) for path in input_paths]
     incoming = pd.concat(incoming_frames, ignore_index=True)
 
-    key = cfg["key"]
-    if key in incoming.columns:
-        duplicate_keys = incoming[key][incoming[key].duplicated(keep=False)].unique().tolist()
+    if REGISTRY_KEY in incoming.columns:
+        duplicate_keys = incoming[REGISTRY_KEY][incoming[REGISTRY_KEY].duplicated(keep=False)].unique().tolist()
         if duplicate_keys:
             logger.warning(
                 "Found duplicate incoming %s values; keeping the most recent candidate_metadata.tsv for each: %s",
-                key,
+                REGISTRY_KEY,
                 duplicate_keys,
             )
             incoming = (
                 incoming.sort_values("_source_mtime")
-                .drop_duplicates(subset=[key], keep="last")
+                .drop_duplicates(subset=[REGISTRY_KEY], keep="last")
                 .reset_index(drop=True)
             )
 
     incoming = incoming.drop(columns=["_source_path", "_source_mtime"], errors="ignore")
-    merged = merge_registry(existing, incoming, key=key)
+    merged = merge_registry(existing, incoming)
     merged.to_csv(registry, sep="\t", index=False)
     return {
-        "kind": kind,
         "registry": str(registry),
         "rows_before": int(existing.shape[0]),
         "rows_added_or_updated": int(incoming.shape[0]),
@@ -137,8 +115,7 @@ def sync_metadata(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Sync candidate metadata rows into tracked registries.")
-    parser.add_argument("--kind", choices=sorted(REGISTRIES), required=True)
+    parser = argparse.ArgumentParser(description="Sync candidate experiment metadata rows into the registry.")
     parser.add_argument("--input", type=pathlib.Path, action="append", default=[])
     parser.add_argument("--registry", type=pathlib.Path)
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
@@ -148,7 +125,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     setup_logging(parse_log_level(args.log_level))
-    result = sync_metadata(kind=args.kind, inputs=args.input, registry_path=args.registry)
+    result = sync_metadata(inputs=args.input, registry_path=args.registry)
     logger.info("Registry: %s", result["registry"])
     logger.info("Rows before: %s", result["rows_before"])
     logger.info("Rows added or updated: %s", result["rows_added_or_updated"])

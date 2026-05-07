@@ -169,10 +169,21 @@ a separate variant instead of overwriting the curated `GSE93717_OE_miR_941` regi
 ### 2. Sync Experiment Metadata
 
 The ingestion pipeline does not edit `metadata/mirna_experiment_info.tsv` by itself. It writes a
-candidate row first. Then sync it into the registry with:
+`candidate_metadata.tsv` under `pipelines/experiments/runs/<timestamp>_<dataset_id>/` first.
+Then sync it into the registry with:
 
 ```bash
-uv run funmirbench-sync-metadata --kind experiments
+uv run funmirbench-sync-metadata
+```
+
+That command auto-discovers all `candidate_metadata.tsv` files under `pipelines/experiments/runs/`
+and upserts them into the registry. Re-running is safe — existing rows with matching `id` values are
+replaced, not duplicated.
+
+To sync a specific file instead:
+
+```bash
+uv run funmirbench-sync-metadata --input pipelines/experiments/runs/<run_dir>/candidate_metadata.tsv
 ```
 
 ### 3. Add Predictor Data
@@ -320,6 +331,6 @@ uv run funmirbench-experiments-store
 uv run funmirbench-validate-experiments --experiments-tsv metadata/mirna_experiment_info.tsv
 uv run funmirbench-experiments-download-examples
 uv run funmirbench-experiments --config config.yaml
-uv run funmirbench-sync-metadata --kind experiments
+uv run funmirbench-sync-metadata
 uv run pytest
 ```
