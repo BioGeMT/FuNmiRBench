@@ -7,6 +7,9 @@ logger = logging.getLogger("pipeline")
 
 MIRDB_PREDICTIONS_URL = "https://mirdb.org/download/miRDB_v6.0_prediction_result_human_all_scores.txt.gz"
 
+def log_step(step_number: int, total_steps: int, message: str) -> None:
+    logger.info("Step %d/%d: %s", step_number, total_steps, message)
+
 def main() -> None:
     root = repo_root()
     pipeline_dir = root / "pipelines" / "standardized_predictors" / "mirdb_mirtarget"
@@ -20,7 +23,9 @@ def main() -> None:
     args = parser.parse_args()
     configure_logging(args.log_file, args.log_level)
     logger.info("Starting pipeline")
+    total_steps = 9
 
+    log_step(1, total_steps, "Resolve raw miRDB predictions and external miRBase/BioMart resources")
     mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"
     mirbase_path = args.resources_dir / "mirbase" / "mature.fa"
     mirbase_path = download_file(mirbase_url, mirbase_path)
@@ -44,7 +49,7 @@ def main() -> None:
     raw_transcript_column = "refseq_id"
     raw_prediction_column = "prediction"
     raw_ncbi_gene_id_column = "ncbi_gene_id"
-    logger.info("Loading predictions")
+    log_step(2, total_steps, "Load raw miRDB predictions")
     pred_df = load_prediction_files(
         raw_predictions_path,
         raw_mirna_column,
@@ -53,10 +58,10 @@ def main() -> None:
         raw_ncbi_gene_id_column,
     )
 
-    logger.info("Creating miRNA name to MIMAT ID mapping")
+    log_step(3, total_steps, "Create miRNA name-to-MIMAT mapping from miRBase mature.fa")
     mirna_name_to_mimat_map = create_mirna_name_to_mimat_mapping(mirbase_path)
 
-    logger.info("Creating NCBI Gene ID to Ensembl ID, Gene name mapping")
+    log_step(4, total_steps, "Create NCBI Gene ID-to-Ensembl gene mapping from BioMart table")
     biomart_ensembl_id_column = "Gene stable ID"
     biomart_gene_name_column = "Gene name"
     biomart_refseq_column = "RefSeq mRNA ID"
@@ -67,7 +72,7 @@ def main() -> None:
         biomart_gene_name_column,
         biomart_ncbi_gene_id_column,
     )
-    logger.info("Creating RefSeq to Ensembl ID, Gene name mapping")
+    log_step(5, total_steps, "Create RefSeq-to-Ensembl fallback gene mapping from BioMart table")
     refseq_to_ensembl_map = create_refseq_to_ensembl_mapping(
         biomart_path,
         biomart_ensembl_id_column,
@@ -89,7 +94,7 @@ def main() -> None:
         score_column,
     ]
 
-    logger.info("Mapping miRNA names to MIMAT IDs")
+    log_step(6, total_steps, "Map prediction miRNA names to MIMAT IDs")
     pred_df = map_mirna_names_to_mimat(
         pred_df,
         mirna_name_to_mimat_map,
@@ -98,7 +103,7 @@ def main() -> None:
         mimat_column,
     )
 
-    logger.info("Mapping NCBI Gene IDs to Ensembl IDs and Gene names")
+    log_step(7, total_steps, "Map prediction NCBI Gene IDs to Ensembl gene IDs and gene names")
     pred_df = map_ncbi_gene_id_to_ensembl(
         pred_df,
         ncbi_gene_id_to_ensembl_map,
@@ -107,7 +112,7 @@ def main() -> None:
         gene_name_column,
         drop_unmapped=False,
     )
-    logger.info("Falling back to RefSeq IDs for rows still missing Ensembl mappings")
+    log_step(8, total_steps, "Map remaining prediction RefSeq transcript IDs to Ensembl gene IDs and gene names")
     pred_df = fill_unmapped_rows_with_refseq_to_ensembl(
         pred_df,
         refseq_to_ensembl_map,
@@ -115,7 +120,7 @@ def main() -> None:
         ensembl_id_column,
         gene_name_column,
     )
-    logger.info("Building final schema output table")
+    log_step(9, total_steps, "Build and write final standardized output table")
     final_df = build_output_table(
         pred_df,
         raw_prediction_column,
