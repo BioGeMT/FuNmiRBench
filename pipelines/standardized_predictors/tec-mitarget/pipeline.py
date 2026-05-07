@@ -18,6 +18,9 @@ from utils import (
 
 logger = logging.getLogger("pipeline")
 
+def log_step(step_number: int, total_steps: int, message: str) -> None:
+    logger.info("Step %d/%d: %s", step_number, total_steps, message)
+
 def main() -> None:
     root = repo_root()
     pipeline_dir = root / "pipelines" / "standardized_predictors" / "tec-mitarget"
@@ -31,7 +34,9 @@ def main() -> None:
     args = parser.parse_args()
     configure_logging(args.log_file, args.log_level)
     logger.info("Starting pipeline")
+    total_steps = 8
 
+    log_step(1, total_steps, "Resolve external miRBase and BioMart resources")
     mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"
     mirbase_path = args.resources_dir / "mirbase" / "mature.fa"
     mirbase_path = download_file(
@@ -68,7 +73,7 @@ def main() -> None:
         args.predictions_root / f"test_split_{split}" / mre_prediction_file_name
         for split in splits
     ]
-    logger.info("Loading MRE-level predictions from %s", mre_prediction_file_name)
+    log_step(2, total_steps, f"Load raw MRE-level predictions from {mre_prediction_file_name}")
     pred_df = load_prediction_files(
         prediction_paths,
         query_column,
@@ -76,7 +81,7 @@ def main() -> None:
         prediction_column,
     )
 
-    logger.info("Creating transcript-level predictions using max aggregation")
+    log_step(3, total_steps, "Collapse raw MRE-level predictions to transcript-level predictions by max MRE probability")
     pred_df = aggregate_mre_predictions_to_transcripts(
         pred_df,
         query_column,
@@ -84,10 +89,10 @@ def main() -> None:
         prediction_column,
     )
 
-    logger.info("Creating miRNA name-to-MIMAT mapping from miRBase mature.fa")
+    log_step(4, total_steps, "Create miRNA name-to-MIMAT mapping from miRBase mature.fa")
     mirna_name_to_mimat_map = create_mirna_name_to_mimat_mapping(mirbase_path)
 
-    logger.info("Creating RefSeq-to-Ensembl gene mapping from BioMart table")
+    log_step(5, total_steps, "Create RefSeq-to-Ensembl gene mapping from BioMart table")
     biomart_ensembl_id_column = "Gene stable ID"
     biomart_gene_name_column = "Gene name"
     biomart_refseq_column = "RefSeq mRNA ID"
@@ -112,7 +117,7 @@ def main() -> None:
         score_column,
     ]
 
-    logger.info("Mapping prediction miRNA names to MIMAT IDs")
+    log_step(6, total_steps, "Map prediction miRNA names to MIMAT IDs")
     pred_df = map_mirna_names_to_mimat(
         pred_df,
         mirna_name_to_mimat_map,
@@ -121,7 +126,7 @@ def main() -> None:
         mimat_column,
     )
 
-    logger.info("Mapping prediction RefSeq transcript IDs to Ensembl gene IDs and gene names")
+    log_step(7, total_steps, "Map prediction RefSeq transcript IDs to Ensembl gene IDs and gene names")
     pred_df = map_refseq_to_ensembl(
         pred_df,
         refseq_to_ensembl_map,
@@ -129,7 +134,7 @@ def main() -> None:
         ensembl_id_column,
         gene_name_column,
     )
-    logger.info("Building final standardized output table")
+    log_step(8, total_steps, "Build and write final standardized output table")
     final_df = build_output_table(
         pred_df,
         prediction_column,

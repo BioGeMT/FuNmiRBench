@@ -92,4 +92,4 @@ uv run python pipelines/standardized_predictors/tec-mitarget/pipeline.py \
 
 ## Logging
 
-Logging is written both to stdout and to the log file passed via `--log-file`. 
+Logging is written both to stdout and to the log file passed via `--log-file`. Main processing stages are logged as numbered steps, and row-count logs use a consistent `before -> after rows` format.
