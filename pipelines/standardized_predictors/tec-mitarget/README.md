@@ -60,6 +60,17 @@ data/predictions/tec-mitarget/tec_mitarget_standardized.tsv
 
 relative to the repository root.
 
+## Resource Cache
+
+The pipeline downloads external resources only when the expected cache files are missing. By default, the cache files are:
+
+```text
+pipelines/standardized_predictors/tec-mitarget/data/resources/mirbase/mature.fa
+pipelines/standardized_predictors/tec-mitarget/data/resources/biomart/hsapiens_refseq_to_ensembl.tsv
+```
+
+The log reports whether each resource is reused from cache or downloaded.
+
 ## Run
 
 From the repository root:

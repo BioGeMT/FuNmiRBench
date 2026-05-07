@@ -34,7 +34,11 @@ def main() -> None:
 
     mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"
     mirbase_path = args.resources_dir / "mirbase" / "mature.fa"
-    mirbase_path = download_file(mirbase_url, mirbase_path)
+    mirbase_path = download_file(
+        mirbase_url,
+        mirbase_path,
+        resource_label="miRBase mature.fa resource",
+    )
 
     biomart_query = """<?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE Query>
@@ -47,7 +51,13 @@ def main() -> None:
         </Query>"""
     biomart_url = "https://Sep2025.archive.ensembl.org/biomart/martservice"
     biomart_path = args.resources_dir / "biomart" / "hsapiens_refseq_to_ensembl.tsv"
-    biomart_path = download_file(biomart_url, biomart_path, params={"query": biomart_query}, timeout=300)
+    biomart_path = download_file(
+        biomart_url,
+        biomart_path,
+        params={"query": biomart_query},
+        timeout=300,
+        resource_label="BioMart RefSeq-to-Ensembl mapping table",
+    )
 
     splits = range(0, 10)
     mre_prediction_file_name = "predict.tsv"

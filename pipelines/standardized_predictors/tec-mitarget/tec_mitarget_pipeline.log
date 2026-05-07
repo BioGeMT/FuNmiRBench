@@ -1,21 +1,21 @@
-2026-05-07 10:55:31 | INFO | pipeline | Starting pipeline
-2026-05-07 10:55:31 | INFO | utils | Using pipelines/standardized_predictors/tec-mitarget/data/resources/mirbase/mature.fa
-2026-05-07 10:55:31 | INFO | utils | Using pipelines/standardized_predictors/tec-mitarget/data/resources/biomart/hsapiens_refseq_to_ensembl.tsv
-2026-05-07 10:55:31 | INFO | pipeline | Loading MRE-level predictions from predict.tsv
-2026-05-07 10:55:31 | INFO | utils | Drop invalid raw MRE-level prediction rows: 76345 -> 76345 rows
-2026-05-07 10:55:31 | INFO | utils | Drop duplicate raw MRE-level miRNA-transcript-score rows: 76345 -> 46933 rows
-2026-05-07 10:55:31 | INFO | pipeline | Creating transcript-level predictions using max aggregation
-2026-05-07 10:55:31 | INFO | utils | Collapse raw MRE-level duplicate miRNA-transcript rows to transcript-level rows by max MRE probability: 46933 -> 4240 rows
-2026-05-07 10:55:31 | INFO | utils | Drop exact duplicate transcript-level rows after max aggregation: 4240 -> 4240 rows
-2026-05-07 10:55:31 | INFO | pipeline | Creating miRNA name-to-MIMAT mapping from miRBase mature.fa
-2026-05-07 10:55:31 | INFO | pipeline | Creating RefSeq-to-Ensembl gene mapping from BioMart table
-2026-05-07 10:55:32 | INFO | utils | Filter RefSeq-to-Ensembl mapping table to drop invalid rows: 554612 -> 74593 rows
-2026-05-07 10:55:32 | INFO | utils | Filter RefSeq-to-Ensembl mapping table to drop exact duplicate rows: 74593 -> 74568 rows
-2026-05-07 10:55:32 | INFO | utils | Filter RefSeq-to-Ensembl mapping table to drop RefSeq IDs with conflicting Ensembl gene mappings: 74568 -> 63157 rows
-2026-05-07 10:55:33 | INFO | pipeline | Mapping prediction miRNA names to MIMAT IDs
-2026-05-07 10:55:33 | INFO | utils | Drop prediction rows with miRNA names that cannot map to MIMAT IDs: 4240 -> 4186 rows
-2026-05-07 10:55:33 | INFO | pipeline | Mapping prediction RefSeq transcript IDs to Ensembl gene IDs and gene names
-2026-05-07 10:55:33 | INFO | utils | Drop transcript rows with RefSeq IDs that cannot map to Ensembl genes: 4186 -> 3947 rows
-2026-05-07 10:55:33 | INFO | pipeline | Building final standardized output table
-2026-05-07 10:55:33 | INFO | utils | Drop duplicate final Ensembl_ID-miRNA_ID pairs with identical scores after RefSeq-to-gene mapping: 3947 -> 3947 rows
-2026-05-07 10:55:33 | INFO | pipeline | Output written to: data/predictions/tec-mitarget/tec_mitarget_standardized.tsv
+2026-05-07 11:15:47 | INFO | pipeline | Starting pipeline
+2026-05-07 11:15:47 | INFO | utils | Using cached miRBase mature.fa resource: pipelines/standardized_predictors/tec-mitarget/data/resources/mirbase/mature.fa
+2026-05-07 11:15:47 | INFO | utils | Using cached BioMart RefSeq-to-Ensembl mapping table: pipelines/standardized_predictors/tec-mitarget/data/resources/biomart/hsapiens_refseq_to_ensembl.tsv
+2026-05-07 11:15:47 | INFO | pipeline | Loading MRE-level predictions from predict.tsv
+2026-05-07 11:15:47 | INFO | utils | Drop invalid raw MRE-level prediction rows: 76345 -> 76345 rows
+2026-05-07 11:15:47 | INFO | utils | Drop duplicate raw MRE-level miRNA-transcript-score rows: 76345 -> 46933 rows
+2026-05-07 11:15:47 | INFO | pipeline | Creating transcript-level predictions using max aggregation
+2026-05-07 11:15:47 | INFO | utils | Collapse raw MRE-level duplicate miRNA-transcript rows to transcript-level rows by max MRE probability: 46933 -> 4240 rows
+2026-05-07 11:15:47 | INFO | utils | Drop exact duplicate transcript-level rows after max aggregation: 4240 -> 4240 rows
+2026-05-07 11:15:47 | INFO | pipeline | Creating miRNA name-to-MIMAT mapping from miRBase mature.fa
+2026-05-07 11:15:47 | INFO | pipeline | Creating RefSeq-to-Ensembl gene mapping from BioMart table
+2026-05-07 11:15:48 | INFO | utils | Filter RefSeq-to-Ensembl mapping table to drop invalid rows: 554612 -> 74593 rows
+2026-05-07 11:15:48 | INFO | utils | Filter RefSeq-to-Ensembl mapping table to drop exact duplicate rows: 74593 -> 74568 rows
+2026-05-07 11:15:48 | INFO | utils | Filter RefSeq-to-Ensembl mapping table to drop RefSeq IDs with conflicting Ensembl gene mappings: 74568 -> 63157 rows
+2026-05-07 11:15:49 | INFO | pipeline | Mapping prediction miRNA names to MIMAT IDs
+2026-05-07 11:15:49 | INFO | utils | Drop prediction rows with miRNA names that cannot map to MIMAT IDs: 4240 -> 4186 rows
+2026-05-07 11:15:49 | INFO | pipeline | Mapping prediction RefSeq transcript IDs to Ensembl gene IDs and gene names
+2026-05-07 11:15:49 | INFO | utils | Drop transcript rows with RefSeq IDs that cannot map to Ensembl genes: 4186 -> 3947 rows
+2026-05-07 11:15:49 | INFO | pipeline | Building final standardized output table
+2026-05-07 11:15:49 | INFO | utils | Drop duplicate final Ensembl_ID-miRNA_ID pairs with identical scores after RefSeq-to-gene mapping: 3947 -> 3947 rows
+2026-05-07 11:15:49 | INFO | pipeline | Output written to: data/predictions/tec-mitarget/tec_mitarget_standardized.tsv
