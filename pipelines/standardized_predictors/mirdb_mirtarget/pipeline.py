@@ -13,7 +13,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--predictions-file", type=Path, default=pipeline_dir / "data" / "miRDB_v6.0_prediction_result_human_all_scores.txt.gz", help="Raw all-score predictions file from miRDB")
     parser.add_argument("--resources-dir", type=Path, default=pipeline_dir / "data" / "resources", help="Directory for downloaded miRBase/BioMart files")
-    parser.add_argument("--output", type=Path, default=root / "data" / "predictions" / "mirdb_mirtarget" / "mirdb_mirtarget_standardised.tsv", help="Output TSV path")
+    parser.add_argument("--output", type=Path, default=root / "data" / "predictions" / "mirdb_mirtarget" / "mirdb_mirtarget_standardized.tsv", help="Output TSV path")
     parser.add_argument("--log-file", type=Path, default=pipeline_dir / "mirdb_mirtarget.log", help="Log file path")
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level. Default: INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] )
 

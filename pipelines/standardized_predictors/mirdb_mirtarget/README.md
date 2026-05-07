@@ -95,7 +95,7 @@ The output TSV contains:
 By default, the standardized file is written to:
 
 ```text
-data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardised.tsv
+data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv
 ```
 
 relative to the repository root.
@@ -116,7 +116,7 @@ conda run -n standardized_predictors \
   python pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py \
   --predictions-file pipelines/standardized_predictors/mirdb_mirtarget/data/miRDB_v6.0_prediction_result_human_all_scores.txt.gz \
   --resources-dir pipelines/standardized_predictors/mirdb_mirtarget/data/resources \
-  --output data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardised.tsv \
+  --output data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv \
   --log-file pipelines/standardized_predictors/mirdb_mirtarget/mirdb_mirtarget.log \
   --log-level INFO
 ```

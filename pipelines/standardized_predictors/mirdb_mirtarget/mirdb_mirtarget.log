@@ -23,4 +23,4 @@
 2026-04-13 17:06:31 | INFO | pipeline | Building final schema output table
 2026-04-13 17:06:42 | INFO | utils | Rows after dropping conflicting Ensembl ID : miRNA MIMAT pairs: 7799023/7804461
 2026-04-13 17:06:45 | INFO | utils | Final rows after exact deduplication on Ensembl ID : miRNA MIMAT : score: 7795525/7799023
-2026-04-13 17:07:02 | INFO | pipeline | Output written to: data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardised.tsv
+2026-04-13 17:07:02 | INFO | pipeline | Output written to: data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv
