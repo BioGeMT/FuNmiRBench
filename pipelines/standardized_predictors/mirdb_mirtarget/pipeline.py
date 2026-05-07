@@ -13,6 +13,9 @@ def resolve_cli_path(path: Path, root: Path) -> Path:
         return path
     return root / path
 
+def log_step(step_number: int, total_steps: int, message: str) -> None:
+    logger.info("Step %d/%d: %s", step_number, total_steps, message)
+
 def main() -> None:
     root = repo_root()
     pipeline_dir = root / "pipelines" / "standardized_predictors" / "mirdb_mirtarget"
