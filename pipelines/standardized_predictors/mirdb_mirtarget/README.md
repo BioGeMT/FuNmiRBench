@@ -8,7 +8,19 @@ This directory contains the standardization pipeline for miRDB gene-level predic
 - `utils.py`: shared helpers for logging, downloads, cleaning, mapping, and output construction.
 - `mirdb_mirtarget.log`: log file written by the default run.
 
-The pipeline downloads and reuses annotation resources under:
+The pipeline downloads and reuses the raw miRDB predictions file at:
+
+```text
+data/miRDB_v6.0_prediction_result_human_all_scores.txt.gz
+```
+
+This file is downloaded from:
+
+```text
+https://mirdb.org/download/miRDB_v6.0_prediction_result_human_all_scores.txt.gz
+```
+
+The pipeline also downloads and reuses annotation resources under:
 
 ```text
 data/resources/
@@ -19,15 +31,7 @@ This includes:
 - `mirbase/mature.fa`
 - `biomart/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv`
 
-The pipeline expects a raw miRDB text file at:
-
-```text
-data/MirTarget4.0_human_targets.txt
-```
-
-This file was shared by the respective authors via email since their publicly available predictions file only includes prediction scores in the range: 50 to 100 due to some filter. 
-
-The file is treated as a 4-column tab-separated table without a header:
+The raw miRDB file is gzip-compressed and is treated as a 4-column tab-separated table without a header:
 
 1. `miRNA`
 2. `refseq_id`
@@ -43,35 +47,36 @@ The pipeline reads and names all four columns, but gene-level mapping is attempt
 
 The pipeline:
 
-1. Downloads miRBase `mature.fa` version 22.1.
-2. Downloads a BioMart TSV with headers and unique rows containing:
+1. Downloads the miRDB v6.0 all-score raw predictions file.
+2. Downloads miRBase `mature.fa` version 22.1.
+3. Downloads a BioMart TSV with headers and unique rows containing:
    - `Gene stable ID`
    - `Gene name`
    - `RefSeq mRNA ID`
    - `NCBI gene (formerly Entrezgene) ID`
-3. Loads the raw miRDB predictions file.
-4. Drops rows with missing or invalid values in:
+4. Loads the raw miRDB predictions file.
+5. Drops rows with missing or invalid values in:
    - `miRNA`
    - `refseq_id`
    - `prediction`
    - `ncbi_gene_id`
-5. Deduplicates exact duplicate raw rows on those same four columns.
-6. Raises if the same `(miRNA, refseq_id)` pair has conflicting scores in the raw input.
-7. Raises if the same `(miRNA, ncbi_gene_id)` pair has conflicting scores in the raw input.
-8. Builds a miRNA mapping from human miRBase names (`hsa-*`) to `MIMAT` IDs.
-9. Builds an NCBI Gene ID to `(Ensembl_ID, Gene_Name)` mapping from BioMart.
-10. Builds a RefSeq mRNA to `(Ensembl_ID, Gene_Name)` mapping from the same BioMart file.
-11. Maps:
+6. Deduplicates exact duplicate raw rows on those same four columns.
+7. Raises if the same `(miRNA, refseq_id)` pair has conflicting scores in the raw input.
+8. Raises if the same `(miRNA, ncbi_gene_id)` pair has conflicting scores in the raw input.
+9. Builds a miRNA mapping from human miRBase names (`hsa-*`) to `MIMAT` IDs.
+10. Builds an NCBI Gene ID to `(Ensembl_ID, Gene_Name)` mapping from BioMart.
+11. Builds a RefSeq mRNA to `(Ensembl_ID, Gene_Name)` mapping from the same BioMart file.
+12. Maps:
     - `miRNA` to `miRNA_ID`
     - `ncbi_gene_id` to `Ensembl_ID` and `Gene_Name`
-12. For rows still missing an Ensembl mapping, falls back to `refseq_id`.
-13. Drops rows that still fail gene mapping after the fallback.
-14. Converts `prediction` to numeric `Score`.
-15. Drops only exact duplicate final rows on:
+13. For rows still missing an Ensembl mapping, falls back to `refseq_id`.
+14. Drops rows that still fail gene mapping after the fallback.
+15. Converts `prediction` to numeric `Score`.
+16. Drops only exact duplicate final rows on:
     - `Ensembl_ID`
     - `miRNA_ID`
     - `Score`
-16. Writes the standardized output table.
+17. Writes the standardized output table.
 
 ## Output Schema
 
@@ -109,7 +114,7 @@ conda run -n standardized_predictors \
 ```bash
 conda run -n standardized_predictors \
   python pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py \
-  --predictions-file pipelines/standardized_predictors/mirdb_mirtarget/data/MirTarget4.0_human_targets.txt \
+  --predictions-file pipelines/standardized_predictors/mirdb_mirtarget/data/miRDB_v6.0_prediction_result_human_all_scores.txt.gz \
   --resources-dir pipelines/standardized_predictors/mirdb_mirtarget/data/resources \
   --output data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardised.tsv \
   --log-file pipelines/standardized_predictors/mirdb_mirtarget/mirdb_mirtarget.log \
@@ -119,4 +124,3 @@ conda run -n standardized_predictors \
 ## Logging
 
 Logging is written both to stdout and to the log file passed via `--log-file`.
-

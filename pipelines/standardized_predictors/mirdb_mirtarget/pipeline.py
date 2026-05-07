@@ -5,11 +5,13 @@ from utils import configure_logging, download_file, load_prediction_files, creat
 
 logger = logging.getLogger("pipeline")
 
+MIRDB_PREDICTIONS_URL = "https://mirdb.org/download/miRDB_v6.0_prediction_result_human_all_scores.txt.gz"
+
 def main() -> None:
     root = repo_root()
     pipeline_dir = root / "pipelines" / "standardized_predictors" / "mirdb_mirtarget"
     parser = argparse.ArgumentParser()
-    parser.add_argument("--predictions-file", type=Path, default=pipeline_dir / "data" / "MirTarget4.0_human_targets.txt", help="Raw predictions file from miRDB")
+    parser.add_argument("--predictions-file", type=Path, default=pipeline_dir / "data" / "miRDB_v6.0_prediction_result_human_all_scores.txt.gz", help="Raw all-score predictions file from miRDB")
     parser.add_argument("--resources-dir", type=Path, default=pipeline_dir / "data" / "resources", help="Directory for downloaded miRBase/BioMart files")
     parser.add_argument("--output", type=Path, default=root / "data" / "predictions" / "mirdb_mirtarget" / "mirdb_mirtarget_standardised.tsv", help="Output TSV path")
     parser.add_argument("--log-file", type=Path, default=pipeline_dir / "mirdb_mirtarget.log", help="Log file path")
@@ -37,7 +39,7 @@ def main() -> None:
     biomart_path = args.resources_dir / "biomart" / "hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv"
     biomart_path = download_file(biomart_url, biomart_path, params={"query": biomart_query}, timeout=360)
 
-    raw_predictions_path = args.predictions_file
+    raw_predictions_path = download_file(MIRDB_PREDICTIONS_URL, args.predictions_file, timeout=360)
     raw_mirna_column = "miRNA"
     raw_transcript_column = "refseq_id"
     raw_prediction_column = "prediction"
