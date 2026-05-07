@@ -16,6 +16,7 @@ Current predictor pipelines:
 - `mock/`
 - `cheating/`
 - `targetscan/`
+<<<<<<< add_tec-mitarget
 - `tec-mitarget/`
 
 ## Standardized Schema
@@ -40,3 +41,8 @@ Not every demo pipeline currently populates every column, but they all write thi
 - `cheating/`
 
 See the README in each pipeline directory for pipeline-specific inputs, processing steps, and outputs.
+=======
+- `random/`
+- `cheating/`
+- `perfect/`
+>>>>>>> main

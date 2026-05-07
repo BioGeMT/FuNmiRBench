@@ -8,6 +8,17 @@ from funmirbench import DatasetMeta
 from funmirbench.de_table import find_gene_id_column, read_de_table
 
 
+def _compute_global_rank_percentile(series: pd.Series) -> pd.Series:
+    values = series.astype(float)
+    ranks = values.rank(method="dense", ascending=True)
+    max_rank = ranks.max(skipna=True)
+    if pd.isna(max_rank):
+        return pd.Series(float("nan"), index=series.index)
+    if float(max_rank) <= 1.0:
+        return pd.Series(1.0, index=series.index, dtype=float)
+    return (ranks - 1.0) / (float(max_rank) - 1.0)
+
+
 def load_experiment_table(meta: DatasetMeta) -> pd.DataFrame:
     de = read_de_table(meta.full_path)
     gene_src = find_gene_id_column(de)
@@ -28,6 +39,7 @@ def load_experiment_table(meta: DatasetMeta) -> pd.DataFrame:
     out = de[keep].copy()
     out.insert(0, "mirna", meta.miRNA)
     out.insert(0, "dataset_id", meta.id)
+    out.insert(2, "perturbation", meta.perturbation)
     return out
 
 
@@ -35,8 +47,10 @@ def load_tool_scores(
     tool_id: str,
     tool_meta: dict,
     root: Path,
+    dataset_id: str,
     mirna: str,
     col_name: str,
+    rank_col_name: str,
     min_score: float | None = None,
 ) -> tuple[pd.DataFrame, Path]:
     path = Path(tool_meta["predictor_output_path"])
@@ -52,16 +66,31 @@ def load_tool_scores(
     mirna_col = "miRNA_Name"
     gene_id_col = "Ensembl_ID"
     score_col = "Score"
+    score_direction = str(tool_meta.get("score_direction", "higher_is_stronger") or "higher_is_stronger")
 
+    df[score_col] = df[score_col].astype(float)
+    if score_direction == "lower_is_stronger":
+        # Convert all predictors to a common "higher is stronger" convention
+        # before downstream evaluation.
+        df[score_col] = -df[score_col]
+    elif score_direction != "higher_is_stronger":
+        raise ValueError(
+            f"Unsupported score_direction {score_direction!r} for tool {tool_id!r}."
+        )
+    df[rank_col_name] = _compute_global_rank_percentile(df[score_col])
+    if "Dataset_ID" in df.columns:
+        df = df[df["Dataset_ID"].astype(str) == str(dataset_id)].copy()
     df = df[df[mirna_col].astype(str) == mirna].copy()
     if min_score is not None:
-        df = df[df[score_col].astype(float) >= float(min_score)].copy()
+        df = df[df[score_col] >= float(min_score)].copy()
     df["gene_id"] = df[gene_id_col].astype(str)
     if df["gene_id"].duplicated().any():
-        raise ValueError(
-            f"Duplicate mirna+gene scores found for tool {tool_id} in {path}"
-        )
-    return df[["gene_id", score_col]].rename(columns={score_col: col_name}), path
+        # Some predictors can emit repeated miRNA+gene rows after family expansion.
+        # Keep the strongest score using the normalized "higher is stronger" scale.
+        keep_idx = df.groupby("gene_id")[score_col].idxmax()
+        df = df.loc[keep_idx, ["gene_id", score_col, rank_col_name]].reset_index(drop=True)
+        return df.rename(columns={score_col: col_name}), path
+    return df[["gene_id", score_col, rank_col_name]].rename(columns={score_col: col_name}), path
 
 
 def build_joined(meta, tool_ids, predictions, root, min_score: float | None = None):
@@ -74,8 +103,10 @@ def build_joined(meta, tool_ids, predictions, root, min_score: float | None = No
             tool_id,
             predictions[tool_id],
             root,
+            meta.id,
             meta.miRNA,
             f"score_{tool_id}",
+            f"global_rank_{tool_id}",
             min_score=min_score,
         )
         joined = joined.merge(scores, on="gene_id", how="left")

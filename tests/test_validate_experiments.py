@@ -11,14 +11,14 @@ def test_resolve_de_table_path_prefers_repo_root_cwd(tmp_path, monkeypatch):
     experiments_tsv.parent.mkdir(parents=True)
     experiments_tsv.write_text("id\tde_table_path\n", encoding="utf-8")
 
-    de_table = repo_root / "data" / "experiments" / "processed" / "demo.tsv"
+    de_table = repo_root / "data" / "experiments" / "processed" / "18745741" / "demo.tsv"
     de_table.parent.mkdir(parents=True)
     de_table.write_text("gene_id\tlogFC\tFDR\n", encoding="utf-8")
 
     monkeypatch.chdir(repo_root)
 
     resolved = resolve_de_table_path(
-        "data/experiments/processed/demo.tsv",
+        "data/experiments/processed/18745741/demo.tsv",
         experiments_tsv=experiments_tsv,
     )
 
@@ -31,12 +31,12 @@ def test_resolve_de_table_path_uses_explicit_root(tmp_path):
     experiments_tsv.write_text("id\tde_table_path\n", encoding="utf-8")
 
     root = tmp_path / "repo"
-    de_table = root / "data" / "experiments" / "processed" / "demo.tsv"
+    de_table = root / "data" / "experiments" / "processed" / "18745741" / "demo.tsv"
     de_table.parent.mkdir(parents=True)
     de_table.write_text("gene_id\tlogFC\tFDR\n", encoding="utf-8")
 
     resolved = resolve_de_table_path(
-        Path("data/experiments/processed/demo.tsv"),
+        Path("data/experiments/processed/18745741/demo.tsv"),
         experiments_tsv=experiments_tsv,
         root=root,
     )

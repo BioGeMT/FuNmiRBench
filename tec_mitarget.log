@@ -1,0 +1,6 @@
+2026-04-24 10:47:55,340 | INFO | Starting pipeline
+2026-04-24 10:47:55,418 | INFO | Downloading data/resources/mirbase/mature.fa
+2026-04-24 10:47:56,434 | INFO | Saved data/resources/mirbase/mature.fa
+2026-04-24 10:47:56,478 | INFO | Downloading data/resources/biomart/hsapiens_refseq_to_ensembl.tsv
+2026-04-24 10:49:13,036 | INFO | Saved data/resources/biomart/hsapiens_refseq_to_ensembl.tsv
+2026-04-24 10:49:13,043 | INFO | Loading predictions

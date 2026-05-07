@@ -12,12 +12,23 @@ from funmirbench.de_table import find_gene_id_column, read_de_table
 from funmirbench.logger import parse_log_level, setup_logging
 
 logger = logging.getLogger(__name__)
+DEFAULT_FDR_THRESHOLD = 0.05
+DEFAULT_ABS_LOGFC_THRESHOLD = 1.0
 
 DEMO_DATASET_IDS = [
     "GSE109725_OE_miR_204_5p",
     "GSE118315_KO_miR_124_3p",
     "GSE210778_OE_miR_375_3p",
 ]
+
+
+def _expected_effect_from_logfc(logfc, perturbation):
+    perturbation = str(perturbation or "").strip().upper()
+    if perturbation == "OE":
+        return -logfc
+    if perturbation in {"KO", "KD"}:
+        return logfc
+    return logfc.abs()
 
 
 def _resolve_table_path(root, value):
@@ -32,8 +43,8 @@ def build_cheating_scores(
     root,
     *,
     dataset_ids=None,
-    fdr_threshold=0.05,
-    abs_logfc_threshold=1.0,
+    fdr_threshold=DEFAULT_FDR_THRESHOLD,
+    abs_logfc_threshold=DEFAULT_ABS_LOGFC_THRESHOLD,
     negative_leak_fraction=0.008,
 ):
     df = pd.read_csv(experiments_tsv, sep="\t")
@@ -70,18 +81,12 @@ def build_cheating_scores(
         keep["logFC"] = keep["logFC"].astype(float)
         keep["FDR"] = keep["FDR"].astype(float)
         keep = keep[keep["FDR"] > 0].copy()
-        expected_effect = (
-            -keep["logFC"]
-            if experiment_type == "OE"
-            else keep["logFC"]
-            if experiment_type == "KO"
-            else keep["logFC"].abs()
-        )
+        expected_effect = _expected_effect_from_logfc(keep["logFC"], experiment_type)
         effect_signal = expected_effect.clip(lower=0.0, upper=3.0) / 3.0
         significance_signal = (-keep["FDR"].map(math.log10)).clip(lower=0.0, upper=6.0) / 6.0
         keep["directional_signal"] = 0.70 * effect_signal + 0.30 * significance_signal
         keep["is_positive"] = (
-            (keep["FDR"] < fdr_threshold) & (keep["logFC"].abs() > abs_logfc_threshold)
+            (keep["FDR"] < fdr_threshold) & (expected_effect > abs_logfc_threshold)
         ).astype(int)
 
         for gene_id, directional_signal, is_positive in zip(
@@ -124,8 +129,8 @@ def main():
         default=None,
         help="Restrict to specific dataset IDs. Defaults to the shipped demo datasets.",
     )
-    parser.add_argument("--fdr-threshold", type=float, default=0.05)
-    parser.add_argument("--abs-logfc-threshold", type=float, default=1.0)
+    parser.add_argument("--fdr-threshold", type=float, default=DEFAULT_FDR_THRESHOLD)
+    parser.add_argument("--abs-logfc-threshold", type=float, default=DEFAULT_ABS_LOGFC_THRESHOLD)
     parser.add_argument("--negative-leak-fraction", type=float, default=0.008)
     parser.add_argument(
         "--log-level",

@@ -43,10 +43,17 @@ def extract_gene_ids(df):
 
 
 def read_de_table(path: Path) -> pd.DataFrame:
-    """Read a DE table TSV, normalizing the first column name."""
+    """Read a DE table TSV, normalizing malformed gene ID headers."""
     df = pd.read_csv(path, sep="\t")
     cols = [str(c).strip() for c in df.columns]
     if cols[0] == "" or cols[0].startswith("Unnamed:"):
         cols[0] = "gene_id"
     df.columns = cols
+    if (
+        "gene_id" not in df.columns
+        and len(df.index) > 0
+        and not isinstance(df.index, pd.RangeIndex)
+        and float(pd.Series(df.index.astype(str)).str.match(_ENSEMBL).mean()) >= 0.5
+    ):
+        df = df.reset_index().rename(columns={"index": "gene_id"})
     return df

@@ -27,7 +27,7 @@ def test_sync_experiment_metadata_from_run_candidates(tmp_path):
         ]
     ).to_csv(registry, sep="\t", index=False)
 
-    candidate = tmp_path / "pipelines" / "geo" / "runs" / "20260329_demo" / "candidate_metadata.tsv"
+    candidate = tmp_path / "pipelines" / "experiments" / "runs" / "20260329_demo" / "candidate_metadata.tsv"
     candidate.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         [
@@ -63,7 +63,7 @@ def test_sync_predictor_metadata_updates_existing_rows(tmp_path):
     pd.DataFrame(
         [
             {
-                "tool_id": "predictor_1",
+                "tool_id": "random",
                 "official_name": "Old Name",
                 "organism": "Homo sapiens",
                 "score_type": "probability",
@@ -82,7 +82,7 @@ def test_sync_predictor_metadata_updates_existing_rows(tmp_path):
     pd.DataFrame(
         [
             {
-                "tool_id": "predictor_1",
+                "tool_id": "random",
                 "official_name": "New Name",
                 "organism": "Homo sapiens",
                 "score_type": "probability",

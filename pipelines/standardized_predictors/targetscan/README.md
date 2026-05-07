@@ -37,8 +37,9 @@ The pipeline:
    - the representative miRNA cannot be mapped through the miRNA annotation table
    - the score is null
 12. Preserves the raw TargetScan `Cumulative weighted context++ score` as `Score`.
-13. Ensures the final output has one row per `(Ensembl_ID, miRNA_ID)` pair.
-14. Writes the standardized output table.
+13. Checks whether any duplicate `(Ensembl_ID, miRNA_ID)` pairs remain after all mapping and mismatch filters.
+14. Raises an error instead of silently choosing between duplicate scores if any such pairs survive.
+15. Writes the standardized output table only when the filtered rows are already unique at the final gene-miRNA level.
 
 ## Output Schema
 
@@ -51,6 +52,7 @@ The output TSV contains:
 - `Score`
 
 `Score` is the raw numeric form of TargetScan `Cumulative weighted context++ score`.
+No score-based duplicate collapse is applied in the final output step. If duplicate gene-miRNA pairs survive filtering, the pipeline fails and reports them.
 
 ## Run
 
@@ -69,3 +71,4 @@ uv run pipeline.py --log-level INFO
 ## Logging
 
 Logging is written both to stdout and to `targetscan_pipeline.log`.
+The duplicate summary distinguishes provisional duplicate gene-miRNA pairs seen before the TargetScan/Ensembl mismatch filter from any duplicate pairs that survive after filtering.

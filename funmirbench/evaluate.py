@@ -1,10 +1,16 @@
 """Evaluate joined GT/prediction tables: metrics, plots, reports."""
 
 import math
+import os
 import pathlib
+import textwrap
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap, TwoSlopeNorm
+from matplotlib.patches import Patch, Rectangle
 from sklearn.metrics import (
     auc,
     average_precision_score,
@@ -14,6 +20,207 @@ from sklearn.metrics import (
 )
 
 SCORE_PREFIX = "score_"
+GLOBAL_RANK_PREFIX = "global_rank_"
+LOCAL_RANK_PREFIX = "local_rank_"
+FIGURE_DPI = 300
+REPORT_PAGE_SIZE = (8.27, 11.69)
+NEGATIVE_COLOR = "#B8C4D6"
+POSITIVE_COLOR = "#D04E4E"
+NEUTRAL_COLOR = "#5B6577"
+GRID_COLOR = "#D8DEE9"
+SCORE_CMAP = ListedColormap(
+    ["#F6F7FB", "#C5D7EE", "#7FA8D8", "#2F5D8C", "#17324D"]
+)
+PREDICTOR_HEATMAP_CMAP = LinearSegmentedColormap.from_list(
+    "predictor_heatmap",
+    ["#4464D8", "#7EA6E7", "#8CC9B0", "#4AA36B", "#1E6A45"],
+)
+GT_CMAP = ListedColormap(["#EEF1F6", "#243B53"])
+MISSING_COLOR = "#D7DEE8"
+CURVE_COLORS = [
+    "#1F77B4",
+    "#D1495B",
+    "#2A9D8F",
+    "#9467BD",
+    "#D97D0D",
+    "#4C78A8",
+]
+TOP_PREDICTION_CDF_N = 100
+TOOL_LABELS = {}
+TOOL_COLORS = {}
+
+
+def _metric_plot_limits(metric_name):
+    if metric_name == "spearman":
+        return -1.02, 1.02
+    return 0.0, 1.02
+
+
+def _format_threshold_value(value):
+    return str(float(value))
+
+
+def describe_gt_rule(fdr_threshold, abs_logfc_threshold, *, markdown=False):
+    fdr_text = f"FDR < {_format_threshold_value(fdr_threshold)}"
+    effect_text = f"perturbation-aware effect > {_format_threshold_value(abs_logfc_threshold)}"
+    if markdown:
+        return (
+            f"`{fdr_text}` and {effect_text.replace('>', '`> ', 1) + '`'} "
+            "(`-logFC` for OE, `+logFC` for KO/KD)"
+        )
+    return f"{fdr_text} and {effect_text} (-logFC for OE, +logFC for KO/KD)"
+
+
+def _positive_mask(df, *, fdr_threshold, abs_logfc_threshold):
+    return (df["expected_effect"] > float(abs_logfc_threshold)) & (df["FDR"] < float(fdr_threshold))
+
+
+def _selection_caption(fdr_threshold):
+    del fdr_threshold
+    return "selected by FDR and expected effect"
+
+
+def _sort_heatmap_rows_by_logfc(work):
+    sort_cols = ["expected_effect", "FDR"]
+    ascending = [False, True]
+    if "gene_id" in work.columns:
+        sort_cols.append("gene_id")
+        ascending.append(True)
+    return work.sort_values(sort_cols, ascending=ascending, kind="mergesort").reset_index(drop=True)
+
+
+def _emit_log(logger, message):
+    if logger is not None:
+        logger(message)
+
+
+def _set_tool_labels(tool_labels=None):
+    global TOOL_LABELS
+    TOOL_LABELS = {
+        str(tool_id): str(label).strip()
+        for tool_id, label in (tool_labels or {}).items()
+        if str(label).strip()
+    }
+
+
+def _set_tool_colors(tool_ids=None):
+    global TOOL_COLORS
+    TOOL_COLORS = {
+        str(tool_id): CURVE_COLORS[index % len(CURVE_COLORS)]
+        for index, tool_id in enumerate(tool_ids or [])
+    }
+
+
+def _tool_label(tool_id):
+    resolved = TOOL_LABELS.get(str(tool_id))
+    if resolved:
+        return resolved
+    return str(tool_id).replace("_", " ")
+
+
+def _tool_color(tool_id, *, fallback=POSITIVE_COLOR):
+    return TOOL_COLORS.get(str(tool_id), fallback)
+
+
+def _positive_count_caption(scored_positives, positives_total):
+    return f"{int(scored_positives):,}/{int(positives_total):,}"
+
+
+def _dataset_heading(dataset_id, *, suffix=None):
+    if suffix:
+        return f"{dataset_id} | {suffix}"
+    return str(dataset_id)
+
+
+def _dataset_caption(dataset_id):
+    return str(dataset_id).replace("_", " ")
+
+
+def _wrap_axis_label(text, *, width=14):
+    wrapped = textwrap.wrap(str(text), width=width) or [str(text)]
+    return "\n".join(wrapped)
+
+
+def _nice_symmetric_limit(values, *, floor=1.0):
+    raw = max(float(np.nanmax(np.abs(values))), float(floor))
+    if raw <= 1.0:
+        step = 0.25
+    elif raw <= 2.0:
+        step = 0.5
+    elif raw <= 5.0:
+        step = 1.0
+    elif raw <= 10.0:
+        step = 2.0
+    else:
+        step = 5.0
+    return math.ceil(raw / step) * step
+
+
+def _add_figure_heading(fig, *, title, subtitle, x=0.08, title_y=0.975, subtitle_y=0.93):
+    fig.text(
+        x,
+        title_y,
+        title,
+        ha="left",
+        va="top",
+        fontsize=12,
+        fontweight="semibold",
+        color="black",
+    )
+    fig.text(
+        x,
+        subtitle_y,
+        subtitle,
+        ha="left",
+        va="top",
+        fontsize=8.6,
+        color=NEUTRAL_COLOR,
+    )
+
+
+def _add_horizontal_colorbar(fig, *, mappable, anchor_ax, label, ticks=None, height=0.014, pad=0.05):
+    pos = anchor_ax.get_position()
+    cax = fig.add_axes([pos.x0, pos.y0 - pad, pos.width, height])
+    cbar = fig.colorbar(
+        mappable,
+        cax=cax,
+        orientation="horizontal",
+        ticks=ticks,
+    )
+    cbar.set_label(label)
+    return cbar
+
+
+def _style_axes(ax, *, grid_axis="y"):
+    ax.set_facecolor("white")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#A0AEC0")
+    ax.spines["bottom"].set_color("#A0AEC0")
+    ax.tick_params(colors="#3C4858", labelsize=9)
+    if grid_axis:
+        ax.grid(True, axis=grid_axis, color=GRID_COLOR, linewidth=0.8, alpha=0.9)
+    ax.set_axisbelow(True)
+
+
+def _save_figure(fig, out_path):
+    fig.savefig(out_path, dpi=FIGURE_DPI, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
+def _save_pdf_page(pdf, fig):
+    fig.set_size_inches(*REPORT_PAGE_SIZE, forward=True)
+    fig.patch.set_facecolor("white")
+    pdf.savefig(fig, facecolor="white")
+    plt.close(fig)
+
+
+def _ecdf(values):
+    ordered = np.sort(np.asarray(values, dtype=float))
+    if ordered.size == 0:
+        return ordered, ordered
+    cumulative = np.arange(1, ordered.size + 1, dtype=float) / float(ordered.size)
+    return ordered, cumulative
 
 
 def _safe_neglog10(series):
@@ -21,14 +228,66 @@ def _safe_neglog10(series):
     return -clipped.map(math.log10)
 
 
-def _normalize_scores(series):
+def _normalize_perturbation(value):
+    text = str(value or "").strip().upper()
+    if text in {"", "NAN", "NONE", "<NA>"}:
+        return ""
+    return text
+
+
+def _infer_perturbation_from_dataset_id(value):
+    dataset_id = str(value or "").upper()
+    for perturbation in ("OE", "KO", "KD"):
+        if f"_{perturbation}_" in dataset_id:
+            return perturbation
+    return ""
+
+
+def _resolve_perturbation_series(df, *, perturbation=None):
+    fallback = _normalize_perturbation(perturbation)
+    if "perturbation" in df.columns:
+        resolved = df["perturbation"].astype(str).map(_normalize_perturbation)
+    elif "dataset_id" in df.columns:
+        resolved = df["dataset_id"].astype(str).map(_infer_perturbation_from_dataset_id)
+    else:
+        resolved = pd.Series("", index=df.index, dtype="object")
+    if fallback:
+        resolved = resolved.where(resolved != "", fallback)
+    return resolved.fillna("")
+
+
+def _expected_effect_from_logfc(logfc, perturbations):
+    expected_effect = logfc.abs().astype(float)
+    oe_mask = perturbations == "OE"
+    ko_mask = perturbations.isin(["KO", "KD"])
+    expected_effect.loc[oe_mask] = -logfc.loc[oe_mask]
+    expected_effect.loc[ko_mask] = logfc.loc[ko_mask]
+    return expected_effect
+
+
+def _annotate_ground_truth(df, *, perturbation=None):
+    out = df.copy()
+    out["logFC"] = out["logFC"].astype(float)
+    out["FDR"] = out["FDR"].astype(float)
+    out["abs_logFC"] = out["logFC"].abs()
+    out["neglog10_FDR"] = _safe_neglog10(out["FDR"])
+    out["resolved_perturbation"] = _resolve_perturbation_series(out, perturbation=perturbation)
+    out["expected_effect"] = _expected_effect_from_logfc(
+        out["logFC"],
+        out["resolved_perturbation"],
+    )
+    return out
+
+
+def _rank_scale_scores(series):
     values = series.astype(float)
-    lo, hi = values.min(skipna=True), values.max(skipna=True)
-    if pd.isna(lo) or pd.isna(hi):
+    ranks = values.rank(method="dense", ascending=True)
+    max_rank = ranks.max(skipna=True)
+    if pd.isna(max_rank):
         return pd.Series(float("nan"), index=series.index)
-    if hi == lo:
-        return pd.Series(0.0, index=series.index)
-    return (values - lo) / (hi - lo)
+    if float(max_rank) <= 1.0:
+        return pd.Series(1.0, index=series.index, dtype=float)
+    return (ranks - 1.0) / (float(max_rank) - 1.0)
 
 
 def _tool_id_from_score_col(score_col):
@@ -37,19 +296,66 @@ def _tool_id_from_score_col(score_col):
     return score_col
 
 
-def _top_fraction_mask(series, fraction):
-    threshold = series.quantile(1.0 - fraction)
-    return series >= threshold
+def _rank_col_for_tool(tool_id, *, prefix=GLOBAL_RANK_PREFIX):
+    return f"{prefix}{tool_id}"
 
 
-def _prepare_scored_frame(joined, *, score_col, fdr_threshold, abs_logfc_threshold):
+def _rank_distribution_specs(frame: pd.DataFrame, *, rank_types=None):
+    specs = []
+    rank_types = tuple(rank_types) if rank_types is not None else ("local", "global", "score")
+    seen = set()
+    handlers = {
+        "local": LOCAL_RANK_PREFIX,
+        "global": GLOBAL_RANK_PREFIX,
+        "score": SCORE_PREFIX,
+    }
+    for rank_type in rank_types:
+        prefix = handlers.get(rank_type)
+        if prefix is None:
+            raise ValueError(f"Unsupported rank distribution type: {rank_type}")
+        for column in frame.columns:
+            if not column.startswith(prefix):
+                continue
+            tool_id = column[len(prefix):]
+            if tool_id in seen:
+                continue
+            specs.append((tool_id, column, rank_type))
+            seen.add(tool_id)
+    return specs
+
+
+def _top_fraction_mask(series, fraction, *, tie_breaker=None):
+    valid = series.notna()
+    if not bool(valid.any()):
+        return pd.Series(False, index=series.index)
+    fraction = float(fraction)
+    if fraction <= 0.0:
+        return pd.Series(False, index=series.index)
+    valid_count = int(valid.sum())
+    keep_count = min(valid_count, max(1, int(math.ceil(valid_count * fraction))))
+    work = pd.DataFrame({"score": series[valid].astype(float)})
+    if tie_breaker is not None:
+        work["tie_breaker"] = tie_breaker[valid].astype(str)
+        work = work.sort_values(
+            ["score", "tie_breaker"], ascending=[False, True], kind="mergesort"
+        )
+    else:
+        work = work.sort_values("score", ascending=False, kind="mergesort")
+    selected = pd.Series(False, index=series.index)
+    selected.loc[work.index[:keep_count]] = True
+    return selected
+
+
+def _prepare_scored_frame(
+    joined, *, score_col, fdr_threshold, abs_logfc_threshold, perturbation=None,
+):
     required_cols = {"gene_id", "logFC", "FDR", score_col}
     missing = [col for col in required_cols if col not in joined.columns]
     if missing:
         raise ValueError(f"Joined table missing required columns: {missing}")
 
     keep_cols = ["gene_id", "logFC", "FDR", score_col]
-    for optional in ("dataset_id", "mirna", "PValue"):
+    for optional in ("dataset_id", "mirna", "perturbation", "PValue"):
         if optional in joined.columns:
             keep_cols.append(optional)
 
@@ -59,43 +365,207 @@ def _prepare_scored_frame(joined, *, score_col, fdr_threshold, abs_logfc_thresho
     if keep.empty:
         raise ValueError(f"No usable rows remain for {score_col}.")
 
-    filled_zero_count = int(keep[score_col].isna().sum())
-    keep[score_col] = keep[score_col].fillna(0.0).astype(float)
-    keep["logFC"] = keep["logFC"].astype(float)
-    keep["FDR"] = keep["FDR"].astype(float)
-    keep["abs_logFC"] = keep["logFC"].abs()
-    keep["neglog10_FDR"] = _safe_neglog10(keep["FDR"])
-    keep["is_positive"] = (
-        (keep["FDR"] < fdr_threshold) & (keep["abs_logFC"] > abs_logfc_threshold)
+    total_rows = int(len(keep))
+    missing_score_count = int(keep[score_col].isna().sum())
+    keep = _annotate_ground_truth(keep, perturbation=perturbation)
+    keep["is_positive"] = _positive_mask(
+        keep,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
     ).astype(int)
+    positives_total = int(keep["is_positive"].sum())
+
+    keep = keep[keep[score_col].notna()].copy()
+    if keep.empty:
+        raise ValueError(f"No scored rows remain for {score_col}.")
+
+    rows_scored = int(len(keep))
+    coverage = float(rows_scored / total_rows) if total_rows else float("nan")
+    keep[score_col] = keep[score_col].astype(float)
     positives = int(keep["is_positive"].sum())
     negatives = int(len(keep) - positives)
     if positives == 0:
         raise ValueError(f"No positives remain for {score_col}.")
     if negatives == 0:
         raise ValueError(f"No negatives remain for {score_col}.")
-    return keep, filled_zero_count
+    positive_coverage = float(positives / positives_total) if positives_total else float("nan")
+    coverage_info = {
+        "rows_total": total_rows,
+        "rows_scored": rows_scored,
+        "rows_missing_score": missing_score_count,
+        "coverage": coverage,
+        "positives_total": positives_total,
+        "positives_scored": positives,
+        "positive_coverage": positive_coverage,
+    }
+    return keep, coverage_info
 
 
-def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, out_path):
-    pearson = float(df[score_col].corr(df["logFC"], method="pearson"))
-    spearman = float(df[score_col].corr(df["logFC"], method="spearman"))
+def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, positives_total, out_path):
+    pearson = float(df[score_col].corr(df["expected_effect"], method="pearson"))
+    spearman = float(df[score_col].corr(df["expected_effect"], method="spearman"))
+    fig, ax = plt.subplots(figsize=(7.2, 5.0))
+    positive_mask = df["is_positive"].astype(bool)
+    negatives = df.loc[~positive_mask]
+    positives = df.loc[positive_mask]
+    predictor_color = _tool_color(tool_id)
 
-    plt.figure(figsize=(7, 5))
-    plt.scatter(df[score_col], df["logFC"], alpha=0.5, s=12)
-    plt.xlabel(f"{tool_id} score")
-    plt.ylabel("logFC")
-    plt.title(f"{dataset_id}: {tool_id} score vs logFC")
-    plt.text(
-        0.02, 0.98,
-        f"pearson={pearson:.4f}\nspearman={spearman:.4f}",
-        transform=plt.gca().transAxes, va="top", ha="left",
-        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8},
+    _style_axes(ax, grid_axis="both")
+    ax.scatter(
+        negatives[score_col],
+        negatives["expected_effect"],
+        s=18,
+        alpha=0.55,
+        color=NEGATIVE_COLOR,
+        edgecolors="none",
+        label="background genes",
+        rasterized=True,
     )
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
-    plt.close()
+    ax.scatter(
+        positives[score_col],
+        positives["expected_effect"],
+        s=28,
+        alpha=0.9,
+        color=predictor_color,
+        edgecolors="white",
+        linewidths=0.35,
+        label="DE positives",
+        rasterized=True,
+        zorder=3,
+    )
+    ax.axhline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle="--", alpha=0.75)
+    score_min = float(df[score_col].min())
+    score_max = float(df[score_col].max())
+    if score_min <= 0.0 <= score_max:
+        ax.axvline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle=":", alpha=0.75)
+    ax.set_xlabel(f"{_tool_label(tool_id)} score", fontsize=10)
+    ax.set_ylabel("Expected target effect", fontsize=10)
+    ax.set_title(
+        f"{_tool_label(tool_id)} score vs expected effect",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        (
+            f"{_dataset_caption(dataset_id)}"
+            f"  |  n={len(df):,} genes"
+            f"  |  positives={_positive_count_caption(int(positive_mask.sum()), positives_total)}"
+        ),
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.text(
+        0.99,
+        0.02,
+        f"Pearson {pearson:.3f}\nSpearman {spearman:.3f}",
+        transform=ax.transAxes,
+        va="bottom",
+        ha="right",
+        fontsize=9,
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "white", "edgecolor": GRID_COLOR},
+    )
+    ax.legend(frameon=False, loc="upper right", fontsize=9)
+    _save_figure(fig, out_path)
     return pearson, spearman
+
+
+def _plot_gsea_enrichment(df, *, score_col, dataset_id, tool_id, positives_total, out_path):
+    ordered = df.sort_values([score_col, "gene_id"], ascending=[False, True]).reset_index(drop=True)
+    hits = ordered["is_positive"].astype(int).to_numpy(dtype=int)
+    total_hits = int(hits.sum())
+    total_misses = int(len(hits) - total_hits)
+    if total_hits == 0 or total_misses == 0:
+        raise ValueError(f"Cannot build enrichment plot for {tool_id}: need both hits and misses.")
+
+    hit_step = 1.0 / total_hits
+    miss_step = 1.0 / total_misses
+    running_es = np.cumsum(np.where(hits == 1, hit_step, -miss_step))
+    max_index = int(np.argmax(running_es))
+    min_index = int(np.argmin(running_es))
+    if abs(float(running_es[max_index])) >= abs(float(running_es[min_index])):
+        es = float(running_es[max_index])
+        peak_index = max_index
+    else:
+        es = float(running_es[min_index])
+        peak_index = min_index
+
+    positions = np.arange(1, len(ordered) + 1)
+    hit_positions = positions[hits == 1]
+
+    fig, axes = plt.subplots(
+        2,
+        1,
+        figsize=(7.2, 5.0),
+        sharex=True,
+        gridspec_kw={"height_ratios": [3.6, 0.9], "hspace": 0.08},
+    )
+    curve_ax, hit_ax = axes
+    for ax in axes:
+        ax.set_facecolor("white")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.tick_params(colors="#3C4858", labelsize=9)
+
+    curve_ax.grid(True, axis="y", color=GRID_COLOR, linewidth=0.8, alpha=0.9)
+    curve_ax.set_axisbelow(True)
+    predictor_color = _tool_color(tool_id)
+    curve_ax.plot(positions, running_es, color=predictor_color, linewidth=2.2)
+    curve_ax.axhline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle="--", alpha=0.8)
+    curve_ax.scatter(
+        [positions[peak_index]],
+        [running_es[peak_index]],
+        color="black",
+        s=26,
+        zorder=3,
+    )
+    curve_ax.set_ylabel("Running ES", fontsize=10)
+    curve_ax.set_title(
+        f"{_tool_label(tool_id)} enrichment of GT positives",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.965,
+        (
+            f"{_dataset_caption(dataset_id)}"
+            f"  |  positives={_positive_count_caption(total_hits, positives_total)}"
+            f"  |  ES={es:.3f}"
+        ),
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+
+    hit_ax.axhspan(0.0, 1.0, color="#E5E7EB", alpha=1.0, zorder=0)
+    if len(hit_positions):
+        hit_start = float(hit_positions.min()) - 0.5
+        hit_end = float(hit_positions.max()) + 0.5
+        hit_ax.add_patch(
+            Rectangle(
+                (hit_start, 0.0),
+                hit_end - hit_start,
+                1.0,
+                fill=False,
+                edgecolor="black",
+                linewidth=1.1,
+                zorder=2,
+            )
+        )
+    hit_ax.vlines(hit_positions, 0.0, 1.0, color=POSITIVE_COLOR, linewidth=0.9, zorder=3)
+    hit_ax.set_ylim(0.0, 1.0)
+    hit_ax.set_yticks([])
+    hit_ax.set_ylabel("Hits", fontsize=9)
+    hit_ax.spines["left"].set_visible(False)
+    hit_ax.set_xlabel("Ranked genes", fontsize=10)
+
+    _save_figure(fig, out_path)
+    return es
 
 
 def _compute_pr_metrics(y_true, y_score):
@@ -109,170 +579,1127 @@ def _compute_auroc(y_true, y_score):
     return float(roc_auc_score(y_true, y_score))
 
 
+def _plot_single_predictor_pr_curve(item, *, dataset_id, out_path):
+    precision, recall, _ = precision_recall_curve(item["y_true"], item["y_score"])
+    pr_auc = auc(recall, precision)
+    baseline = float(item["y_true"].mean())
+    predictor_color = _tool_color(item["tool_id"])
+
+    fig, ax = plt.subplots(figsize=(6.1, 4.9))
+    _style_axes(ax, grid_axis="both")
+    ax.plot(
+        recall,
+        precision,
+        linewidth=2.2,
+        color=predictor_color,
+        label=f"PR-AUC {pr_auc:.3f}",
+    )
+    ax.axhline(
+        baseline,
+        linestyle="--",
+        linewidth=1.4,
+        color=NEUTRAL_COLOR,
+        label=f"baseline {baseline:.3f}",
+    )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("Recall", fontsize=10)
+    ax.set_ylabel("Precision", fontsize=10)
+    ax.set_title(
+        f"{_tool_label(item['tool_id'])} precision-recall",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        (
+            f"{_dataset_caption(dataset_id)}"
+            f"  |  n={len(item['y_true']):,}"
+            f"  |  positives={_positive_count_caption(int(item['y_true'].sum()), item['positives_total'])}"
+            f"  |  cov={item['coverage']:.0%}"
+        ),
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(frameon=False, fontsize=8.8, loc="upper right")
+    _save_figure(fig, out_path)
+
+
+def _plot_single_predictor_roc_curve(item, *, dataset_id, out_path):
+    fpr, tpr, _ = roc_curve(item["y_true"], item["y_score"])
+    auroc = roc_auc_score(item["y_true"], item["y_score"])
+    predictor_color = _tool_color(item["tool_id"])
+
+    fig, ax = plt.subplots(figsize=(6.1, 4.9))
+    _style_axes(ax, grid_axis="both")
+    ax.plot(
+        fpr,
+        tpr,
+        linewidth=2.2,
+        color=predictor_color,
+        label=f"AUROC {auroc:.3f}",
+    )
+    ax.plot(
+        [0, 1],
+        [0, 1],
+        linestyle="--",
+        linewidth=1.4,
+        color=NEUTRAL_COLOR,
+        label="random",
+    )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("False positive rate", fontsize=10)
+    ax.set_ylabel("True positive rate", fontsize=10)
+    ax.set_title(
+        f"{_tool_label(item['tool_id'])} ROC",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        (
+            f"{_dataset_caption(dataset_id)}"
+            f"  |  n={len(item['y_true']):,}"
+            f"  |  positives={_positive_count_caption(int(item['y_true'].sum()), item['positives_total'])}"
+            f"  |  cov={item['coverage']:.0%}"
+        ),
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(frameon=False, fontsize=8.8, loc="lower right")
+    _save_figure(fig, out_path)
+
+
 def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
-    plt.figure(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(6.4, 5.1))
+    _style_axes(ax, grid_axis="both")
     baseline = None
     for item in comparisons:
         precision, recall, _ = precision_recall_curve(item["y_true"], item["y_score"])
         pr_auc = auc(recall, precision)
         if baseline is None:
-            baseline = float(pd.Series(item["y_true"]).mean())
-        plt.plot(recall, precision, label=f"{item['tool_id']} ({pr_auc:.3f})")
+            baseline = float(item["y_true"].mean())
+        ax.plot(
+            recall,
+            precision,
+            label=(
+                f"{_tool_label(item['tool_id'])} "
+                f"({pr_auc:.3f})"
+            ),
+            linewidth=2.2,
+            color=_tool_color(item["tool_id"]),
+        )
     if baseline is not None:
-        plt.axhline(baseline, linestyle="--", color="grey", label=f"random ({baseline:.3f})")
-    plt.xlabel("Recall")
-    plt.ylabel("Precision")
-    plt.title(f"{dataset_id}: predictor PR curves")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
-    plt.close()
+        ax.axhline(
+            baseline,
+            linestyle="--",
+            linewidth=1.4,
+            color=NEUTRAL_COLOR,
+            label=f"baseline ({baseline:.3f})",
+        )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("Recall", fontsize=10)
+    ax.set_ylabel("Precision", fontsize=10)
+    ax.set_title(
+        "Precision-recall comparison (common scored pairs)",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    comparison_size = len(comparisons[0]["y_true"]) if comparisons else 0
+    fig.text(
+        0.125,
+        0.955,
+        f"{_dataset_caption(dataset_id)}  |  common n={comparison_size:,}",
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(
+        frameon=False,
+        fontsize=8.8,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    _save_figure(fig, out_path)
+
+
+def _plot_predictor_pr_curves_own_scored(comparisons, *, dataset_id, out_path):
+    fig, ax = plt.subplots(figsize=(6.6, 5.2))
+    _style_axes(ax, grid_axis="both")
+    for item in comparisons:
+        precision, recall, _ = precision_recall_curve(item["y_true"], item["y_score"])
+        pr_auc = auc(recall, precision)
+        baseline = float(item["y_true"].mean())
+        ax.plot(
+            recall,
+            precision,
+            label=(
+                f"{_tool_label(item['tool_id'])} "
+                f"({pr_auc:.3f}, base {baseline:.3f})"
+            ),
+            linewidth=2.2,
+            color=_tool_color(item["tool_id"]),
+        )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("Recall", fontsize=10)
+    ax.set_ylabel("Precision", fontsize=10)
+    ax.set_title(
+        "Precision-recall comparison (each predictor's scored pairs)",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        f"{_dataset_caption(dataset_id)}  |  own scored sets",
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(
+        frameon=False,
+        fontsize=8.4,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    _save_figure(fig, out_path)
+
+
+def _prepare_common_scored_frame(
+    joined, *, score_cols, fdr_threshold, abs_logfc_threshold, perturbation=None,
+):
+    required_cols = {"gene_id", "logFC", "FDR", *score_cols}
+    missing = [col for col in required_cols if col not in joined.columns]
+    if missing:
+        raise ValueError(f"Joined table missing required columns: {missing}")
+
+    keep_cols = ["gene_id", "logFC", "FDR", *score_cols]
+    for optional in ("dataset_id", "mirna", "perturbation", "PValue"):
+        if optional in joined.columns:
+            keep_cols.append(optional)
+
+    keep = joined[keep_cols].copy()
+    keep = keep[keep["logFC"].notna() & keep["FDR"].notna()].copy()
+    keep = keep[keep["FDR"].astype(float) > 0].copy()
+    if keep.empty:
+        raise ValueError("No usable rows remain for common PR comparison.")
+
+    keep = _annotate_ground_truth(keep, perturbation=perturbation)
+    keep["is_positive"] = _positive_mask(
+        keep,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+    ).astype(int)
+    keep = keep.dropna(subset=score_cols).copy()
+    if keep.empty:
+        raise ValueError("No common scored rows remain for PR comparison.")
+
+    positives = int(keep["is_positive"].sum())
+    negatives = int(len(keep) - positives)
+    if positives == 0 or negatives == 0:
+        raise ValueError("Common PR comparison needs both positives and negatives.")
+    for score_col in score_cols:
+        keep[score_col] = keep[score_col].astype(float)
+    return keep
 
 
 def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
-    plt.figure(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(6.4, 5.1))
+    _style_axes(ax, grid_axis="both")
     for item in comparisons:
         fpr, tpr, _ = roc_curve(item["y_true"], item["y_score"])
         auroc = roc_auc_score(item["y_true"], item["y_score"])
-        plt.plot(fpr, tpr, label=f"{item['tool_id']} ({auroc:.3f})")
-    plt.plot([0, 1], [0, 1], linestyle="--", color="grey", label="random")
-    plt.xlabel("False positive rate")
-    plt.ylabel("True positive rate")
-    plt.title(f"{dataset_id}: predictor ROC curves")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
-    plt.close()
+        ax.plot(
+            fpr,
+            tpr,
+            label=f"{_tool_label(item['tool_id'])} ({auroc:.3f})",
+            linewidth=2.2,
+            color=_tool_color(item["tool_id"]),
+        )
+    ax.plot(
+        [0, 1],
+        [0, 1],
+        linestyle="--",
+        linewidth=1.4,
+        color=NEUTRAL_COLOR,
+        label="random",
+    )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("False positive rate", fontsize=10)
+    ax.set_ylabel("True positive rate", fontsize=10)
+    ax.set_title(
+        "ROC comparison (common scored pairs)",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    comparison_size = len(comparisons[0]["y_true"]) if comparisons else 0
+    fig.text(
+        0.125,
+        0.955,
+        f"{_dataset_caption(dataset_id)}  |  common n={comparison_size:,}",
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(
+        frameon=False,
+        fontsize=8.8,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    _save_figure(fig, out_path)
+
+
+def _plot_predictor_roc_curves_own_scored(comparisons, *, dataset_id, out_path):
+    fig, ax = plt.subplots(figsize=(6.6, 5.2))
+    _style_axes(ax, grid_axis="both")
+    for item in comparisons:
+        fpr, tpr, _ = roc_curve(item["y_true"], item["y_score"])
+        auroc = roc_auc_score(item["y_true"], item["y_score"])
+        baseline = float(item["y_true"].mean())
+        ax.plot(
+            fpr,
+            tpr,
+            label=(
+                f"{_tool_label(item['tool_id'])} "
+                f"({auroc:.3f}, base {baseline:.3f})"
+            ),
+            linewidth=2.2,
+            color=_tool_color(item["tool_id"]),
+        )
+    ax.plot(
+        [0, 1],
+        [0, 1],
+        linestyle="--",
+        linewidth=1.4,
+        color=NEUTRAL_COLOR,
+        label="random",
+    )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("False positive rate", fontsize=10)
+    ax.set_ylabel("True positive rate", fontsize=10)
+    ax.set_title(
+        "ROC comparison (each predictor's scored pairs)",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        f"{_dataset_caption(dataset_id)}  |  own scored sets",
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(
+        frameon=False,
+        fontsize=8.4,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    _save_figure(fig, out_path)
+
+
+def _plot_predictor_gsea_curves(comparisons, *, dataset_id, out_path):
+    fig, ax = plt.subplots(figsize=(6.8, 5.2))
+    _style_axes(ax, grid_axis="both")
+    for item in comparisons:
+        order_frame = {"y_true": item["y_true"], "y_score": item["y_score"]}
+        sort_cols = ["y_score"]
+        ascending = [False]
+        if "gene_id" in item:
+            order_frame["gene_id"] = item["gene_id"]
+            sort_cols.append("gene_id")
+            ascending.append(True)
+        ordered = pd.DataFrame(order_frame).sort_values(
+            sort_cols, ascending=ascending, kind="mergesort"
+        ).reset_index(drop=True)
+        hits = ordered["y_true"].astype(int).to_numpy(dtype=int)
+        total_hits = int(hits.sum())
+        total_misses = int(len(hits) - total_hits)
+        if total_hits == 0 or total_misses == 0:
+            continue
+        hit_step = 1.0 / total_hits
+        miss_step = 1.0 / total_misses
+        running_es = np.cumsum(np.where(hits == 1, hit_step, -miss_step))
+        es = float(running_es.max())
+        min_es = float(running_es.min())
+        if abs(min_es) > abs(es):
+            es = min_es
+        ax.plot(
+            np.arange(1, len(ordered) + 1),
+            running_es,
+            label=f"{_tool_label(item['tool_id'])} (ES {es:.3f})",
+            linewidth=2.1,
+            color=_tool_color(item["tool_id"]),
+        )
+    ax.axhline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle="--", alpha=0.8)
+    ax.set_xlabel("Ranked genes", fontsize=10)
+    ax.set_ylabel("Running ES", fontsize=10)
+    ax.set_title(
+        "GSEA comparison (common scored pairs)",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    comparison_size = len(comparisons[0]["y_true"]) if comparisons else 0
+    fig.text(
+        0.125,
+        0.955,
+        f"{_dataset_caption(dataset_id)}  |  common n={comparison_size:,}",
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(
+        frameon=False,
+        fontsize=8.8,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    _save_figure(fig, out_path)
+
+
+def _plot_top_prediction_effect_cdfs(
+    joined, *, score_cols, tool_ids, dataset_id, out_path, top_n=TOP_PREDICTION_CDF_N,
+    perturbation=None,
+):
+    required_cols = {"logFC", *score_cols}
+    missing = [col for col in required_cols if col not in joined.columns]
+    if missing:
+        raise ValueError(f"Joined table missing required columns: {missing}")
+
+    keep_cols = ["logFC", "FDR", *score_cols]
+    if "gene_id" in joined.columns:
+        keep_cols.append("gene_id")
+    work = joined[keep_cols].copy()
+    work = work[work["logFC"].notna()].copy()
+    work = _annotate_ground_truth(work, perturbation=perturbation)
+    if work.empty:
+        raise ValueError("No usable rows remain for top-prediction effect CDF plot.")
+
+    fig, ax = plt.subplots(figsize=(6.8, 5.2))
+    _style_axes(ax, grid_axis="both")
+
+    background_x, background_y = _ecdf(work["expected_effect"])
+    ax.step(
+        background_x,
+        background_y,
+        where="post",
+        color=NEUTRAL_COLOR,
+        linewidth=1.7,
+        linestyle="--",
+        alpha=0.9,
+        label=f"All genes (n={len(work):,})",
+    )
+
+    for score_col, tool_id in zip(score_cols, tool_ids):
+        scored = work[work[score_col].notna()].copy()
+        if scored.empty:
+            continue
+        sort_cols = [score_col]
+        ascending = [False]
+        if "gene_id" in scored.columns:
+            sort_cols.append("gene_id")
+            ascending.append(True)
+        scored = scored.sort_values(sort_cols, ascending=ascending, kind="mergesort")
+        top_count = min(int(top_n), len(scored))
+        top_values = scored["expected_effect"].head(top_count).to_numpy(dtype=float)
+        x_values, y_values = _ecdf(top_values)
+        ax.step(
+            x_values,
+            y_values,
+            where="post",
+            color=_tool_color(tool_id),
+            linewidth=2.2,
+            label=f"{_tool_label(tool_id)} top {top_count}",
+        )
+
+    ax.axvline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle=":", alpha=0.8)
+    ax.set_xlabel("Perturbation-aware effect", fontsize=10)
+    ax.set_ylabel("Cumulative fraction", fontsize=10)
+    ax.set_ylim(0, 1.02)
+    ax.set_title(
+        f"Top {int(top_n)} prediction effect CDFs",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        (
+            f"{_dataset_caption(dataset_id)}"
+            f"  |  top {int(top_n)} per predictor"
+            "  |  higher values indicate stronger perturbation-consistent effect"
+        ),
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(
+        frameon=False,
+        fontsize=8.6,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    _save_figure(fig, out_path)
 
 
 def _plot_algorithms_vs_genes_heatmap(
-    joined, *, score_cols, tool_ids, dataset_id, out_path,
-    fdr_threshold, abs_logfc_threshold,
+    joined, *, score_cols, rank_cols, tool_ids, dataset_id, out_path,
+    fdr_threshold, abs_logfc_threshold, perturbation=None,
 ):
-    work = joined[["gene_id", "logFC", "FDR", *score_cols]].copy()
+    work = joined[["gene_id", "logFC", "FDR", *score_cols, *rank_cols]].copy()
     work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
-    work["logFC"] = work["logFC"].astype(float)
-    work["FDR"] = work["FDR"].astype(float)
-    work["abs_logFC"] = work["logFC"].abs()
-    work["is_positive"] = (
-        (work["FDR"] < fdr_threshold) & (work["abs_logFC"] > abs_logfc_threshold)
+    work = _annotate_ground_truth(work, perturbation=perturbation)
+    work["is_positive"] = _positive_mask(
+        work,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
     ).astype(int)
-    work = work.sort_values(
-        ["is_positive", "FDR", "abs_logFC"], ascending=[False, True, False],
-    ).reset_index(drop=True)
+    work = _sort_heatmap_rows_by_logfc(work)
 
-    normalized = pd.DataFrame({
-        sc: _normalize_scores(work[sc]).fillna(0.0) for sc in score_cols
-    })
+    rank_frame = pd.DataFrame(
+        {
+            tool_id: work[rank_col].astype(float)
+            for tool_id, rank_col in zip(tool_ids, rank_cols)
+        }
+    )
 
-    max_abs_logfc = max(float(work["abs_logFC"].max()), 1.0)
-    figure_height = max(6, min(22, 0.16 * len(work)))
-    figure_width = max(8, 3 + len(tool_ids))
+    max_abs_logfc = _nice_symmetric_limit(work["logFC"].to_numpy(dtype=float), floor=1.0)
+    figure_height = max(5.6, min(12, 0.025 * len(work)))
+    figure_width = max(10.5, 5.2 + len(tool_ids) * 1.0)
     fig, axes = plt.subplots(
         1, 3, figsize=(figure_width, figure_height),
-        gridspec_kw={"width_ratios": [0.4, 0.5, max(2, len(tool_ids))]},
+        gridspec_kw={"width_ratios": [0.5, 0.6, max(2.8, len(tool_ids) * 1.25)]},
     )
+    fig.subplots_adjust(top=0.86, bottom=0.2, wspace=0.22)
+    for axis in axes:
+        axis.set_facecolor("white")
+        axis.spines["top"].set_visible(False)
+        axis.spines["right"].set_visible(False)
+        axis.spines["left"].set_visible(False)
+        axis.spines["bottom"].set_visible(False)
+        axis.tick_params(length=0, labelsize=8)
 
-    axes[0].imshow(work["is_positive"].to_numpy().reshape(-1, 1), aspect="auto", cmap="Greys")
-    axes[0].set_title("GT")
-    axes[0].set_xticks([0])
-    axes[0].set_xticklabels(["pos"], rotation=90)
+    gt_image = axes[0].imshow(
+        work["is_positive"].to_numpy().reshape(-1, 1),
+        aspect="auto",
+        cmap=GT_CMAP,
+        vmin=0,
+        vmax=1,
+        interpolation="nearest",
+    )
+    axes[0].set_title("GT status", fontsize=10, fontweight="semibold")
+    axes[0].set_xticks([])
 
-    axes[1].imshow(
+    logfc_image = axes[1].imshow(
         work["logFC"].to_numpy().reshape(-1, 1), aspect="auto", cmap="coolwarm",
-        vmin=-max_abs_logfc, vmax=max_abs_logfc,
+        norm=TwoSlopeNorm(vmin=-max_abs_logfc, vcenter=0.0, vmax=max_abs_logfc),
+        interpolation="nearest",
     )
-    axes[1].set_title("logFC")
-    axes[1].set_xticks([0])
-    axes[1].set_xticklabels(["logFC"], rotation=90)
+    axes[1].set_title("logFC", fontsize=10, fontweight="semibold")
+    axes[1].set_xticks([])
 
-    heat = axes[2].imshow(normalized.to_numpy(), aspect="auto", cmap="viridis", vmin=0, vmax=1)
-    axes[2].set_title(f"{dataset_id}: algorithms vs genes")
+    score_cmap = PREDICTOR_HEATMAP_CMAP.copy()
+    score_cmap.set_bad(MISSING_COLOR)
+    heat = axes[2].imshow(
+        np.ma.masked_invalid(rank_frame.to_numpy(dtype=float)),
+        aspect="auto",
+        cmap=score_cmap,
+        vmin=0,
+        vmax=1,
+        interpolation="nearest",
+    )
+    axes[2].set_title("Predictor scores", fontsize=10, fontweight="semibold")
     axes[2].set_xticks(range(len(tool_ids)))
-    axes[2].set_xticklabels(tool_ids, rotation=45, ha="right")
+    axes[2].set_xticklabels(
+        [_wrap_axis_label(_tool_label(tool_id)) for tool_id in tool_ids],
+        rotation=30,
+        ha="right",
+    )
 
     if len(work) <= 40:
         labels = work["gene_id"].tolist()
-        for axis in axes:
-            axis.set_yticks(range(len(labels)))
-            axis.set_yticklabels(labels, fontsize=7)
+        axes[0].set_yticks(range(len(labels)))
+        axes[0].set_yticklabels(labels, fontsize=7)
+        axes[1].set_yticks([])
+        axes[2].set_yticks([])
     else:
         for axis in axes:
             axis.set_yticks([])
 
-    fig.colorbar(heat, ax=axes[2], fraction=0.046, pad=0.04, label="normalized score")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
-    plt.close()
+    axes[0].set_ylabel("genes ranked by logFC", fontsize=10, color="#3C4858")
+    _add_figure_heading(
+        fig,
+        title="Gene-level benchmarking overview",
+        subtitle=(
+            f"{_dataset_caption(dataset_id)}  |  {len(work):,} genes ordered by perturbation-aware logFC"
+            "  |  dark GT = benchmark positive  |  gray cells indicate missing predictor pairs"
+        ),
+        title_y=0.975,
+        subtitle_y=0.935,
+    )
+    _add_horizontal_colorbar(
+        fig,
+        mappable=logfc_image,
+        anchor_ax=axes[1],
+        label="observed logFC",
+        ticks=[-max_abs_logfc, 0.0, max_abs_logfc],
+        height=0.014,
+        pad=0.055,
+    )
+    _add_horizontal_colorbar(
+        fig,
+        mappable=heat,
+        anchor_ax=axes[2],
+        label="dataset-local rank percentile",
+        ticks=[0.0, 0.25, 0.5, 0.75, 1.0],
+        height=0.014,
+        pad=0.055,
+    )
+    _save_figure(fig, out_path)
+
+
+def _plot_top_positive_heatmap(
+    joined, *, rank_cols, tool_ids, dataset_id, out_path,
+    fdr_threshold, abs_logfc_threshold, positive_fraction, perturbation=None,
+):
+    work = joined[["gene_id", "logFC", "FDR", *rank_cols]].copy()
+    work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
+    work = _annotate_ground_truth(work, perturbation=perturbation)
+    work["is_positive"] = _positive_mask(
+        work,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+    ).astype(int)
+    work = work[work["is_positive"] == 1].copy()
+    if work.empty:
+        return False
+
+    work = _sort_heatmap_rows_by_logfc(work)
+    rows_to_keep = max(1, int(math.ceil(len(work) * positive_fraction)))
+    work = work.head(rows_to_keep).copy()
+
+    rank_frame = pd.DataFrame(
+        {
+            tool_id: work[rank_col].astype(float)
+            for tool_id, rank_col in zip(tool_ids, rank_cols)
+        }
+    )
+    max_abs_logfc = _nice_symmetric_limit(work["logFC"].to_numpy(dtype=float), floor=1.0)
+    figure_height = max(4.2, min(9.0, 0.22 * len(work)))
+    figure_width = max(10.5, 5.2 + len(tool_ids) * 1.0)
+    fig, axes = plt.subplots(
+        1, 2, figsize=(figure_width, figure_height),
+        gridspec_kw={"width_ratios": [0.7, max(2.8, len(tool_ids) * 1.25)]},
+    )
+    fig.subplots_adjust(top=0.84, bottom=0.28, wspace=0.2)
+    for axis in axes:
+        axis.set_facecolor("white")
+        axis.spines["top"].set_visible(False)
+        axis.spines["right"].set_visible(False)
+        axis.spines["left"].set_visible(False)
+        axis.spines["bottom"].set_visible(False)
+        axis.tick_params(length=0, labelsize=8)
+
+    logfc_image = axes[0].imshow(
+        work["logFC"].to_numpy().reshape(-1, 1),
+        aspect="auto",
+        cmap="coolwarm",
+        norm=TwoSlopeNorm(vmin=-max_abs_logfc, vcenter=0.0, vmax=max_abs_logfc),
+        interpolation="nearest",
+    )
+    axes[0].set_title("logFC", fontsize=10, fontweight="semibold")
+    axes[0].set_xticks([])
+
+    score_cmap = PREDICTOR_HEATMAP_CMAP.copy()
+    score_cmap.set_bad(MISSING_COLOR)
+    heat = axes[1].imshow(
+        np.ma.masked_invalid(rank_frame.to_numpy(dtype=float)),
+        aspect="auto",
+        cmap=score_cmap,
+        vmin=0,
+        vmax=1,
+        interpolation="nearest",
+    )
+    axes[1].set_title("Predictor scores", fontsize=10, fontweight="semibold")
+    axes[1].set_xticks(range(len(tool_ids)))
+    axes[1].set_xticklabels(
+        [_wrap_axis_label(_tool_label(tool_id)) for tool_id in tool_ids],
+        rotation=30,
+        ha="right",
+    )
+
+    labels = work["gene_id"].tolist()
+    axes[0].set_yticks(range(len(labels)))
+    axes[0].set_yticklabels(labels, fontsize=7)
+    axes[1].set_yticks([])
+
+    axes[0].set_ylabel("top positives ranked by logFC", fontsize=10, color="#3C4858")
+    _add_figure_heading(
+        fig,
+        title=f"Top {int(positive_fraction * 100)}% of benchmark positives",
+        subtitle=(
+            f"{_dataset_caption(dataset_id)}  |  {len(work):,} positive genes {_selection_caption(fdr_threshold)}"
+            "  |  rows ordered by perturbation-aware logFC"
+        ),
+        title_y=0.975,
+        subtitle_y=0.935,
+    )
+    _add_horizontal_colorbar(
+        fig,
+        mappable=logfc_image,
+        anchor_ax=axes[0],
+        label="observed logFC",
+        ticks=[-max_abs_logfc, 0.0, max_abs_logfc],
+        height=0.016,
+        pad=0.06,
+    )
+    _add_horizontal_colorbar(
+        fig,
+        mappable=heat,
+        anchor_ax=axes[1],
+        label="dataset-local rank percentile",
+        ticks=[0.0, 0.25, 0.5, 0.75, 1.0],
+        height=0.016,
+        pad=0.06,
+    )
+    _save_figure(fig, out_path)
+    return True
 
 
 def _plot_predictor_correlation_heatmap(
-    joined, *, score_cols, tool_ids, dataset_id, out_path, top_fraction,
+    joined, *, rank_cols, tool_ids, dataset_id, out_path, top_fraction,
 ):
-    normalized = {
-        tid: _normalize_scores(joined[sc]).fillna(0.0)
-        for tid, sc in zip(tool_ids, score_cols)
+    ranked = {
+        tid: joined[rank_col].astype(float)
+        for tid, rank_col in zip(tool_ids, rank_cols)
     }
-    top_masks = {tid: _top_fraction_mask(normalized[tid], top_fraction) for tid in tool_ids}
+    tie_breaker = joined["gene_id"] if "gene_id" in joined.columns else None
+    top_masks = {
+        tid: _top_fraction_mask(ranked[tid], top_fraction, tie_breaker=tie_breaker)
+        for tid in tool_ids
+    }
 
     matrix = pd.DataFrame(index=tool_ids, columns=tool_ids, dtype=float)
     for a in tool_ids:
         for b in tool_ids:
-            union_mask = top_masks[a] | top_masks[b]
-            if int(union_mask.sum()) < 2:
+            pair_mask = ranked[a].notna() & ranked[b].notna()
+            shared_top_mask = pair_mask & top_masks[a] & top_masks[b]
+            if int(shared_top_mask.sum()) < 2:
                 corr = 1.0 if a == b else float("nan")
             else:
-                corr = float(normalized[a][union_mask].corr(normalized[b][union_mask], method="spearman"))
+                corr = float(
+                    ranked[a][shared_top_mask].corr(
+                        ranked[b][shared_top_mask], method="spearman"
+                    )
+                )
             matrix.loc[a, b] = corr
 
-    plt.figure(figsize=(max(5, len(tool_ids) * 1.5), max(4, len(tool_ids) * 1.2)))
-    image = plt.imshow(matrix.astype(float).to_numpy(), cmap="coolwarm", vmin=-1, vmax=1)
-    plt.xticks(range(len(tool_ids)), tool_ids, rotation=45, ha="right")
-    plt.yticks(range(len(tool_ids)), tool_ids)
-    plt.title(f"{dataset_id}: predictor correlation (top {int(top_fraction * 100)}%)")
+    fig, ax = plt.subplots(
+        figsize=(max(5.2, len(tool_ids) * 1.6), max(4.6, len(tool_ids) * 1.25))
+    )
+    image = ax.imshow(matrix.astype(float).to_numpy(), cmap="coolwarm", vmin=-1, vmax=1)
+    ax.set_xticks(range(len(tool_ids)))
+    ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+    ax.set_yticks(range(len(tool_ids)))
+    ax.set_yticklabels([_tool_label(tool_id) for tool_id in tool_ids])
+    ax.set_title(
+        f"Predictor agreement (shared local top {int(top_fraction * 100)}%)",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(0.125, 0.955, _dataset_caption(dataset_id), fontsize=9, color=NEUTRAL_COLOR)
+    ax.set_facecolor("white")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+    ax.tick_params(length=0, labelsize=9)
     for i, a in enumerate(tool_ids):
         for j, b in enumerate(tool_ids):
             value = matrix.loc[a, b]
             label = "nan" if pd.isna(value) else f"{value:.2f}"
-            plt.text(j, i, label, ha="center", va="center", color="black")
-    plt.colorbar(image, label="Spearman")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
-    plt.close()
+            color = "white" if not pd.isna(value) and abs(value) >= 0.55 else "#22303C"
+            ax.text(j, i, label, ha="center", va="center", color=color, fontsize=9)
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="Spearman")
+    _save_figure(fig, out_path)
     return matrix
+
+
+def _relative_report_path(path, *, report_dir):
+    if not path:
+        return "NA"
+    target = pathlib.Path(path).expanduser().resolve()
+    base = pathlib.Path(report_dir).resolve()
+    try:
+        return os.path.relpath(target, start=base)
+    except ValueError:
+        return str(target)
+
+
+def _build_tool_report_markdown(
+    *, dataset_id, mirna, cell_line, perturbation, geo_accession,
+    de_table_path, joined_tsv,
+    tool_id, predictor_output_path, metrics, coverage_info,
+    scatter_png, pr_curve_png, roc_curve_png, gsea_png,
+    fdr_threshold, abs_logfc_threshold,
+):
+    coverage_percent = coverage_info["coverage"] * 100.0
+    positive_coverage_percent = coverage_info["positive_coverage"] * 100.0
+    lines = [
+        f"# Evaluation Report: {dataset_id} | {_tool_label(tool_id)}",
+        "",
+        "## Snapshot",
+        f"- predictor: `{tool_id}`",
+        f"- dataset_id: `{dataset_id}`",
+        f"- mirna: `{mirna or 'NA'}`",
+        f"- cell_line: `{cell_line or 'NA'}`",
+        f"- perturbation: `{perturbation or 'NA'}`",
+        f"- geo_accession: `{geo_accession or 'NA'}`",
+        (
+            f"- overall coverage: `{coverage_percent:.1f}%`"
+            f" (`{int(coverage_info['rows_scored'])}` of `{int(coverage_info['rows_total'])}` genes scored)"
+        ),
+        (
+            f"- positive coverage: `{positive_coverage_percent:.1f}%`"
+            f" (`{int(coverage_info['positives_scored'])}` of `{int(coverage_info['positives_total'])}` GT positives scored)"
+        ),
+        f"- aps: `{metrics['aps']:.6f}`",
+        f"- auroc: `{metrics['auroc']:.6f}`",
+        f"- spearman: `{metrics['spearman']:.6f}`",
+        "",
+        "## Evaluation Rule",
+        f"- GT positives: {describe_gt_rule(fdr_threshold, abs_logfc_threshold, markdown=True)}",
+        "- Predictor scores are aligned so that higher always means stronger before evaluation",
+        "- Pearson and Spearman compare predictor score against perturbation-aware expected effect",
+        "- APS, PR-AUC, AUROC, and GSEA are computed on scored rows only",
+        "",
+        "## Inputs",
+        f"- de_table_path: `{de_table_path or 'NA'}`",
+        f"- joined_tsv: `{joined_tsv or 'NA'}`",
+        f"- tool_id: `{tool_id}`",
+        f"- predictor_output_path: `{predictor_output_path or 'NA'}`",
+        "",
+        "## Coverage Details",
+        f"- rows_total: `{int(coverage_info['rows_total'])}`",
+        f"- rows_scored: `{int(coverage_info['rows_scored'])}`",
+        f"- rows_missing_score: `{int(coverage_info['rows_missing_score'])}`",
+        f"- coverage: `{coverage_info['coverage']:.6f}`",
+        f"- positives_total: `{int(coverage_info['positives_total'])}`",
+        f"- positives_scored: `{int(coverage_info['positives_scored'])}`",
+        f"- positive_coverage: `{coverage_info['positive_coverage']:.6f}`",
+        "",
+        "## Metric Details",
+        f"- rows_used: `{int(metrics['rows_used'])}`",
+        f"- positives: `{int(metrics['positives'])}`",
+        f"- negatives: `{int(metrics['negatives'])}`",
+        f"- pearson: `{metrics['pearson']:.6f}`",
+        f"- spearman: `{metrics['spearman']:.6f}`",
+        f"- aps: `{metrics['aps']:.6f}`",
+        f"- pr_auc: `{metrics['pr_auc']:.6f}`",
+        f"- auroc: `{metrics['auroc']:.6f}`",
+        "",
+        "## Included Plots",
+        f"- score_vs_expected_effect: `{scatter_png}`",
+        f"- precision_recall_curve: `{pr_curve_png}`",
+        f"- roc_curve: `{roc_curve_png}`",
+        f"- gsea_enrichment: `{gsea_png}`",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _render_tool_report_pdf(
+    *,
+    pdf_path,
+    dataset_id,
+    tool_id,
+    mirna,
+    cell_line,
+    perturbation,
+    geo_accession,
+    predictor_output_path,
+    metrics,
+    coverage_info,
+    fdr_threshold,
+    abs_logfc_threshold,
+    scatter_png=None,
+    pr_curve_png=None,
+    roc_curve_png=None,
+    gsea_png=None,
+):
+    with PdfPages(pdf_path) as pdf:
+        def new_page():
+            page_fig = plt.figure(figsize=REPORT_PAGE_SIZE)
+            page_ax = page_fig.add_axes([0.0, 0.0, 1.0, 1.0])
+            page_ax.axis("off")
+            page_fig.patch.set_facecolor("white")
+            return page_fig, page_ax
+
+        def add_header(ax, title, subtitle=None):
+            ax.text(
+                0.06,
+                0.95,
+                title,
+                fontsize=19,
+                fontweight="bold",
+                color="#17324D",
+                va="top",
+                ha="left",
+                family="DejaVu Sans",
+            )
+            if subtitle:
+                ax.text(
+                    0.06,
+                    0.915,
+                    subtitle,
+                    fontsize=10.3,
+                    color="#5B6577",
+                    va="top",
+                    ha="left",
+                    family="DejaVu Sans",
+                )
+            ax.add_line(plt.Line2D([0.06, 0.94], [0.892, 0.892], color="#D8DEE9", linewidth=1.4))
+
+        def add_block(ax, title, lines, *, x, y, width):
+            ax.text(
+                x,
+                y,
+                title,
+                fontsize=11.3,
+                fontweight="bold",
+                color="#2F5D8C",
+                va="top",
+                ha="left",
+                family="DejaVu Sans",
+            )
+            current_y = y - 0.03
+            for line in lines:
+                wrapped = textwrap.wrap(line, width=max(24, int(width * 94))) or [""]
+                for chunk in wrapped:
+                    ax.text(
+                        x,
+                        current_y,
+                        chunk,
+                        fontsize=9.4,
+                        color="#22303C",
+                        va="top",
+                        ha="left",
+                        family="DejaVu Sans",
+                    )
+                    current_y -= 0.024
+                current_y -= 0.004
+            return current_y
+
+        fig, ax = new_page()
+        add_header(
+            ax,
+            f"{dataset_id} | {_tool_label(tool_id)}",
+            f"{mirna or 'NA'} | {perturbation or 'NA'} | {cell_line or 'NA'}",
+        )
+        summary_cards = [
+            ("Coverage", f"{coverage_info['coverage']:.1%}"),
+            ("Positive cov", f"{coverage_info['positive_coverage']:.1%}"),
+            ("APS", f"{metrics['aps']:.3f}"),
+            ("AUROC", f"{metrics['auroc']:.3f}"),
+        ]
+        for (label, value), x in zip(summary_cards, [0.06, 0.29, 0.52, 0.75]):
+            ax.text(
+                x,
+                0.84,
+                f"{label}\n{value}",
+                fontsize=10.4,
+                fontweight="bold",
+                color="#17324D",
+                va="top",
+                ha="left",
+                family="DejaVu Sans",
+                bbox={
+                    "boxstyle": "round,pad=0.45",
+                    "facecolor": "#F5F8FC",
+                    "edgecolor": "#D8E2EF",
+                },
+            )
+        add_block(
+            ax,
+            "Evaluation Rule",
+            [
+                f"GT positives: {describe_gt_rule(fdr_threshold, abs_logfc_threshold)}",
+                "Predictor scores are aligned so that higher always means stronger before evaluation.",
+                "Pearson and Spearman compare score against perturbation-aware expected effect.",
+                "APS, PR-AUC, AUROC, and GSEA are computed on scored rows only.",
+            ],
+            x=0.06,
+            y=0.69,
+            width=0.40,
+        )
+        add_block(
+            ax,
+            "Coverage Details",
+            [
+                f"rows_total: {int(coverage_info['rows_total'])}",
+                f"rows_scored: {int(coverage_info['rows_scored'])}",
+                f"rows_missing_score: {int(coverage_info['rows_missing_score'])}",
+                f"positives_total: {int(coverage_info['positives_total'])}",
+                f"positives_scored: {int(coverage_info['positives_scored'])}",
+            ],
+            x=0.54,
+            y=0.69,
+            width=0.38,
+        )
+        add_block(
+            ax,
+            "Metric Details",
+            [
+                f"Pearson: {metrics['pearson']:.3f}",
+                f"Spearman: {metrics['spearman']:.3f}",
+                f"APS: {metrics['aps']:.3f}",
+                f"PR-AUC: {metrics['pr_auc']:.3f}",
+                f"AUROC: {metrics['auroc']:.3f}",
+            ],
+            x=0.06,
+            y=0.42,
+            width=0.40,
+        )
+        add_block(
+            ax,
+            "Provenance",
+            [
+                f"GEO accession: {geo_accession or 'NA'}",
+                f"Predictor source: {predictor_output_path or 'NA'}",
+            ],
+            x=0.54,
+            y=0.42,
+            width=0.38,
+        )
+        _save_pdf_page(pdf, fig)
+
+        plot_specs = [
+            ("Score vs expected effect", scatter_png),
+            ("Precision-recall curve", pr_curve_png),
+            ("ROC curve", roc_curve_png),
+            ("GSEA enrichment", gsea_png),
+        ]
+        existing_plots = [(label, path) for label, path in plot_specs if path and pathlib.Path(path).is_file()]
+        if existing_plots:
+            fig, _ = new_page()
+            fig.text(
+                0.06,
+                0.975,
+                f"{dataset_id} | {_tool_label(tool_id)} | Plots",
+                fontsize=13,
+                fontweight="bold",
+                color="#17324D",
+                va="top",
+                ha="left",
+            )
+            fig.text(
+                0.06,
+                0.945,
+                "These are the main per-tool visuals for this dataset: ranking quality, classification quality, and enrichment behavior.",
+                fontsize=9.2,
+                color="#22303C",
+                va="top",
+                ha="left",
+            )
+            layout_specs = [
+                ("Score vs expected effect", [0.08, 0.58, 0.84, 0.24]),
+                ("Precision-recall curve", [0.06, 0.12, 0.27, 0.25]),
+                ("ROC curve", [0.365, 0.12, 0.27, 0.25]),
+                ("GSEA enrichment", [0.67, 0.12, 0.27, 0.25]),
+            ]
+            for label, bounds in layout_specs:
+                match = next((path for plot_label, path in existing_plots if plot_label == label), None)
+                if match is None:
+                    continue
+                image = plt.imread(match)
+                fig.text(
+                    bounds[0],
+                    bounds[1] + bounds[3] + 0.015,
+                    label,
+                    fontsize=10,
+                    fontweight="bold",
+                    color="#2F5D8C",
+                    ha="left",
+                    va="bottom",
+                )
+                image_ax = fig.add_axes(bounds)
+                image_ax.imshow(image)
+                image_ax.axis("off")
+            _save_pdf_page(pdf, fig)
 
 
 def _write_tool_report(
     *, dataset_id, mirna, cell_line, perturbation, geo_accession,
     de_table_path, joined_tsv,
-    tool_id, predictor_output_path, metrics, out_path, filled_zero_count, scatter_png,
+    tool_id, predictor_output_path, metrics, markdown_path, pdf_path, coverage_info,
+    scatter_png, pr_curve_png, roc_curve_png, gsea_png, fdr_threshold, abs_logfc_threshold,
 ):
-    lines = [
-        f"dataset_id: {dataset_id}",
-        f"mirna: {mirna or 'NA'}",
-        f"cell_line: {cell_line or 'NA'}",
-        f"perturbation: {perturbation or 'NA'}",
-        f"geo_accession: {geo_accession or 'NA'}",
-        f"de_table_path: {de_table_path or 'NA'}",
-        f"joined_tsv: {joined_tsv or 'NA'}",
-        f"tool_id: {tool_id}",
-        f"predictor_output_path: {predictor_output_path or 'NA'}",
-        f"filled_missing_scores_with_zero: {filled_zero_count}",
-        "",
-        "metrics:",
-        f"  rows_used: {int(metrics['rows_used'])}",
-        f"  positives: {int(metrics['positives'])}",
-        f"  negatives: {int(metrics['negatives'])}",
-        f"  pearson: {metrics['pearson']:.6f}",
-        f"  spearman: {metrics['spearman']:.6f}",
-        f"  aps: {metrics['aps']:.6f}",
-        f"  pr_auc: {metrics['pr_auc']:.6f}",
-        f"  auroc: {metrics['auroc']:.6f}",
-        "",
-        "plots:",
-        f"  scatter: {scatter_png}",
-    ]
-    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    report_dir = markdown_path.parent
+    markdown_text = _build_tool_report_markdown(
+        dataset_id=dataset_id,
+        mirna=mirna,
+        cell_line=cell_line,
+        perturbation=perturbation,
+        geo_accession=geo_accession,
+        de_table_path=_relative_report_path(de_table_path, report_dir=report_dir),
+        joined_tsv=_relative_report_path(joined_tsv, report_dir=report_dir),
+        tool_id=tool_id,
+        predictor_output_path=_relative_report_path(predictor_output_path, report_dir=report_dir),
+        metrics=metrics,
+        coverage_info=coverage_info,
+        scatter_png=_relative_report_path(scatter_png, report_dir=report_dir),
+        pr_curve_png=_relative_report_path(pr_curve_png, report_dir=report_dir),
+        roc_curve_png=_relative_report_path(roc_curve_png, report_dir=report_dir),
+        gsea_png=_relative_report_path(gsea_png, report_dir=report_dir),
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+    )
+    markdown_path.write_text(markdown_text + "\n", encoding="utf-8")
+    _render_tool_report_pdf(
+        pdf_path=pdf_path,
+        dataset_id=dataset_id,
+        tool_id=tool_id,
+        mirna=mirna,
+        cell_line=cell_line,
+        perturbation=perturbation,
+        geo_accession=geo_accession,
+        predictor_output_path=_relative_report_path(predictor_output_path, report_dir=report_dir),
+        metrics=metrics,
+        coverage_info=coverage_info,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        scatter_png=scatter_png,
+        pr_curve_png=pr_curve_png,
+        roc_curve_png=roc_curve_png,
+        gsea_png=gsea_png,
+    )
 
 
 def evaluate_joined_dataframe(
@@ -282,9 +1709,12 @@ def evaluate_joined_dataframe(
     perturbation=None, geo_accession=None,
     de_table_path=None, joined_tsv=None,
     predictor_output_paths=None,
+    tool_labels=None,
+    logger=None,
 ):
     plots_dir.mkdir(parents=True, exist_ok=True)
     reports_dir.mkdir(parents=True, exist_ok=True)
+    _set_tool_labels(tool_labels)
 
     score_cols = sorted(c for c in joined.columns if c.startswith(SCORE_PREFIX))
     if not score_cols:
@@ -296,36 +1726,100 @@ def evaluate_joined_dataframe(
     mirna = mirna or (
         str(joined["mirna"].iloc[0]) if "mirna" in joined.columns else None
     )
-    dataset_plots_dir = plots_dir / dataset_id
-    dataset_plots_dir.mkdir(parents=True, exist_ok=True)
+    dataset_plots_dir = plots_dir
+    predictor_plots_dir = dataset_plots_dir / "predictors"
+    comparison_plots_dir = dataset_plots_dir / "comparisons"
+    heatmap_plots_dir = dataset_plots_dir / "heatmaps"
+    for path in (dataset_plots_dir, predictor_plots_dir, comparison_plots_dir, heatmap_plots_dir):
+        path.mkdir(parents=True, exist_ok=True)
     tool_ids = [_tool_id_from_score_col(sc) for sc in score_cols]
+    _set_tool_colors(tool_ids)
+    global_rank_cols = []
+    local_rank_cols = []
+    for score_col, tool_id in zip(score_cols, tool_ids):
+        global_rank_col = _rank_col_for_tool(tool_id)
+        local_rank_col = _rank_col_for_tool(tool_id, prefix=LOCAL_RANK_PREFIX)
+        if local_rank_col not in joined.columns:
+            joined[local_rank_col] = _rank_scale_scores(joined[score_col])
+        if global_rank_col not in joined.columns:
+            joined[global_rank_col] = joined[local_rank_col]
+        global_rank_cols.append(global_rank_col)
+        local_rank_cols.append(local_rank_col)
 
     metric_rows = []
     dataset_plots = {}
     predictor_correlation_tsv = None
     comparisons = []
+    coverage_by_tool = {}
+
+    _emit_log(logger, f"    Evaluation start: {dataset_id} | tools={tool_ids}")
 
     for score_col, tool_id in zip(score_cols, tool_ids):
-        scored, filled_zero_count = _prepare_scored_frame(
+        _emit_log(logger, f"    Tool: {tool_id} | preparing scored pairs")
+        tool_plots_dir = predictor_plots_dir / tool_id
+        tool_plots_dir.mkdir(parents=True, exist_ok=True)
+        scored, coverage_info = _prepare_scored_frame(
             joined, score_col=score_col,
             fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
+            perturbation=perturbation,
         )
-        scatter_png = dataset_plots_dir / f"{tool_id}_score_vs_logFC.png"
+        scatter_png = tool_plots_dir / "score_vs_expected_effect.png"
+        gsea_png = tool_plots_dir / "gsea_enrichment.png"
+        pr_curve_png = tool_plots_dir / "precision_recall_curve.png"
+        roc_curve_png = tool_plots_dir / "roc_curve.png"
         pearson, spearman = _plot_scatter_with_correlation(
             scored,
             score_col=score_col,
             dataset_id=dataset_id,
             tool_id=tool_id,
+            positives_total=coverage_info["positives_total"],
             out_path=scatter_png,
+        )
+        enrichment_score = _plot_gsea_enrichment(
+            scored,
+            score_col=score_col,
+            dataset_id=dataset_id,
+            tool_id=tool_id,
+            positives_total=coverage_info["positives_total"],
+            out_path=gsea_png,
         )
         pr_auc, aps = _compute_pr_metrics(scored["is_positive"], scored[score_col])
         auroc = _compute_auroc(scored["is_positive"], scored[score_col])
+        _plot_single_predictor_pr_curve(
+            {
+                "tool_id": tool_id,
+                "y_true": scored["is_positive"],
+                "y_score": scored[score_col],
+                "coverage": coverage_info["coverage"],
+                "positives_total": coverage_info["positives_total"],
+            },
+            dataset_id=dataset_id,
+            out_path=pr_curve_png,
+        )
+        _plot_single_predictor_roc_curve(
+            {
+                "tool_id": tool_id,
+                "y_true": scored["is_positive"],
+                "y_score": scored[score_col],
+                "coverage": coverage_info["coverage"],
+                "positives_total": coverage_info["positives_total"],
+            },
+            dataset_id=dataset_id,
+            out_path=roc_curve_png,
+        )
 
-        report_txt = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.txt"
+        report_md = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.md"
+        report_pdf = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.pdf"
         metrics = {
+            "rows_total": float(coverage_info["rows_total"]),
             "rows_used": float(len(scored)),
             "positives": float(scored["is_positive"].sum()),
             "negatives": float(len(scored) - int(scored["is_positive"].sum())),
+            "rows_missing_score": float(coverage_info["rows_missing_score"]),
+            "coverage": float(coverage_info["coverage"]),
+            "positives_total": float(coverage_info["positives_total"]),
+            "positives_scored": float(coverage_info["positives_scored"]),
+            "positive_coverage": float(coverage_info["positive_coverage"]),
             "pearson": pearson, "spearman": spearman,
             "aps": aps, "pr_auc": pr_auc, "auroc": auroc,
         }
@@ -335,57 +1829,156 @@ def evaluate_joined_dataframe(
             de_table_path=de_table_path, joined_tsv=joined_tsv,
             tool_id=tool_id,
             predictor_output_path=(predictor_output_paths or {}).get(tool_id),
-            metrics=metrics, out_path=report_txt,
-            filled_zero_count=filled_zero_count, scatter_png=scatter_png,
+            metrics=metrics, markdown_path=report_md, pdf_path=report_pdf,
+            coverage_info=coverage_info,
+            scatter_png=scatter_png,
+            pr_curve_png=pr_curve_png,
+            roc_curve_png=roc_curve_png,
+            gsea_png=gsea_png,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
         )
+        _emit_log(
+            logger,
+            (
+                f"    Tool: {tool_id} | coverage={coverage_info['coverage']:.1%} "
+                f"| positive_cov={coverage_info['positive_coverage']:.1%} "
+                f"| rows={coverage_info['rows_scored']}/{coverage_info['rows_total']} "
+                f"| APS={aps:.3f} | AUROC={auroc:.3f} | ES={enrichment_score:.3f}"
+            ),
+        )
+        _emit_log(logger, f"    Tool: {tool_id} | wrote scatter/report")
 
         metric_rows.append({
             "dataset_id": dataset_id, "mirna": mirna, "cell_line": cell_line,
             "perturbation": perturbation, "geo_accession": geo_accession,
             "tool_id": tool_id,
+            "rows_total": coverage_info["rows_total"],
+            "rows_scored": coverage_info["rows_scored"],
+            "rows_missing_score": coverage_info["rows_missing_score"],
+            "coverage": coverage_info["coverage"],
+            "positive_coverage": coverage_info["positive_coverage"],
             "aps": aps, "spearman": spearman, "auroc": auroc, "pr_auc": pr_auc,
         })
         comparisons.append({
             "tool_id": tool_id,
             "y_true": scored["is_positive"],
             "y_score": scored[score_col],
+            "coverage": coverage_info["coverage"],
         })
+        coverage_by_tool[tool_id] = coverage_info["coverage"]
         dataset_plots[f"{tool_id}_scatter"] = str(scatter_png)
+        dataset_plots[f"{tool_id}_gsea_enrichment"] = str(gsea_png)
+        dataset_plots[f"{tool_id}_pr_curve"] = str(pr_curve_png)
+        dataset_plots[f"{tool_id}_roc_curve"] = str(roc_curve_png)
 
-    heatmap_png = dataset_plots_dir / "algorithms_vs_genes_heatmap.png"
+    heatmap_png = heatmap_plots_dir / "algorithms_vs_genes.png"
     _plot_algorithms_vs_genes_heatmap(
-        joined, score_cols=score_cols, tool_ids=tool_ids,
+        joined, score_cols=score_cols, rank_cols=local_rank_cols, tool_ids=tool_ids,
         dataset_id=dataset_id, out_path=heatmap_png,
         fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
+        perturbation=perturbation,
     )
     dataset_plots["algorithms_vs_genes_heatmap"] = str(heatmap_png)
+    _emit_log(logger, f"    Dataset: {dataset_id} | wrote gene-level heatmap")
+
+    top_positive_heatmap_png = heatmap_plots_dir / "top_10pct_positive_genes.png"
+    wrote_top_positive_heatmap = _plot_top_positive_heatmap(
+        joined,
+        rank_cols=local_rank_cols,
+        tool_ids=tool_ids,
+        dataset_id=dataset_id,
+        out_path=top_positive_heatmap_png,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        positive_fraction=0.10,
+        perturbation=perturbation,
+    )
+    if wrote_top_positive_heatmap:
+        dataset_plots["top_10pct_positive_heatmap"] = str(top_positive_heatmap_png)
+        _emit_log(logger, f"    Dataset: {dataset_id} | wrote top-positive heatmap")
 
     if len(score_cols) >= 2:
-        comparison_pr_png = dataset_plots_dir / "predictor_pr_curves.png"
-        comparison_roc_png = dataset_plots_dir / "predictor_roc_curves.png"
+        comparison_pr_png = comparison_plots_dir / "precision_recall_common.png"
+        comparison_pr_all_png = comparison_plots_dir / "precision_recall_all_scored.png"
+        comparison_roc_png = comparison_plots_dir / "roc_common.png"
+        comparison_roc_all_png = comparison_plots_dir / "roc_all_scored.png"
+        comparison_gsea_png = comparison_plots_dir / "gsea_common.png"
+        comparison_cdf_png = comparison_plots_dir / "top_100_effect_cdfs.png"
+        common_pr = _prepare_common_scored_frame(
+            joined,
+            score_cols=score_cols,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
+            perturbation=perturbation,
+        )
+        common_comparisons = [
+            {
+                "tool_id": tool_id,
+                "gene_id": common_pr["gene_id"],
+                "y_true": common_pr["is_positive"],
+                "y_score": common_pr[score_col],
+                "coverage": coverage_by_tool.get(tool_id, float("nan")),
+            }
+            for score_col, tool_id in zip(score_cols, tool_ids)
+        ]
         _plot_predictor_pr_curves(
-            comparisons,
+            common_comparisons,
             dataset_id=dataset_id,
             out_path=comparison_pr_png,
         )
-        _plot_predictor_roc_curves(
+        _plot_predictor_pr_curves_own_scored(
             comparisons,
+            dataset_id=dataset_id,
+            out_path=comparison_pr_all_png,
+        )
+        _plot_predictor_roc_curves(
+            common_comparisons,
             dataset_id=dataset_id,
             out_path=comparison_roc_png,
         )
+        _plot_predictor_roc_curves_own_scored(
+            comparisons,
+            dataset_id=dataset_id,
+            out_path=comparison_roc_all_png,
+        )
+        _plot_predictor_gsea_curves(
+            common_comparisons,
+            dataset_id=dataset_id,
+            out_path=comparison_gsea_png,
+        )
+        _plot_top_prediction_effect_cdfs(
+            joined,
+            score_cols=score_cols,
+            tool_ids=tool_ids,
+            dataset_id=dataset_id,
+            out_path=comparison_cdf_png,
+            perturbation=perturbation,
+        )
         dataset_plots["predictor_pr_curves"] = str(comparison_pr_png)
+        dataset_plots["predictor_pr_curves_all_scored"] = str(comparison_pr_all_png)
         dataset_plots["predictor_roc_curves"] = str(comparison_roc_png)
+        dataset_plots["predictor_roc_curves_all_scored"] = str(comparison_roc_all_png)
+        dataset_plots["predictor_gsea_curves"] = str(comparison_gsea_png)
+        dataset_plots["predictor_top100_effect_cdfs"] = str(comparison_cdf_png)
+        _emit_log(
+            logger,
+            f"    Dataset: {dataset_id} | wrote PR/ROC/GSEA comparison plots and top-100 effect CDF",
+        )
 
-        corr_png = dataset_plots_dir / "predictor_correlation_heatmap.png"
+        corr_png = comparison_plots_dir / "predictor_correlation_heatmap.png"
         corr_tsv = reports_dir / f"{dataset_id}__predictor_correlation.tsv"
         corr_matrix = _plot_predictor_correlation_heatmap(
-            joined, score_cols=score_cols, tool_ids=tool_ids,
+            joined, rank_cols=local_rank_cols, tool_ids=tool_ids,
             dataset_id=dataset_id, out_path=corr_png,
             top_fraction=predictor_top_fraction,
         )
         corr_matrix.to_csv(corr_tsv, sep="\t")
         dataset_plots["predictor_correlation_heatmap"] = str(corr_png)
         predictor_correlation_tsv = str(corr_tsv)
+        _emit_log(logger, f"    Dataset: {dataset_id} | wrote predictor correlation outputs")
+
+    _emit_log(logger, f"    Evaluation complete: {dataset_id}")
 
     return {
         "metric_rows": metric_rows,
@@ -396,7 +1989,7 @@ def evaluate_joined_dataframe(
     }
 
 
-def write_metric_tables(metric_rows, tables_dir):
+def write_metric_tables(metric_rows, tables_dir, *, logger=None):
     tables_dir.mkdir(parents=True, exist_ok=True)
     metrics_df = pd.DataFrame(metric_rows)
     if metrics_df.empty:
@@ -406,6 +1999,8 @@ def write_metric_tables(metric_rows, tables_dir):
     metrics_df[id_cols] = metrics_df[id_cols].fillna("NA")
     out_paths = {}
     for metric_name, filename in [
+        ("coverage", "coverage_per_experiment.tsv"),
+        ("positive_coverage", "positive_coverage_per_experiment.tsv"),
         ("aps", "aps_per_experiment.tsv"),
         ("pr_auc", "pr_auc_per_experiment.tsv"),
         ("spearman", "spearman_per_experiment.tsv"),
@@ -418,4 +2013,401 @@ def write_metric_tables(metric_rows, tables_dir):
         out_path = tables_dir / filename
         wide.to_csv(out_path, sep="\t", index=False)
         out_paths[metric_name] = str(out_path)
+        _emit_log(logger, f"  Wrote {metric_name} table: {out_path}")
     return out_paths
+
+
+def _plot_cross_dataset_metric_heatmap(summary_df, *, metric_names, out_path):
+    tool_ids = summary_df["tool_id"].tolist()
+    matrix = summary_df[[f"{metric_name}_mean" for metric_name in metric_names]].to_numpy(dtype=float).T
+
+    fig, ax = plt.subplots(
+        figsize=(max(5.6, len(tool_ids) * 1.25), max(4.8, len(metric_names) * 1.0))
+    )
+    if float(np.nanmin(matrix)) < 0.0:
+        image = ax.imshow(
+            matrix,
+            cmap="coolwarm",
+            norm=TwoSlopeNorm(vmin=-1.0, vcenter=0.0, vmax=1.0),
+            aspect="auto",
+        )
+    else:
+        image = ax.imshow(matrix, cmap="YlGnBu", vmin=0, vmax=1, aspect="auto")
+    ax.set_xticks(range(len(tool_ids)))
+    ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+    ax.set_yticks(range(len(metric_names)))
+    ax.set_yticklabels([metric_name.upper() for metric_name in metric_names])
+    ax.set_title(
+        "Cross-dataset mean metric summary",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    ax.set_facecolor("white")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+    ax.tick_params(length=0, labelsize=9)
+    for row_index, metric_name in enumerate(metric_names):
+        for col_index, _tool_id in enumerate(tool_ids):
+            value = summary_df.iloc[col_index][f"{metric_name}_mean"]
+            color = "white" if value >= 0.55 else "#22303C"
+            ax.text(col_index, row_index, f"{value:.2f}", ha="center", va="center", color=color, fontsize=9)
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="mean value")
+    _save_figure(fig, out_path)
+
+
+def _plot_cross_dataset_metric_distribution(metrics_df, *, metric_name, out_path):
+    fig, ax = plt.subplots(figsize=(7.2, 4.8))
+    tool_ids = list(metrics_df["tool_id"].drop_duplicates())
+    positions = np.arange(len(tool_ids), dtype=float)
+    _style_axes(ax, grid_axis="y")
+    data = []
+    for tool_id in tool_ids:
+        values = metrics_df.loc[metrics_df["tool_id"] == tool_id, metric_name].dropna().astype(float).tolist()
+        data.append(values)
+    box = ax.boxplot(
+        data,
+        positions=positions,
+        widths=0.55,
+        patch_artist=True,
+        showfliers=False,
+    )
+    for patch, tool_id in zip(box["boxes"], tool_ids):
+        color = _tool_color(tool_id)
+        patch.set_facecolor(color)
+        patch.set_alpha(0.35)
+        patch.set_edgecolor(color)
+    for median in box["medians"]:
+        median.set_color("#22303C")
+        median.set_linewidth(1.4)
+    for whisker in box["whiskers"]:
+        whisker.set_color("#7A8798")
+    for cap in box["caps"]:
+        cap.set_color("#7A8798")
+
+    for tool_index, values in enumerate(data):
+        if not values:
+            continue
+        jitter = np.linspace(-0.09, 0.09, num=len(values)) if len(values) > 1 else np.array([0.0])
+        ax.scatter(
+            np.full(len(values), positions[tool_index]) + jitter,
+            values,
+            s=18,
+            alpha=0.75,
+            color=_tool_color(tool_ids[tool_index]),
+            edgecolors="white",
+            linewidths=0.3,
+            zorder=3,
+        )
+
+    ymin, ymax = _metric_plot_limits(metric_name)
+    ax.set_ylim(ymin, ymax)
+    ax.set_ylabel(metric_name.upper(), fontsize=10)
+    ax.set_xticks(positions)
+    ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+    ax.set_title(
+        f"Cross-dataset {metric_name.upper()} distribution",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    _save_figure(fig, out_path)
+
+
+def _plot_metric_vs_performance(summary_df, *, x_metric_col, x_label, title, out_path):
+    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.8), sharex=True, sharey=False)
+    metric_specs = [("aps_mean", "Mean APS"), ("auroc_mean", "Mean AUROC")]
+    x_values = summary_df[x_metric_col].astype(float).to_numpy()
+
+    for ax, (metric_col, metric_label) in zip(axes, metric_specs):
+        _style_axes(ax, grid_axis="both")
+        values = summary_df[metric_col].astype(float).to_numpy()
+        for index, tool_id in enumerate(summary_df["tool_id"].tolist()):
+            color = _tool_color(tool_id)
+            ax.scatter(
+                x_values[index],
+                values[index],
+                s=80,
+                color=color,
+                edgecolors="white",
+                linewidths=0.5,
+                zorder=3,
+            )
+            ax.text(
+                x_values[index] + 0.01,
+                values[index],
+                _tool_label(tool_id),
+                fontsize=8.5,
+                color="#22303C",
+                va="center",
+            )
+        ax.set_xlim(0, 1.02)
+        ax.set_ylim(0, 1.02)
+        ax.set_xlabel(x_label, fontsize=10)
+        ax.set_ylabel(metric_label, fontsize=10)
+    axes[0].set_title(
+        title,
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    _save_figure(fig, out_path)
+
+
+def _plot_coverage_vs_performance(summary_df, *, out_path):
+    _plot_metric_vs_performance(
+        summary_df,
+        x_metric_col="coverage_mean",
+        x_label="Mean coverage",
+        title="Coverage vs performance",
+        out_path=out_path,
+    )
+
+
+def _plot_positive_coverage_vs_performance(summary_df, *, out_path):
+    _plot_metric_vs_performance(
+        summary_df,
+        x_metric_col="positive_coverage_mean",
+        x_label="Mean positive coverage",
+        title="Positive coverage vs performance",
+        out_path=out_path,
+    )
+
+
+def _rank_distribution_metadata(rank_type):
+    if rank_type == "local":
+        return {
+            "title": "Positive vs background local rank distributions",
+            "axis_label": "Local rank within dataset",
+            "subtitle": (
+                "Aggregated across datasets; dense rank is recomputed within each dataset. "
+                "GT positives use each predictor's color, background genes are gray."
+            ),
+        }
+    if rank_type == "global":
+        return {
+            "title": "Positive vs background global rank distributions",
+            "axis_label": "Global rank across predictor file",
+            "subtitle": (
+                "Aggregated across datasets; dense rank comes from each predictor's full standardized file. "
+                "GT positives use each predictor's color, background genes are gray."
+            ),
+        }
+    raise ValueError(f"Unsupported rank distribution type: {rank_type}")
+
+
+def _plot_rank_class_distributions(
+    joined_frames, *, out_path, fdr_threshold, abs_logfc_threshold, rank_type
+):
+    combined = pd.concat(joined_frames, ignore_index=True)
+    rank_specs = _rank_distribution_specs(combined, rank_types=(rank_type,))
+    if not rank_specs:
+        return False
+
+    keep_cols = ["logFC", "FDR", *[column for _, column, _ in rank_specs]]
+    for optional in ("dataset_id", "perturbation"):
+        if optional in combined.columns:
+            keep_cols.append(optional)
+    work = combined[keep_cols].copy()
+    work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
+    if work.empty:
+        return False
+    work = _annotate_ground_truth(work)
+    work["is_positive"] = _positive_mask(
+        work,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+    ).astype(int)
+
+    tool_ids = []
+    positive_data = []
+    background_data = []
+    for tool_id, column, column_type in rank_specs:
+        if column_type == "score":
+            values = _rank_scale_scores(work[column])
+        else:
+            values = work[column].astype(float)
+        pos_values = values.loc[work["is_positive"] == 1].dropna().astype(float).tolist()
+        bg_values = values.loc[work["is_positive"] == 0].dropna().astype(float).tolist()
+        tool_ids.append(tool_id)
+        positive_data.append(pos_values)
+        background_data.append(bg_values)
+    if not any(positive_data) or not any(background_data):
+        return False
+
+    fig, ax = plt.subplots(figsize=(max(8.4, len(tool_ids) * 1.7), 5.8))
+    _style_axes(ax, grid_axis="y")
+    positions = np.arange(len(tool_ids), dtype=float) * 1.35
+    negative_positions = positions - 0.18
+    positive_positions = positions + 0.18
+    colors = [_tool_color(tool_id) for tool_id in tool_ids]
+    valid_bg_positions = [pos for pos, values in zip(negative_positions, background_data) if values]
+    valid_bg_data = [values for values in background_data if values]
+    valid_pos_positions = [pos for pos, values in zip(positive_positions, positive_data) if values]
+    valid_pos_data = [values for values in positive_data if values]
+
+    if valid_bg_data:
+        bg_violin = ax.violinplot(
+            valid_bg_data,
+            positions=valid_bg_positions,
+            widths=0.30,
+            showmeans=False,
+            showextrema=False,
+            showmedians=True,
+        )
+        for body in bg_violin["bodies"]:
+            body.set_facecolor(NEGATIVE_COLOR)
+            body.set_edgecolor(NEGATIVE_COLOR)
+            body.set_alpha(0.45)
+        bg_violin["cmedians"].set_color("#22303C")
+        bg_violin["cmedians"].set_linewidth(1.5)
+
+    if valid_pos_data:
+        pos_violin = ax.violinplot(
+            valid_pos_data,
+            positions=valid_pos_positions,
+            widths=0.30,
+            showmeans=False,
+            showextrema=False,
+            showmedians=True,
+        )
+        for body, color in zip(pos_violin["bodies"], [c for c, values in zip(colors, positive_data) if values]):
+            body.set_facecolor(color)
+            body.set_edgecolor(color)
+            body.set_alpha(0.40)
+        pos_violin["cmedians"].set_color("#22303C")
+        pos_violin["cmedians"].set_linewidth(1.5)
+
+    meta = _rank_distribution_metadata(rank_type)
+    ax.set_ylim(0, 1.02)
+    ax.set_ylabel(meta["axis_label"], fontsize=10)
+    ax.set_xticks(positions)
+    ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
+    ax.set_title(
+        meta["title"],
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        meta["subtitle"],
+        fontsize=9,
+        color=NEUTRAL_COLOR,
+    )
+    ax.legend(
+        handles=[
+            Patch(facecolor=NEGATIVE_COLOR, edgecolor=NEGATIVE_COLOR, alpha=0.45, label="Background genes"),
+            Patch(
+                facecolor="#C8D6EA",
+                edgecolor="#6E89A8",
+                alpha=0.50,
+                label="GT positives (predictor color)",
+            ),
+        ],
+        frameon=False,
+        fontsize=8.8,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    _save_figure(fig, out_path)
+    return True
+
+
+def write_cross_dataset_summaries(
+    metric_rows,
+    tables_dir,
+    plots_dir,
+    *,
+    joined_frames=None,
+    fdr_threshold=0.05,
+    abs_logfc_threshold=1.0,
+    tool_labels=None,
+    logger=None,
+):
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    _set_tool_labels(tool_labels)
+    metric_plots_dir = plots_dir / "metrics"
+    coverage_plots_dir = plots_dir / "coverage"
+    rank_plots_dir = plots_dir / "ranks"
+    for path in (metric_plots_dir, coverage_plots_dir, rank_plots_dir):
+        path.mkdir(parents=True, exist_ok=True)
+    metrics_df = pd.DataFrame(metric_rows)
+    if metrics_df.empty:
+        return {
+            "tables": {},
+            "plots": {},
+        }
+    _set_tool_colors(metrics_df["tool_id"].drop_duplicates().tolist())
+
+    metric_names = ["coverage", "positive_coverage", "aps", "pr_auc", "spearman", "auroc"]
+    summary = metrics_df.groupby("tool_id")[metric_names].agg(["count", "mean", "median", "std", "min", "max"])
+    summary.columns = [f"{metric_name}_{stat_name}" for metric_name, stat_name in summary.columns]
+    summary = summary.reset_index()
+    summary_path = tables_dir / "cross_dataset_predictor_summary.tsv"
+    summary.to_csv(summary_path, sep="\t", index=False)
+    _emit_log(logger, f"  Wrote cross-dataset summary table: {summary_path}")
+
+    distribution_paths = {}
+    for metric_name in metric_names:
+        metric_path = metric_plots_dir / f"cross_dataset_{metric_name}_distribution.png"
+        _plot_cross_dataset_metric_distribution(
+            metrics_df,
+            metric_name=metric_name,
+            out_path=metric_path,
+        )
+        distribution_paths[f"cross_dataset_{metric_name}_distribution"] = str(metric_path)
+        _emit_log(logger, f"  Wrote cross-dataset {metric_name} distribution: {metric_path}")
+
+    positive_coverage_scatter_path = coverage_plots_dir / "positive_coverage_vs_performance.png"
+    _plot_positive_coverage_vs_performance(summary, out_path=positive_coverage_scatter_path)
+    _emit_log(
+        logger,
+        f"  Wrote positive coverage vs performance plot: {positive_coverage_scatter_path}",
+    )
+
+    rank_distribution_paths = {}
+    if joined_frames:
+        for rank_type, plot_key, filename in (
+            (
+                "local",
+                "positive_background_local_rank_distributions",
+                "positive_background_local_rank_distributions.png",
+            ),
+            (
+                "global",
+                "positive_background_global_rank_distributions",
+                "positive_background_global_rank_distributions.png",
+            ),
+        ):
+            rank_distribution_path = rank_plots_dir / filename
+            wrote_rank_distribution = _plot_rank_class_distributions(
+                joined_frames,
+                out_path=rank_distribution_path,
+                fdr_threshold=fdr_threshold,
+                abs_logfc_threshold=abs_logfc_threshold,
+                rank_type=rank_type,
+            )
+            if wrote_rank_distribution:
+                rank_distribution_paths[plot_key] = str(rank_distribution_path)
+                _emit_log(logger, f"  Wrote {rank_type} rank distribution plot: {rank_distribution_path}")
+
+    return {
+        "tables": {
+            "cross_dataset_predictor_summary": str(summary_path),
+        },
+        "plots": {
+            **distribution_paths,
+            "positive_coverage_vs_performance": str(positive_coverage_scatter_path),
+            **rank_distribution_paths,
+        },
+    }

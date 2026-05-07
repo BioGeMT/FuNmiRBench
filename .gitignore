@@ -12,14 +12,20 @@ miniconda3/
 .vscode/
 
 # Local data outputs (NOT tracked)
-data/experiments/raw/
+data/experiments/processed/*
+!data/experiments/processed/18745741/
+!data/experiments/processed/18745741/*.tsv
+data/experiments/raw/*
 data/predictions/*
-!data/predictions/mock/
-data/predictions/mock/*
+!data/predictions/random/
+data/predictions/random/*
 !data/predictions/cheating/
 data/predictions/cheating/*
+!data/predictions/perfect/
+data/predictions/perfect/*
 data/joined/
 data/plots/
+data/experiments/raw/refs/*
 
 # Benchmark results
 results/
@@ -28,6 +34,9 @@ results/
 pipelines/geo/configs/*
 !pipelines/geo/configs/*.example.yaml
 pipelines/geo/runs/*
+
+# Experiments pipeline outputs
+pipelines/experiments/runs/*
 
 # Predictor pipeline generated data (downloads + intermediate tables)
 pipelines/standardized_predictors/*/data/*
