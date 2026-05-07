@@ -76,19 +76,29 @@ The log reports whether each resource is reused from cache or downloaded.
 From the repository root:
 
 ```bash
-uv run python pipelines/standardized_predictors/tec-mitarget/pipeline.py
+conda env create -f pipelines/standardized_predictors/environment.yml
+conda activate standardized_predictors
+python pipelines/standardized_predictors/tec-mitarget/pipeline.py
+```
+
+If you are using the repo's `uv` environment instead of conda, the same pipeline can also be run with:
+
+```bash
+uv run pipelines/standardized_predictors/tec-mitarget/pipeline.py
 ```
 
 ## CLI Arguments
 
 ```bash
-uv run python pipelines/standardized_predictors/tec-mitarget/pipeline.py \
+python pipelines/standardized_predictors/tec-mitarget/pipeline.py \
   --predictions-root pipelines/standardized_predictors/tec-mitarget/data/TEC-miTarget-model-predictions \
   --resources-dir pipelines/standardized_predictors/tec-mitarget/data/resources \
   --output data/predictions/tec-mitarget/tec_mitarget_standardized.tsv \
   --log-file pipelines/standardized_predictors/tec-mitarget/tec_mitarget_pipeline.log \
   --log-level INFO
 ```
+
+Relative CLI paths are resolved from the repository root, so these arguments do not depend on the current working directory.
 
 ## Logging
 

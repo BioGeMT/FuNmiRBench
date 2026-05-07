@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import logging
 from pathlib import Path
@@ -21,6 +23,11 @@ logger = logging.getLogger("pipeline")
 def log_step(step_number: int, total_steps: int, message: str) -> None:
     logger.info("Step %d/%d: %s", step_number, total_steps, message)
 
+def resolve_cli_path(path: Path, root: Path) -> Path:
+    if path.is_absolute():
+        return path
+    return root / path
+
 def main() -> None:
     root = repo_root()
     pipeline_dir = root / "pipelines" / "standardized_predictors" / "tec-mitarget"
@@ -32,6 +39,11 @@ def main() -> None:
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level. Default: INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] )
 
     args = parser.parse_args()
+    args.predictions_root = resolve_cli_path(args.predictions_root, root)
+    args.resources_dir = resolve_cli_path(args.resources_dir, root)
+    args.output = resolve_cli_path(args.output, root)
+    args.log_file = resolve_cli_path(args.log_file, root)
+
     configure_logging(args.log_file, args.log_level)
     logger.info("Starting pipeline")
     total_steps = 8
