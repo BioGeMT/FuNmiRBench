@@ -40,3 +40,7 @@ pipelines/experiments/runs/*
 
 # Predictor pipeline generated data (downloads + intermediate tables)
 pipelines/standardized_predictors/*/data/*
+
+# Keep TEC-miTarget bundled prediction data
+!pipelines/standardized_predictors/tec-mitarget/data/TEC-miTarget-model-predictions/
+!pipelines/standardized_predictors/tec-mitarget/data/TEC-miTarget-model-predictions/**
