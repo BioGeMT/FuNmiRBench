@@ -6,7 +6,7 @@ This directory contains the standardization pipeline for miRDB gene-level predic
 
 - `pipeline.py`: CLI entrypoint for the pipeline.
 - `utils.py`: shared helpers for logging, downloads, cleaning, mapping, and output construction.
-- `mirdb_mirtarget.log`: log file written by the default run.
+- `mirdb_mirtarget_pipeline.log`: log file written by the default run.
 
 The pipeline downloads and reuses the raw miRDB predictions file at:
 
@@ -121,7 +121,7 @@ conda run -n standardized_predictors \
   --predictions-file pipelines/standardized_predictors/mirdb_mirtarget/data/miRDB_v6.0_prediction_result_human_all_scores.txt.gz \
   --resources-dir pipelines/standardized_predictors/mirdb_mirtarget/data/resources \
   --output data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv \
-  --log-file pipelines/standardized_predictors/mirdb_mirtarget/mirdb_mirtarget.log \
+  --log-file pipelines/standardized_predictors/mirdb_mirtarget/mirdb_mirtarget_pipeline.log \
   --log-level INFO
 ```
 
