@@ -28,7 +28,11 @@ def main() -> None:
     log_step(1, total_steps, "Resolve raw miRDB predictions and external miRBase/BioMart resources")
     mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"
     mirbase_path = args.resources_dir / "mirbase" / "mature.fa"
-    mirbase_path = download_file(mirbase_url, mirbase_path)
+    mirbase_path = download_file(
+        mirbase_url,
+        mirbase_path,
+        resource_label="miRBase mature.fa resource",
+    )
 
     biomart_query = """<?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE Query>
@@ -42,9 +46,20 @@ def main() -> None:
         </Query>"""
     biomart_url = "https://Sep2025.archive.ensembl.org/biomart/martservice"
     biomart_path = args.resources_dir / "biomart" / "hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv"
-    biomart_path = download_file(biomart_url, biomart_path, params={"query": biomart_query}, timeout=360)
+    biomart_path = download_file(
+        biomart_url,
+        biomart_path,
+        params={"query": biomart_query},
+        timeout=360,
+        resource_label="BioMart NCBI Gene ID/RefSeq-to-Ensembl mapping table",
+    )
 
-    raw_predictions_path = download_file(MIRDB_PREDICTIONS_URL, args.predictions_file, timeout=360)
+    raw_predictions_path = download_file(
+        MIRDB_PREDICTIONS_URL,
+        args.predictions_file,
+        timeout=360,
+        resource_label="miRDB v6.0 all-score prediction file",
+    )
     raw_mirna_column = "miRNA"
     raw_transcript_column = "refseq_id"
     raw_prediction_column = "prediction"

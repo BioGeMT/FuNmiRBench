@@ -42,25 +42,39 @@ def download_file(
     output_path: Path,
     params: Optional[dict[str, str]] = None,
     timeout: int = 120,
+    resource_label: str = "file",
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    relative_path = resolve_path_relative_to_root(output_path)
 
     if output_path.exists():
-        logger.info("Using %s", resolve_path_relative_to_root(output_path))
+        logger.info("Using cached %s: %s", resource_label, relative_path)
         return output_path
 
-    logger.info("Downloading %s", resolve_path_relative_to_root(output_path))
+    logger.info("Downloading %s: %s", resource_label, relative_path)
 
-    response = requests.get(url, params=params, timeout=timeout)
-    response.raise_for_status()
+    try:
+        response = requests.get(url, params=params, timeout=timeout)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Failed to download {resource_label} from {url} "
+            f"to {relative_path}: {exc}"
+        ) from exc
     if not response.content.strip():
-        raise RuntimeError(f"Empty response from {url}")
+        raise RuntimeError(
+            f"Failed to download {resource_label} from {url} "
+            f"to {relative_path}: empty response"
+        )
     response_text = response.content.decode("utf-8", errors="replace")
     if "Query ERROR:" in response_text or "BioMart::Exception" in response_text:
-        raise RuntimeError(f"BioMart returned an error response from {url}")
+        raise RuntimeError(
+            f"Failed to download {resource_label} from {url} "
+            f"to {relative_path}: BioMart returned an error response"
+        )
 
     output_path.write_bytes(response.content)
-    logger.info("Saved %s", resolve_path_relative_to_root(output_path))
+    logger.info("Saved %s: %s", resource_label, relative_path)
     return output_path
 
 def _drop_invalid_rows(

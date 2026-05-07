@@ -20,6 +20,8 @@ This file is downloaded from:
 https://mirdb.org/download/miRDB_v6.0_prediction_result_human_all_scores.txt.gz
 ```
 
+If this cache file already exists, the pipeline reuses it. Otherwise, it downloads the miRDB v6.0 all-score prediction file and logs whether the resource was reused, downloaded, or failed.
+
 The pipeline also downloads and reuses annotation resources under:
 
 ```text
@@ -28,8 +30,10 @@ data/resources/
 
 This includes:
 
-- `mirbase/mature.fa`
-- `biomart/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv`
+- `mirbase/mature.fa` at `data/resources/mirbase/mature.fa`
+- `biomart/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv` at `data/resources/biomart/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv`
+
+If either cache file already exists, the pipeline reuses it. Otherwise, it downloads miRBase `mature.fa` version 22.1 and the BioMart NCBI Gene ID/RefSeq-to-Ensembl mapping table, logging whether each resource was reused, downloaded, or failed.
 
 The raw miRDB file is gzip-compressed and is treated as a 4-column tab-separated table without a header:
 
