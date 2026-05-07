@@ -74,10 +74,10 @@ def main() -> None:
         prediction_column,
     )
 
-    logger.info("Creating miRNA name to MIMAT ID mapping")
+    logger.info("Creating miRNA name-to-MIMAT mapping from miRBase mature.fa")
     mirna_name_to_mimat_map = create_mirna_name_to_mimat_mapping(mirbase_path)
 
-    logger.info("Creating RefSeq to Ensembl ID, Gene name mapping")
+    logger.info("Creating RefSeq-to-Ensembl gene mapping from BioMart table")
     biomart_ensembl_id_column = "Gene stable ID"
     biomart_gene_name_column = "Gene name"
     biomart_refseq_column = "RefSeq mRNA ID"
@@ -102,7 +102,7 @@ def main() -> None:
         score_column,
     ]
 
-    logger.info("Mapping miRNA names to MIMAT IDs")
+    logger.info("Mapping prediction miRNA names to MIMAT IDs")
     pred_df = map_mirna_names_to_mimat(
         pred_df,
         mirna_name_to_mimat_map,
@@ -111,7 +111,7 @@ def main() -> None:
         mimat_column,
     )
 
-    logger.info("Mapping RefSeq IDs to Ensembl IDs and Gene names")
+    logger.info("Mapping prediction RefSeq transcript IDs to Ensembl gene IDs and gene names")
     pred_df = map_refseq_to_ensembl(
         pred_df,
         refseq_to_ensembl_map,
@@ -119,7 +119,7 @@ def main() -> None:
         ensembl_id_column,
         gene_name_column,
     )
-    logger.info("Building final schema output table")
+    logger.info("Building final standardized output table")
     final_df = build_output_table(
         pred_df,
         prediction_column,

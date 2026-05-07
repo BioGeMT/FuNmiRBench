@@ -37,6 +37,9 @@ def configure_logging(log_path: Path, log_level: str) -> None:
     )
     root_logger.addHandler(file_handler)
 
+def _log_row_count_change(label: str, before: int, after: int) -> None:
+    logger.info("%s: %d -> %d rows", label, before, after)
+
 def download_file(
     url: str,
     output_path: Path,
@@ -63,6 +66,7 @@ def download_file(
 def _drop_invalid_rows(
     df: pd.DataFrame,
     columns: list[str],
+    log_label: str,
 ) -> pd.DataFrame:
     
     before = len(df)
@@ -77,16 +81,17 @@ def _drop_invalid_rows(
     )
     out = df.loc[valid_rows].copy()
 
-    logger.info("Keeping valid rows: %d/%d", len(out), before)
+    _log_row_count_change(log_label, before, len(out))
     return out
 
 def _drop_duplicate_rows(
     df: pd.DataFrame,
     columns: list[str],
+    log_label: str,
 ) -> pd.DataFrame:
     before = len(df)
     out = df.drop_duplicates(subset=columns).copy()
-    logger.info("Keeping unique rows: %d/%d", len(out), before)
+    _log_row_count_change(log_label, before, len(out))
     return out
 
 def _check_conflicting_prediction_scores(
@@ -120,8 +125,16 @@ def load_prediction_files(
         raise RuntimeError("No prediction files were loaded")
 
     combined = pd.concat(dfs, ignore_index=True)
-    combined = _drop_invalid_rows(combined, cols)
-    combined = _drop_duplicate_rows(combined, cols)
+    combined = _drop_invalid_rows(
+        combined,
+        cols,
+        "Drop invalid raw MRE-level prediction rows",
+    )
+    combined = _drop_duplicate_rows(
+        combined,
+        cols,
+        "Drop duplicate raw MRE-level miRNA-transcript-score rows",
+    )
 
     return combined
 
@@ -144,17 +157,21 @@ def aggregate_mre_predictions_to_transcripts(
     out[prediction_column] = numeric_predictions
     idx = out.groupby([query_column, target_column])[prediction_column].idxmax()
     out = out.loc[idx, [query_column, target_column, prediction_column]]
+    _log_row_count_change(
+        "Collapse raw MRE-level duplicate miRNA-transcript rows to transcript-level rows by max MRE probability",
+        before,
+        len(out),
+    )
+    out = _drop_duplicate_rows(
+        out,
+        [query_column, target_column, prediction_column],
+        "Drop exact duplicate transcript-level rows after max aggregation",
+    )
     _check_conflicting_prediction_scores(
         out,
         query_column,
         target_column,
         prediction_column,
-    )
-    logger.info(
-        "Aggregated MRE-level predictions to transcript-level predictions with max rule: "
-        "%d MRE rows -> %d transcript rows",
-        before,
-        len(out),
     )
     return out
 
@@ -171,7 +188,11 @@ def _drop_conflicting_refseq_rows(
 
     out = df.loc[~df[refseq_column].isin(conflicting_refseq_ids)].copy()
 
-    logger.info("Keeping non-conflicting rows: %d/%d", len(out), before)
+    _log_row_count_change(
+        "Filter RefSeq-to-Ensembl mapping table to drop RefSeq IDs with conflicting Ensembl gene mappings",
+        before,
+        len(out),
+    )
     return out
 
 def create_refseq_to_ensembl_mapping(
@@ -194,10 +215,12 @@ def create_refseq_to_ensembl_mapping(
     biomart = _drop_invalid_rows(
         biomart.loc[:, biomart_columns].copy(),
         biomart_columns,
+        "Filter RefSeq-to-Ensembl mapping table to drop invalid rows",
     )
     biomart = _drop_duplicate_rows(
         biomart,
         biomart_columns,
+        "Filter RefSeq-to-Ensembl mapping table to drop exact duplicate rows",
     )
     biomart = _drop_conflicting_refseq_rows(
         biomart,
@@ -249,19 +272,12 @@ def create_mirna_name_to_mimat_mapping(mature_fa_path: Path) -> dict[str, str]:
 def _drop_unmapped_rows(
     df: pd.DataFrame,
     mapped_column: str,
+    log_label: str,
 ) -> pd.DataFrame:
     before = len(df)
     out = df.loc[df[mapped_column].notna()].copy()
 
-    if len(out) == before:
-        return df
-
-    logger.info(
-        "Mapped rows: %d/%d",
-        len(out),
-        before,
-    )
-
+    _log_row_count_change(log_label, before, len(out))
     return out
 
 def map_mirna_names_to_mimat(
@@ -274,7 +290,11 @@ def map_mirna_names_to_mimat(
     out = df.copy()
     out[mirna_name_column] = out[query_column].astype(str).str.strip()
     out[mimat_column] = out[mirna_name_column].map(mirna_name_to_id)
-    return _drop_unmapped_rows(out, mimat_column)
+    return _drop_unmapped_rows(
+        out,
+        mimat_column,
+        "Drop prediction rows with miRNA names that cannot map to MIMAT IDs",
+    )
 
 def map_refseq_to_ensembl(
     df: pd.DataFrame,
@@ -288,7 +308,11 @@ def map_refseq_to_ensembl(
     mapped = out[refseq_column].map(refseq_to_ensembl_map)
     out[ensembl_id_column] = mapped.str[0]
     out[gene_name_column] = mapped.str[1]
-    return _drop_unmapped_rows(out, ensembl_id_column)
+    return _drop_unmapped_rows(
+        out,
+        ensembl_id_column,
+        "Drop transcript rows with RefSeq IDs that cannot map to Ensembl genes",
+    )
 
 def _check_and_deduplicate_final_pairs(
     df: pd.DataFrame,
@@ -303,10 +327,10 @@ def _check_and_deduplicate_final_pairs(
 
     before = len(df)
     out = df.drop_duplicates(subset=[ensembl_id_column, mimat_column, score_column]).copy()
-    logger.info(
-        "Final rows after Ensembl ID : miRNA MIMAT : score deduplication: %d/%d",
-        len(out),
+    _log_row_count_change(
+        "Drop duplicate final Ensembl_ID-miRNA_ID pairs with identical scores after RefSeq-to-gene mapping",
         before,
+        len(out),
     )
     return out
 
