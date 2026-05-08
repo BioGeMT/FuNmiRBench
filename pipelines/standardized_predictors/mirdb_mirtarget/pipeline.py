@@ -5,10 +5,13 @@ from utils import configure_logging, download_file, load_prediction_files, creat
 
 logger = logging.getLogger("pipeline")
 
-MIRDB_PREDICTIONS_URL = "https://mirdb.org/download/miRDB_v6.0_prediction_result_human_all_scores.txt.gz"
-
 def log_step(step_number: int, total_steps: int, message: str) -> None:
     logger.info("Step %d/%d: %s", step_number, total_steps, message)
+
+def resolve_cli_path(path: Path, root: Path) -> Path:
+    if path.is_absolute():
+        return path
+    return root / path
 
 def main() -> None:
     root = repo_root()
@@ -21,6 +24,11 @@ def main() -> None:
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level. Default: INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] )
 
     args = parser.parse_args()
+    args.predictions_file = resolve_cli_path(args.predictions_file, root)
+    args.resources_dir = resolve_cli_path(args.resources_dir, root)
+    args.output = resolve_cli_path(args.output, root)
+    args.log_file = resolve_cli_path(args.log_file, root)
+
     configure_logging(args.log_file, args.log_level)
     logger.info("Starting pipeline")
     total_steps = 9
@@ -54,8 +62,9 @@ def main() -> None:
         resource_label="BioMart NCBI Gene ID/RefSeq-to-Ensembl mapping table",
     )
 
+    mirdb_predictions_url = "https://mirdb.org/download/miRDB_v6.0_prediction_result_human_all_scores.txt.gz"
     raw_predictions_path = download_file(
-        MIRDB_PREDICTIONS_URL,
+        mirdb_predictions_url,
         args.predictions_file,
         timeout=360,
         resource_label="miRDB v6.0 all-score prediction file",

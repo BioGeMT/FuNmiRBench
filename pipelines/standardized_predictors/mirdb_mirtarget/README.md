@@ -116,6 +116,8 @@ conda run -n standardized_predictors \
 
 ## CLI Arguments
 
+Relative CLI paths are resolved from the repository root, so the current working directory does not change where inputs, resources, logs, or outputs are read or written.
+
 ```bash
 conda run -n standardized_predictors \
   python pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py \
