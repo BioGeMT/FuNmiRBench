@@ -76,11 +76,12 @@ The pipeline:
 13. For rows still missing an Ensembl mapping, falls back to `refseq_id`.
 14. Drops rows that still fail gene mapping after the fallback.
 15. Converts `prediction` to numeric `Score`.
-16. Drops only exact duplicate final rows on:
+16. Drops and reports final `(Ensembl_ID, miRNA_ID)` pairs with conflicting scores after gene mapping.
+17. Drops only exact duplicate final rows on:
     - `Ensembl_ID`
     - `miRNA_ID`
     - `Score`
-17. Writes the standardized output table.
+18. Writes the standardized output table.
 
 ## Output Schema
 

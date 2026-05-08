@@ -37,6 +37,9 @@ def configure_logging(log_path: Path, log_level: str) -> None:
     )
     root_logger.addHandler(file_handler)
 
+def _log_row_count_change(label: str, before: int, after: int) -> None:
+    logger.info("%s: %d -> %d rows", label, before, after)
+
 def download_file(
     url: str,
     output_path: Path,
@@ -80,6 +83,7 @@ def download_file(
 def _drop_invalid_rows(
     df: pd.DataFrame,
     columns: list[str],
+    log_label: str,
 ) -> pd.DataFrame:
     
     before = len(df)
@@ -94,24 +98,45 @@ def _drop_invalid_rows(
     )
     out = df.loc[valid_rows].copy()
 
-    logger.info("Keeping valid rows: %d/%d", len(out), before)
+    _log_row_count_change(log_label, before, len(out))
     return out
 
 def _drop_duplicate_rows(
     df: pd.DataFrame,
     columns: list[str],
+    log_label: str,
 ) -> pd.DataFrame:
     before = len(df)
     out = df.drop_duplicates(subset=columns).copy()
-    logger.info("Keeping unique rows: %d/%d", len(out), before)
+    _log_row_count_change(log_label, before, len(out))
     return out
+
+def _log_duplicate_pair_check(
+    df: pd.DataFrame,
+    columns: list[str],
+    log_label: str,
+) -> None:
+    pair_counts = df.groupby(columns).size()
+    duplicate_pair_counts = pair_counts[pair_counts > 1]
+    logger.info(
+        "%s: %d duplicate pairs involving %d rows",
+        log_label,
+        len(duplicate_pair_counts),
+        int(duplicate_pair_counts.sum()),
+    )
 
 def _check_conflicting_prediction_scores(
     df: pd.DataFrame,
     query_column: str,
     target_column: str,
     prediction_column: str,
+    duplicate_log_label: str,
 ) -> None:
+    _log_duplicate_pair_check(
+        df,
+        [query_column, target_column],
+        duplicate_log_label,
+    )
     grouped = df.groupby([query_column, target_column])[prediction_column].nunique()
     conflicts = grouped[grouped > 1]
     if not conflicts.empty:
@@ -149,19 +174,29 @@ def load_prediction_files(
         raw_prediction_column,
         raw_ncbi_gene_id_column,
     ]
-    df = _drop_invalid_rows(df, cols)
-    df = _drop_duplicate_rows(df, cols)
+    df = _drop_invalid_rows(
+        df,
+        cols,
+        "Drop invalid raw miRDB prediction rows",
+    )
+    df = _drop_duplicate_rows(
+        df,
+        cols,
+        "Drop exact duplicate raw miRDB prediction rows",
+    )
     _check_conflicting_prediction_scores(
         df,
         raw_mirna_column,
         raw_transcript_column,
         raw_prediction_column,
+        "Check raw miRDB rows for duplicate miRNA-RefSeq transcript prediction pairs",
     )
     _check_conflicting_prediction_scores(
         df,
         raw_mirna_column,
         raw_ncbi_gene_id_column,
         raw_prediction_column,
+        "Check raw miRDB rows for duplicate miRNA-NCBI Gene ID prediction pairs from raw column 4",
     )
 
     return df
@@ -179,7 +214,11 @@ def _drop_conflicting_refseq_rows(
 
     out = df.loc[~df[refseq_column].isin(conflicting_refseq_ids)].copy()
 
-    logger.info("Keeping non-conflicting rows: %d/%d", len(out), before)
+    _log_row_count_change(
+        "Filter RefSeq-to-Ensembl mapping table to drop RefSeq IDs with conflicting Ensembl gene mappings",
+        before,
+        len(out),
+    )
     return out
 
 def create_refseq_to_ensembl_mapping(
@@ -202,10 +241,12 @@ def create_refseq_to_ensembl_mapping(
     biomart = _drop_invalid_rows(
         biomart.loc[:, biomart_columns].copy(),
         biomart_columns,
+        "Filter RefSeq-to-Ensembl mapping table to drop invalid rows",
     )
     biomart = _drop_duplicate_rows(
         biomart,
         biomart_columns,
+        "Filter RefSeq-to-Ensembl mapping table to drop exact duplicate rows",
     )
     biomart = _drop_conflicting_refseq_rows(
         biomart,
@@ -257,16 +298,12 @@ def create_mirna_name_to_mimat_mapping(mature_fa_path: Path) -> dict[str, str]:
 def _drop_unmapped_rows(
     df: pd.DataFrame,
     mapped_column: str,
+    log_label: str,
 ) -> pd.DataFrame:
     before = len(df)
     out = df.loc[df[mapped_column].notna()].copy()
 
-    logger.info(
-        "Mapped rows: %d/%d",
-        len(out),
-        before,
-    )
-
+    _log_row_count_change(log_label, before, len(out))
     return out
 
 def map_mirna_names_to_mimat(
@@ -279,7 +316,11 @@ def map_mirna_names_to_mimat(
     out = df.copy()
     out[mirna_name_column] = out[query_column].astype(str).str.strip()
     out[mimat_column] = out[mirna_name_column].map(mirna_name_to_id)
-    return _drop_unmapped_rows(out, mimat_column)
+    return _drop_unmapped_rows(
+        out,
+        mimat_column,
+        "Drop prediction rows with miRNA names that cannot map to MIMAT IDs",
+    )
 
 def map_refseq_to_ensembl(
     df: pd.DataFrame,
@@ -293,7 +334,11 @@ def map_refseq_to_ensembl(
     mapped = out[refseq_column].map(refseq_to_ensembl_map)
     out[ensembl_id_column] = mapped.str[0]
     out[gene_name_column] = mapped.str[1]
-    return _drop_unmapped_rows(out, ensembl_id_column)
+    return _drop_unmapped_rows(
+        out,
+        ensembl_id_column,
+        "Drop prediction rows with RefSeq IDs that cannot map to Ensembl genes",
+    )
 
 def _drop_conflicting_ncbi_gene_id_rows(
     df: pd.DataFrame,
@@ -308,7 +353,11 @@ def _drop_conflicting_ncbi_gene_id_rows(
 
     out = df.loc[~df[ncbi_gene_id_column].isin(conflicting_ncbi_gene_ids)].copy()
 
-    logger.info("Keeping non-conflicting rows: %d/%d", len(out), before)
+    _log_row_count_change(
+        "Filter NCBI Gene ID-to-Ensembl mapping table to drop NCBI Gene IDs with conflicting Ensembl gene mappings",
+        before,
+        len(out),
+    )
     return out
 
 def create_ncbi_gene_id_to_ensembl_mapping(
@@ -339,10 +388,12 @@ def create_ncbi_gene_id_to_ensembl_mapping(
     biomart = _drop_invalid_rows(
         biomart.loc[:, biomart_columns].copy(),
         biomart_columns,
+        "Filter NCBI Gene ID-to-Ensembl mapping table to drop invalid rows",
     )
     biomart = _drop_duplicate_rows(
         biomart,
         biomart_columns,
+        "Filter NCBI Gene ID-to-Ensembl mapping table to drop exact duplicate rows",
     )
     biomart = _drop_conflicting_ncbi_gene_id_rows(
         biomart,
@@ -376,12 +427,16 @@ def map_ncbi_gene_id_to_ensembl(
     out[ensembl_id_column] = mapped.str[0]
     out[gene_name_column] = mapped.str[1]
     if drop_unmapped:
-        return _drop_unmapped_rows(out, ensembl_id_column)
+        return _drop_unmapped_rows(
+            out,
+            ensembl_id_column,
+            "Drop prediction rows with NCBI Gene IDs that cannot map to Ensembl genes",
+        )
 
-    logger.info(
-        "Mapped rows: %d/%d",
-        out[ensembl_id_column].notna().sum(),
+    _log_row_count_change(
+        "Rows left for RefSeq fallback after NCBI Gene ID mapping",
         len(out),
+        int(out[ensembl_id_column].isna().sum()),
     )
     return out
 
@@ -403,14 +458,18 @@ def fill_unmapped_rows_with_refseq_to_ensembl(
     out.loc[needs_mapping, gene_name_column] = mapped.str[1]
 
     after_unmapped = int(out[ensembl_id_column].isna().sum())
-    logger.info(
-        "Fallback RefSeq mapping rescued rows: %d/%d",
-        before_unmapped - after_unmapped,
+    _log_row_count_change(
+        "Rows still unmapped after RefSeq fallback",
         before_unmapped,
+        after_unmapped,
     )
-    return _drop_unmapped_rows(out, ensembl_id_column)
+    return _drop_unmapped_rows(
+        out,
+        ensembl_id_column,
+        "Drop prediction rows that cannot map to Ensembl genes after NCBI Gene ID mapping and RefSeq fallback",
+    )
 
-def _collapse_final_pairs(
+def _drop_conflicting_and_duplicate_final_pairs(
     df: pd.DataFrame,
     ensembl_id_column: str,
     mimat_column: str,
@@ -423,20 +482,18 @@ def _collapse_final_pairs(
     if conflicting_pairs:
         pair_index = list(zip(df[ensembl_id_column], df[mimat_column]))
         df = df.loc[[pair not in conflicting_pairs for pair in pair_index]].copy()
-    logger.info(
-        "Rows after dropping conflicting Ensembl ID : miRNA MIMAT pairs: %d/%d",
-        len(df),
+    _log_row_count_change(
+        "Drop final Ensembl_ID-miRNA_ID pairs with conflicting scores after NCBI/RefSeq-to-gene mapping",
         before_conflict_drop,
+        len(df),
     )
 
-    before_dedup = len(df)
-    out = df.drop_duplicates(
-        subset=[ensembl_id_column, mimat_column, score_column],
-    ).copy()
-    logger.info(
-        "Final rows after exact deduplication on Ensembl ID : miRNA MIMAT : score: %d/%d",
+    before = len(df)
+    out = df.drop_duplicates(subset=[ensembl_id_column, mimat_column, score_column]).copy()
+    _log_row_count_change(
+        "Drop duplicate final Ensembl_ID-miRNA_ID pairs with identical scores after NCBI/RefSeq-to-gene mapping",
+        before,
         len(out),
-        before_dedup,
     )
     return out
 
@@ -451,7 +508,7 @@ def build_output_table(
     out = df.copy()
     out[score_column] = pd.to_numeric(out[prediction_column], errors="coerce")
     out = out.loc[:, final_columns].copy()
-    return _collapse_final_pairs(
+    return _drop_conflicting_and_duplicate_final_pairs(
         out,
         ensembl_id_column,
         mimat_column,
