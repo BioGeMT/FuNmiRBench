@@ -34,3 +34,5 @@ def test_combination_summary_excludes_oracles_and_scores_rank_mean():
     assert combo["dataset_count"] == 1
     assert combo["aps_mean"] == 1.0
     assert combo["positive_coverage_mean"] == 1.0
+    assert "delta_aps_vs_best_single" in summary.columns
+    assert "beats_best_single_aps" in summary.columns

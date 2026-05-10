@@ -31,12 +31,11 @@ from funmirbench.common_predictions import (
     write_common_prediction_summary,
 )
 from funmirbench.comparison_plots import write_common_comparison_plots
+from funmirbench.cross_dataset import write_cross_dataset_summaries, write_metric_tables
 from funmirbench.dataset_reports import write_predictor_reports
 from funmirbench.evaluate import (
     REPORT_PAGE_SIZE,
     evaluate_joined_dataframe,
-    write_cross_dataset_summaries,
-    write_metric_tables,
 )
 from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
