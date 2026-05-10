@@ -27,7 +27,6 @@ from funmirbench.benchmark_reports import (
     write_run_readme,
 )
 from funmirbench.common_predictions import (
-    cleanup_correlation_artifacts,
     write_combined_common_prediction_summary,
     write_common_prediction_summary,
 )
@@ -299,7 +298,6 @@ def run_benchmark(config_path):
             publication_min_common_coverage=publication_min_common_coverage,
         )
         common_prediction_summaries.append(common_prediction_summary)
-        cleanup_correlation_artifacts(dataset_dir)
         write_publication_predictor_reports(
             reports_dir=dataset_dir / "reports",
             plots_dir=dataset_dir / "plots",
