@@ -12,9 +12,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 from funmirbench.evaluate import (
     REPORT_PAGE_SIZE,
     describe_gt_rule,
-    write_cross_dataset_summaries,
-    write_metric_tables,
 )
+from funmirbench.cross_dataset import write_cross_dataset_summaries, write_metric_tables
 
 
 ORACLE_TOOL_IDS = {"cheating", "perfect"}

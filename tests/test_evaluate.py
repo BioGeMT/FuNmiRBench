@@ -6,11 +6,8 @@ import pandas as pd
 import pytest
 
 import funmirbench.evaluate as evaluate_module
-from funmirbench.evaluate import (
-    evaluate_joined_dataframe,
-    write_cross_dataset_summaries,
-    write_metric_tables,
-)
+from funmirbench.cross_dataset import write_cross_dataset_summaries, write_metric_tables
+from funmirbench.evaluate import evaluate_joined_dataframe
 
 
 PDF_MEDIA_BOX_PATTERN = re.compile(rb"/MediaBox\s*\[\s*0\s+0\s+([0-9.]+)\s+([0-9.]+)\s*\]")
