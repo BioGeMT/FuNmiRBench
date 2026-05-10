@@ -58,8 +58,12 @@ def _summarize_values(prefix, values, *, max_items=2):
     return part
 
 
+def _format_run_number(value):
+    text = f"{float(value):g}"
+    return text.replace("-", "m").replace(".", "p")
+
+
 def build_run_dir_name(*, experiments, tool_ids, eval_cfg, tags=None):
-    del eval_cfg
     parts = []
 
     if tags:
@@ -67,6 +71,8 @@ def build_run_dir_name(*, experiments, tool_ids, eval_cfg, tags=None):
             tags = [tags]
         parts.append(_summarize_values("tag", tags, max_items=3))
 
+    dataset_ids = [meta.id for meta in experiments]
+    mirnas = [meta.miRNA for meta in experiments]
     perturbations = {
         str(meta.perturbation).strip().upper()
         for meta in experiments
@@ -78,16 +84,25 @@ def build_run_dir_name(*, experiments, tool_ids, eval_cfg, tags=None):
         if str(meta.cell_line).strip() and str(meta.cell_line).strip().upper() != "NA"
     }
 
+    eval_parts = []
+    if "fdr_threshold" in eval_cfg:
+        eval_parts.append(f"fdr{_format_run_number(eval_cfg['fdr_threshold'])}")
+    if "abs_logfc_threshold" in eval_cfg:
+        eval_parts.append(f"effect{_format_run_number(eval_cfg['abs_logfc_threshold'])}")
+    if "predictor_top_fraction" in eval_cfg:
+        eval_parts.append(f"top{_format_run_number(float(eval_cfg['predictor_top_fraction']) * 100)}pct")
+
     parts.extend(
         [
-            f"exp{len(experiments)}",
-            f"pred{len(tool_ids)}",
-            f"oe{int('OE' in perturbations)}",
-            f"ko{int('KO' in perturbations)}",
-            f"kd{int('KD' in perturbations)}",
+            _summarize_values("datasets", dataset_ids, max_items=2),
+            _summarize_values("mirnas", mirnas, max_items=2),
+            _summarize_values("tools", tool_ids, max_items=3),
+            _summarize_values("pert", sorted(perturbations), max_items=3),
             f"cell{len(cell_lines)}",
         ]
     )
+    if eval_parts:
+        parts.append("-".join(eval_parts))
     return "__".join(parts)
 
 

@@ -9,6 +9,7 @@ import sys
 import pandas as pd
 import pytest
 
+from funmirbench import DatasetMeta
 from funmirbench import benchmark
 from funmirbench.build_cheating_predictions import build_cheating_scores
 from funmirbench.build_predictions import build_random_scores, write_tsv
@@ -76,6 +77,61 @@ def test_validate_threshold_sensitive_predictors_requires_matching_metadata(tmp_
             abs_logfc_threshold=1.0,
         )
 
+
+def test_build_run_dir_name_summarizes_selection(tmp_path):
+    experiments = [
+        DatasetMeta(
+            id="GSE109725_OE_miR_204_5p",
+            miRNA="hsa-miR-204-5p",
+            cell_line="4T1",
+            tissue="breast",
+            perturbation="OE",
+            organism="Homo sapiens",
+            geo_accession="GSE109725",
+            data_path="a.tsv",
+            root=tmp_path,
+        ),
+        DatasetMeta(
+            id="GSE118315_KO_miR_124_3p",
+            miRNA="hsa-miR-124-3p",
+            cell_line="iNGN",
+            tissue="neuron",
+            perturbation="KO",
+            organism="Homo sapiens",
+            geo_accession="GSE118315",
+            data_path="b.tsv",
+            root=tmp_path,
+        ),
+        DatasetMeta(
+            id="GSE210778_OE_miR_375_3p",
+            miRNA="hsa-miR-375-3p",
+            cell_line="HUV-EC-C",
+            tissue="endothelium",
+            perturbation="OE",
+            organism="Homo sapiens",
+            geo_accession="GSE210778",
+            data_path="c.tsv",
+            root=tmp_path,
+        ),
+    ]
+
+    name = benchmark.build_run_dir_name(
+        experiments=experiments,
+        tool_ids=["random", "cheating", "targetscan", "mirdb_mirtarget"],
+        eval_cfg={
+            "fdr_threshold": 0.05,
+            "abs_logfc_threshold": 1.0,
+            "predictor_top_fraction": 0.10,
+        },
+        tags=["demo"],
+    )
+
+    assert name.startswith(
+        "tag-demo__datasets-gse109725-oe-mir-204-5p-gse118315-ko-mir-124-3p-plus1"
+    )
+    assert "__mirnas-hsa-mir-204-5p-hsa-mir-124-3p-plus1__" in name
+    assert "__tools-random-cheating-targetscan-plus1__" in name
+    assert "__pert-ko-oe__cell3__fdr0p05-effect1-top10pct" in name
 
 def test_example_end_to_end(tmp_path):
     """Run a small two-predictor benchmark config and check outputs."""
