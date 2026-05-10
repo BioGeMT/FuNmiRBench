@@ -113,7 +113,12 @@ def _draw_summary_table(ax, summary_df, *, bbox):
 
 
 def _plot_items(combined_outputs):
-    descriptions = {}
+    descriptions = {
+        "predictor_combination_frontier": (
+            "Predictor-combination performance frontier",
+            "Coverage-aware comparison of individual real predictors and rank-mean predictor combinations. Random and oracle predictors are excluded; frontier points are not dominated in both mean positive coverage and mean APS.",
+        )
+    }
     for metric_name in ["coverage", "positive_coverage", "aps", "pr_auc", "spearman", "auroc"]:
         descriptions[f"cross_dataset_{metric_name}_distribution"] = (
             f"Cross-dataset {metric_name.upper()} distribution",
@@ -203,6 +208,7 @@ def write_publication_run_pdf_report(
             "Primary files",
             [
                 "tables/combined/cross_dataset_predictor_summary.tsv: exact numeric summary used for the report.",
+                "tables/combined/predictor_combination_summary.tsv: coverage-aware summary of single predictors and rank-mean combinations.",
                 "tables/per_experiment/: per-dataset metric tables for coverage, APS, PR-AUC, Spearman, and AUROC.",
                 "datasets/<dataset_id>/: joined tables, publication plots, and per-predictor reports.",
             ],
@@ -249,6 +255,7 @@ def write_publication_run_pdf_report(
             ax,
             "Included figure families",
             [
+                "Predictor-combination frontier tests whether any real-predictor ensemble improves over the best single predictor.",
                 "Combined metric distributions summarize per-dataset metric spread by predictor.",
                 "Rank-distribution plots compare GT-positive genes against background genes across datasets.",
                 "Per-dataset directories contain CDFs, common-set comparisons, own-scored comparisons, heatmaps, and per-predictor reports.",
