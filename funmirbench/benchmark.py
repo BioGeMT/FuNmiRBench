@@ -10,6 +10,7 @@ import shutil
 
 import yaml
 
+import funmirbench.evaluate as evaluate_module
 from funmirbench.benchmark_config import (
     DEFAULT_DEMO_ABS_LOGFC_THRESHOLD,
     DEFAULT_DEMO_FDR_THRESHOLD,
@@ -179,6 +180,8 @@ def run_benchmark(config_path):
         raise ValueError("Predictor selection resolved to no predictors.")
 
     eval_cfg = config.get("evaluation", {})
+    evaluate_module.FIGURE_DPI = int(eval_cfg.get("publication_figure_dpi", 450))
+    logger.info(f"Figure DPI: {evaluate_module.FIGURE_DPI}")
     out_root = (root / config.get("out_dir", "results")).resolve()
     out_root.mkdir(parents=True, exist_ok=True)
     run_dir_name = build_run_dir_name(
