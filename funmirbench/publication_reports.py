@@ -112,6 +112,69 @@ def _draw_summary_table(ax, summary_df, *, bbox):
     return table
 
 
+def _load_common_prediction_summary(combined_outputs):
+    path = combined_outputs.get("tables", {}).get("common_prediction_summary")
+    if not path:
+        return None
+    path = pathlib.Path(path)
+    if not path.is_file():
+        return None
+    return pd.read_csv(path, sep="\t")
+
+
+def _draw_common_prediction_page(pdf, combined_outputs):
+    summary = _load_common_prediction_summary(combined_outputs)
+    if summary is None or summary.empty:
+        return
+    selected = summary[summary["summary_type"].isin(["publication_common_set", "all_real_predictors_common_set"])].copy()
+    if selected.empty:
+        return
+    selected["tools"] = selected["tools"].astype(str).str.replace(",", " + ", regex=False)
+    selected["Common predictions"] = selected.apply(
+        lambda row: f"{int(row['rows_common']):,}/{int(row['rows_total']):,} ({float(row['percent_common']):.1%})",
+        axis=1,
+    )
+    selected["Set"] = selected["summary_type"].map(
+        {
+            "publication_common_set": "Publication common set",
+            "all_real_predictors_common_set": "All real predictors",
+        }
+    )
+    display = selected[["dataset_id", "Set", "tools", "Common predictions"]].copy()
+    display.columns = ["Dataset", "Set", "Predictors", "Common predictions"]
+    fig, ax = _new_page(landscape=True)
+    fig.text(0.04, 0.965, "Common prediction coverage", fontsize=13, fontweight="bold", color=PUBLICATION_BLUE, va="top", ha="left")
+    fig.text(
+        0.04,
+        0.925,
+        "Percentages show genes with non-missing scores for the listed real predictors. Correlation heatmaps are intentionally omitted.",
+        fontsize=9.3,
+        color="#22303C",
+        va="top",
+        ha="left",
+    )
+    table = ax.table(
+        cellText=display.values.tolist(),
+        colLabels=display.columns.tolist(),
+        colWidths=[0.27, 0.20, 0.34, 0.19],
+        cellLoc="left",
+        colLoc="left",
+        bbox=[0.04, 0.08, 0.92, 0.78],
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(8.2)
+    table.scale(1.0, 1.35)
+    for (row, col), cell in table.get_celld().items():
+        cell.set_edgecolor("#D9E2EC")
+        cell.set_linewidth(0.7)
+        if row == 0:
+            cell.set_facecolor(PUBLICATION_TABLE_HEADER)
+            cell.set_text_props(weight="bold", color=PUBLICATION_BLUE)
+        else:
+            cell.set_facecolor("#FFFFFF" if row % 2 else PUBLICATION_TABLE_ALT)
+    _save_page(pdf, fig)
+
+
 def _plot_items(combined_outputs):
     descriptions = {
         "predictor_combination_frontier": (
@@ -197,7 +260,7 @@ def write_publication_run_pdf_report(
             [
                 "The cross-dataset table is the primary benchmark summary.",
                 "Sparse predictors are shown but are not promoted into headline rankings unless they pass the coverage threshold.",
-                "Top-prediction effect CDFs are written for each dataset when enabled in the benchmark configuration.",
+                "Common-prediction percentages replace correlation heatmaps for comparing predictor overlap.",
             ],
             x=0.54,
             y=0.69,
@@ -208,8 +271,8 @@ def write_publication_run_pdf_report(
             "Primary files",
             [
                 "tables/combined/cross_dataset_predictor_summary.tsv: exact numeric summary used for the report.",
+                "tables/combined/common_prediction_summary.tsv: percentages of common real-predictor scored genes.",
                 "tables/combined/predictor_combination_summary.tsv: coverage-aware summary of single predictors and rank-mean combinations.",
-                "tables/per_experiment/: per-dataset metric tables for coverage, APS, PR-AUC, Spearman, and AUROC.",
                 "datasets/<dataset_id>/: joined tables, publication plots, and per-predictor reports.",
             ],
             x=0.06,
@@ -256,7 +319,7 @@ def write_publication_run_pdf_report(
             "Included figure families",
             [
                 "Predictor-combination frontier tests whether any real-predictor ensemble improves over the best single predictor.",
-                "Combined metric distributions summarize per-dataset metric spread by predictor.",
+                "Common-prediction percentages report overlap directly; correlation plots are not generated for publication bundles.",
                 "Rank-distribution plots compare GT-positive genes against background genes across datasets.",
                 "Per-dataset directories contain CDFs, common-set comparisons, own-scored comparisons, heatmaps, and per-predictor reports.",
             ],
@@ -265,6 +328,8 @@ def write_publication_run_pdf_report(
             width=0.88,
         )
         _save_page(pdf, fig)
+
+        _draw_common_prediction_page(pdf, combined_outputs)
 
         for title, caption, path in _plot_items(combined_outputs):
             _draw_plot_page(pdf, title=title, caption=caption, path=path)
