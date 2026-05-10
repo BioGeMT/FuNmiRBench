@@ -43,6 +43,6 @@ evaluation:
   fdr_threshold: 0.05
   abs_logfc_threshold: 1.0
   predictor_top_fraction: 0.10
-  write_top_prediction_cdfs: false
+  write_top_prediction_cdfs: true
 
 out_dir: results/
