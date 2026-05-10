@@ -299,9 +299,7 @@ def run_benchmark(config_path):
             publication_min_common_coverage=publication_min_common_coverage,
         )
         common_prediction_summaries.append(common_prediction_summary)
-        removed = cleanup_correlation_artifacts(dataset_dir)
-        if removed:
-            logger.info(f"  Removed correlation artifacts for {meta.id}: {len(removed)} file(s)")
+        cleanup_correlation_artifacts(dataset_dir)
         write_publication_predictor_reports(
             reports_dir=dataset_dir / "reports",
             plots_dir=dataset_dir / "plots",
