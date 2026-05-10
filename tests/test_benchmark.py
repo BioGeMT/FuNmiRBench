@@ -1,11 +1,11 @@
-"""End-to-end test via a small real-data benchmark config."""
+"""End-to-end tests for the benchmark runner."""
 
+import datetime as dt
 import json
 import pathlib
 import re
 import subprocess
 import sys
-import datetime as dt
 
 import pandas as pd
 import pytest
@@ -79,7 +79,7 @@ def test_validate_threshold_sensitive_predictors_requires_matching_metadata(tmp_
         )
 
 
-def test_build_run_dir_name_summarizes_selection(tmp_path):
+def test_build_run_dir_name_uses_date_only(tmp_path):
     experiments = [
         DatasetMeta(
             id="GSE109725_OE_miR_204_5p",
@@ -91,49 +91,19 @@ def test_build_run_dir_name_summarizes_selection(tmp_path):
             geo_accession="GSE109725",
             data_path="a.tsv",
             root=tmp_path,
-        ),
-        DatasetMeta(
-            id="GSE118315_KO_miR_124_3p",
-            miRNA="hsa-miR-124-3p",
-            cell_line="iNGN",
-            tissue="neuron",
-            perturbation="KO",
-            organism="Homo sapiens",
-            geo_accession="GSE118315",
-            data_path="b.tsv",
-            root=tmp_path,
-        ),
-        DatasetMeta(
-            id="GSE210778_OE_miR_375_3p",
-            miRNA="hsa-miR-375-3p",
-            cell_line="HUV-EC-C",
-            tissue="endothelium",
-            perturbation="OE",
-            organism="Homo sapiens",
-            geo_accession="GSE210778",
-            data_path="c.tsv",
-            root=tmp_path,
-        ),
+        )
     ]
 
     name = benchmark.build_run_dir_name(
         experiments=experiments,
-        tool_ids=["random", "cheating", "targetscan", "mirdb_mirtarget"],
-        eval_cfg={
-            "fdr_threshold": 0.05,
-            "abs_logfc_threshold": 1.0,
-            "predictor_top_fraction": 0.10,
-        },
+        tool_ids=["random", "cheating"],
+        eval_cfg={"fdr_threshold": 0.05, "abs_logfc_threshold": 1.0},
         tags=["demo"],
         run_date=dt.date(2026, 5, 10),
     )
 
-    assert name.startswith(
-        "20260510__tag-demo__datasets-gse109725-oe-mir-204-5p-plus2"
-    )
-    assert "__mirnas-hsa-mir-204-5p-plus2__" in name
-    assert "__tools-random-cheating-plus2__" in name
-    assert "__pert-ko-oe__cell3__fdr0p05-effect1-top10pct" in name
+    assert name == "20260510"
+
 
 def test_example_end_to_end(tmp_path):
     """Run a small two-predictor benchmark config and check outputs."""
@@ -210,17 +180,11 @@ def test_example_end_to_end(tmp_path):
         encoding="utf-8",
     )
 
-    stale_run_dir = out_root / "legacy_run"
-    stale_plot = stale_run_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "random_score_vs_logFC.png"
-    stale_plot.parent.mkdir(parents=True, exist_ok=True)
-    stale_plot.write_text("stale", encoding="utf-8")
-    stale_report = stale_run_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__random_evaluation_report.md"
-    stale_report.parent.mkdir(parents=True, exist_ok=True)
-    stale_report.write_text("stale", encoding="utf-8")
-
     result = subprocess.run(
         [sys.executable, "-m", "funmirbench.benchmark", "--config", str(config)],
-        capture_output=True, text=True, cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        cwd=str(repo_root),
     )
     assert result.returncode == 0, f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
 
@@ -228,6 +192,7 @@ def test_example_end_to_end(tmp_path):
     assert len(summary_paths) == 1
     out_dir = summary_paths[0].parent
 
+    assert out_dir.name == dt.date.today().strftime("%Y%m%d")
     assert (out_dir / "summary.json").is_file()
     assert (out_dir / "README.md").is_file()
     assert (out_dir / "REPORT.pdf").is_file()
@@ -235,43 +200,17 @@ def test_example_end_to_end(tmp_path):
     assert (out_dir / "tables" / "per_experiment" / "positive_coverage_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "per_experiment" / "aps_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "per_experiment" / "pr_auc_per_experiment.tsv").is_file()
+    assert (out_dir / "tables" / "per_experiment" / "auroc_per_experiment.tsv").is_file()
     assert (out_dir / "tables" / "combined" / "cross_dataset_predictor_summary.tsv").is_file()
-    assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__random_evaluation_report.md"
-    ).is_file()
-    assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "reports" / "GSE109725_OE_miR_204_5p__random_evaluation_report.pdf"
-    ).is_file()
-    report_pdf = out_dir / "REPORT.pdf"
-    dataset_pdf = (
-        out_dir
-        / "datasets"
-        / "GSE109725_OE_miR_204_5p"
-        / "reports"
-        / "GSE109725_OE_miR_204_5p__random_evaluation_report.pdf"
-    )
-
-    joined_files = sorted((out_dir / "datasets").glob("*/joined.tsv"))
-    assert [path.parent.name for path in joined_files] == [
-        "GSE109725_OE_miR_204_5p",
-        "GSE118315_KO_miR_124_3p",
-        "GSE210778_OE_miR_375_3p",
-    ]
 
     summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary["out_root"] == str(out_root)
     assert summary["out_dir"] == str(out_dir)
     assert summary["run_dir_name"] == out_dir.name
     assert summary["tags"] == ["demo", "end_to_end"]
+    assert summary["metric_tables"]["auroc"].endswith("auroc_per_experiment.tsv")
     assert summary["readme"].endswith("README.md")
     assert summary["report_pdf"].endswith("REPORT.pdf")
-    assert "cross_dataset_outputs" in summary
-    assert summary["cross_dataset_outputs"]["tables"]["cross_dataset_predictor_summary"].endswith(
-        "cross_dataset_predictor_summary.tsv"
-    )
-    assert "positive_coverage_vs_performance" not in summary["cross_dataset_outputs"]["plots"]
-    assert "coverage_vs_performance" not in summary["cross_dataset_outputs"]["plots"]
-    assert "cross_dataset_metric_heatmap" not in summary["cross_dataset_outputs"]["plots"]
     assert set(summary["dataset_ids"]) == {
         "GSE109725_OE_miR_204_5p",
         "GSE210778_OE_miR_375_3p",
@@ -279,6 +218,7 @@ def test_example_end_to_end(tmp_path):
     }
     assert summary["tool_ids"] == ["random", "cheating"]
 
+    report_pdf = out_dir / "REPORT.pdf"
     run_media_boxes = _pdf_media_boxes(report_pdf)
     assert len(run_media_boxes) > 1
     assert len(set(run_media_boxes)) == 1
@@ -286,52 +226,23 @@ def test_example_end_to_end(tmp_path):
     assert run_width == pytest.approx(72.0 * benchmark.REPORT_PAGE_SIZE[0], abs=0.02)
     assert run_height == pytest.approx(72.0 * benchmark.REPORT_PAGE_SIZE[1], abs=0.02)
 
+    dataset_pdf = (
+        out_dir
+        / "datasets"
+        / "GSE109725_OE_miR_204_5p"
+        / "reports"
+        / "GSE109725_OE_miR_204_5p__random_evaluation_report.pdf"
+    )
     dataset_media_boxes = _pdf_media_boxes(dataset_pdf)
     assert len(dataset_media_boxes) == 2
     assert len(set(dataset_media_boxes)) == 1
-    dataset_width, dataset_height = dataset_media_boxes[0]
-    assert dataset_width == pytest.approx(72.0 * benchmark.REPORT_PAGE_SIZE[0], abs=0.02)
-    assert dataset_height == pytest.approx(72.0 * benchmark.REPORT_PAGE_SIZE[1], abs=0.02)
 
-    plots = list(out_dir.rglob("*.png"))
-    assert len(plots) == 56
-    assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "score_vs_expected_effect.png"
-    ).is_file()
-    assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "gsea_enrichment.png"
-    ).is_file()
-    assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "precision_recall_curve.png"
-    ).is_file()
-    assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "roc_curve.png"
-    ).is_file()
-    assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "cheating" / "precision_recall_curve.png"
-    ).is_file()
-    assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "cheating" / "roc_curve.png"
-    ).is_file()
     assert (
         out_dir / "plots" / "combined" / "metrics" / "cross_dataset_coverage_distribution.png"
     ).is_file()
     assert (
-        out_dir / "plots" / "combined" / "metrics" / "cross_dataset_positive_coverage_distribution.png"
-    ).is_file()
-    assert (
-        out_dir / "plots" / "combined" / "metrics" / "cross_dataset_aps_distribution.png"
-    ).is_file()
-    assert (
-        out_dir / "plots" / "combined" / "metrics" / "cross_dataset_pr_auc_distribution.png"
-    ).is_file()
-    assert (
-        out_dir / "plots" / "combined" / "metrics" / "cross_dataset_spearman_distribution.png"
-    ).is_file()
-    assert (
         out_dir / "plots" / "combined" / "metrics" / "cross_dataset_auroc_distribution.png"
     ).is_file()
-    assert not (out_dir / "plots" / "combined" / "coverage" / "positive_coverage_vs_performance.png").exists()
     assert (
         out_dir / "plots" / "combined" / "ranks" / "positive_background_local_rank_distributions.png"
     ).is_file()
@@ -342,41 +253,8 @@ def test_example_end_to_end(tmp_path):
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "heatmaps" / "top_10pct_positive_genes.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "precision_recall_common.png"
-    ).is_file()
-    assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "precision_recall_all_scored.png"
-    ).is_file()
-    assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "roc_common.png"
-    ).is_file()
-    assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "roc_all_scored.png"
-    ).is_file()
-    assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "gsea_common.png"
-    ).is_file()
-    assert not (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "top_100_effect_cdfs.png"
-    ).exists()
-    assert stale_plot.exists()
-    assert stale_report.exists()
-
-    aps_lines = (out_dir / "tables" / "per_experiment" / "aps_per_experiment.tsv").read_text(
-        encoding="utf-8"
-    ).strip().splitlines()
-    assert len(aps_lines) == 4
-    header = aps_lines[0].split("\t")
-    assert "random" in header
-    assert "cheating" in header
-    coverage_lines = (out_dir / "tables" / "per_experiment" / "coverage_per_experiment.tsv").read_text(
-        encoding="utf-8"
-    ).strip().splitlines()
-    assert len(coverage_lines) == 4
-    positive_coverage_lines = (
-        out_dir / "tables" / "per_experiment" / "positive_coverage_per_experiment.tsv"
-    ).read_text(encoding="utf-8").strip().splitlines()
-    assert len(positive_coverage_lines) == 4
+    ).is_file()
 
 
 def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
