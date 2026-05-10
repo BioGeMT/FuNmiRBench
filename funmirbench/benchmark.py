@@ -35,6 +35,7 @@ from funmirbench.evaluate import (
 from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
 from funmirbench.logger import parse_log_level, setup_logging
+from funmirbench.publication_combinations import write_predictor_combination_outputs
 from funmirbench.publication_dataset_reports import write_publication_predictor_reports
 from funmirbench.publication_plots import write_publication_common_comparison_plots
 from funmirbench.publication_reports import write_publication_run_pdf_report
@@ -95,6 +96,17 @@ def _finalize_run_bundle(
         tool_labels=tool_labels,
         logger=logger.info,
     )
+    combination_outputs = write_predictor_combination_outputs(
+        joined_frames,
+        layout["combined_tables_dir"],
+        layout["combined_plots_dir"],
+        tool_ids=tool_ids,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        logger=logger.info,
+    )
+    combined_outputs.setdefault("tables", {}).update(combination_outputs.get("tables", {}))
+    combined_outputs.setdefault("plots", {}).update(combination_outputs.get("plots", {}))
     readme_path = write_run_readme(
         out_dir,
         config_path=config_path,
