@@ -27,6 +27,7 @@ from funmirbench.benchmark_reports import (
     write_run_readme,
 )
 from funmirbench.evaluate import (
+    REPORT_PAGE_SIZE,
     evaluate_joined_dataframe,
     write_cross_dataset_summaries,
     write_metric_tables,
@@ -158,7 +159,7 @@ def run_benchmark(config_path):
     fdr_threshold = float(eval_cfg.get("fdr_threshold", 0.05))
     abs_logfc_threshold = float(eval_cfg.get("abs_logfc_threshold", 1.0))
     predictor_top_fraction = float(eval_cfg.get("predictor_top_fraction", 0.10))
-    write_top_prediction_cdfs = bool(eval_cfg.get("write_top_prediction_cdfs", False))
+    write_top_prediction_cdfs = bool(eval_cfg.get("write_top_prediction_cdfs", True))
 
     logger.info("Syncing selected experiment DE tables from Zenodo...")
     synced = sync_zenodo_experiments(
