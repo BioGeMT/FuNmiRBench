@@ -336,7 +336,7 @@ def test_cross_predictor_plots_use_common_scored_rows(tmp_path, monkeypatch):
     monkeypatch.setattr(evaluate_module, "_plot_single_predictor_roc_curve", lambda *args, **kwargs: None)
     monkeypatch.setattr(evaluate_module, "_plot_algorithms_vs_genes_heatmap", lambda *args, **kwargs: None)
     monkeypatch.setattr(evaluate_module, "_plot_top_positive_heatmap", lambda *args, **kwargs: False)
-    monkeypatch.setattr(evaluate_module, "_plot_predictor_correlation_heatmap", lambda *args, **kwargs: pd.DataFrame())
+    monkeypatch.setattr(evaluate_module, "_build_predictor_correlation_matrix", lambda *args, **kwargs: pd.DataFrame())
     monkeypatch.setattr(evaluate_module, "_write_tool_report", lambda *args, **kwargs: None)
 
     def capture_pr(comparisons, *, dataset_id, out_path):
@@ -445,14 +445,14 @@ def test_per_dataset_visuals_use_local_ranks_not_global_ranks(tmp_path, monkeypa
         captured["top_cols"] = rank_cols
         return False
 
-    def capture_corr(joined_frame, *, rank_cols, tool_ids, dataset_id, out_path, top_fraction):
+    def capture_corr(joined_frame, *, rank_cols, tool_ids, top_fraction):
         captured["corr"] = joined_frame[rank_cols].copy()
         captured["corr_cols"] = rank_cols
         return pd.DataFrame(index=tool_ids, columns=tool_ids, dtype=float)
 
     monkeypatch.setattr(evaluate_module, "_plot_algorithms_vs_genes_heatmap", capture_alg)
     monkeypatch.setattr(evaluate_module, "_plot_top_positive_heatmap", capture_top)
-    monkeypatch.setattr(evaluate_module, "_plot_predictor_correlation_heatmap", capture_corr)
+    monkeypatch.setattr(evaluate_module, "_build_predictor_correlation_matrix", capture_corr)
 
     evaluate_joined_dataframe(
         joined,
