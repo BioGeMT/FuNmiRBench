@@ -23,7 +23,6 @@ from funmirbench.benchmark_config import (
 )
 from funmirbench.benchmark_reports import (
     _init_run_layout,
-    write_run_pdf_report,
     write_run_readme,
 )
 from funmirbench.evaluate import (
@@ -36,6 +35,7 @@ from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
 from funmirbench.logger import parse_log_level, setup_logging
 from funmirbench.publication_plots import write_publication_common_comparison_plots
+from funmirbench.publication_reports import write_publication_run_pdf_report
 
 
 logger = logging.getLogger(__name__)
@@ -104,7 +104,7 @@ def _finalize_run_bundle(
         abs_logfc_threshold=abs_logfc_threshold,
         predictor_top_fraction=predictor_top_fraction,
     )
-    report_path = write_run_pdf_report(
+    report_path = write_publication_run_pdf_report(
         out_dir,
         config_path=config_path,
         dataset_outputs=dataset_outputs,
