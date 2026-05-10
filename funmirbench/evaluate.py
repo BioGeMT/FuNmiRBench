@@ -1308,8 +1308,8 @@ def _plot_top_positive_heatmap(
     return True
 
 
-def _plot_predictor_correlation_heatmap(
-    joined, *, rank_cols, tool_ids, dataset_id, out_path, top_fraction,
+def _build_predictor_correlation_matrix(
+    joined, *, rank_cols, tool_ids, top_fraction,
 ):
     ranked = {
         tid: joined[rank_col].astype(float)
@@ -1336,36 +1336,6 @@ def _plot_predictor_correlation_heatmap(
                 )
             matrix.loc[a, b] = corr
 
-    fig, ax = plt.subplots(
-        figsize=(max(5.2, len(tool_ids) * 1.6), max(4.6, len(tool_ids) * 1.25))
-    )
-    image = ax.imshow(matrix.astype(float).to_numpy(), cmap="coolwarm", vmin=-1, vmax=1)
-    ax.set_xticks(range(len(tool_ids)))
-    ax.set_xticklabels([_tool_label(tool_id) for tool_id in tool_ids], rotation=45, ha="right")
-    ax.set_yticks(range(len(tool_ids)))
-    ax.set_yticklabels([_tool_label(tool_id) for tool_id in tool_ids])
-    ax.set_title(
-        f"Predictor agreement (shared local top {int(top_fraction * 100)}%)",
-        fontsize=11,
-        fontweight="semibold",
-        loc="left",
-        pad=14,
-    )
-    fig.text(0.125, 0.955, _dataset_caption(dataset_id), fontsize=9, color=NEUTRAL_COLOR)
-    ax.set_facecolor("white")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_visible(False)
-    ax.spines["bottom"].set_visible(False)
-    ax.tick_params(length=0, labelsize=9)
-    for i, a in enumerate(tool_ids):
-        for j, b in enumerate(tool_ids):
-            value = matrix.loc[a, b]
-            label = "nan" if pd.isna(value) else f"{value:.2f}"
-            color = "white" if not pd.isna(value) and abs(value) >= 0.55 else "#22303C"
-            ax.text(j, i, label, ha="center", va="center", color=color, fontsize=9)
-    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="Spearman")
-    _save_figure(fig, out_path)
     return matrix
 
 
@@ -2024,19 +1994,16 @@ def evaluate_joined_dataframe(
             f"    Dataset: {dataset_id} | wrote PR/ROC/GSEA comparison plots",
         )
 
-        corr_png = comparison_plots_dir / "predictor_correlation_heatmap.png"
         corr_tsv = reports_dir / f"{dataset_id}__predictor_correlation.tsv"
-        corr_matrix = _plot_predictor_correlation_heatmap(
+        corr_matrix = _build_predictor_correlation_matrix(
             joined,
             rank_cols=evaluated_local_rank_cols,
             tool_ids=evaluated_tool_ids,
-            dataset_id=dataset_id, out_path=corr_png,
             top_fraction=predictor_top_fraction,
         )
         corr_matrix.to_csv(corr_tsv, sep="\t")
-        dataset_plots["predictor_correlation_heatmap"] = str(corr_png)
         predictor_correlation_tsv = str(corr_tsv)
-        _emit_log(logger, f"    Dataset: {dataset_id} | wrote predictor correlation outputs")
+        _emit_log(logger, f"    Dataset: {dataset_id} | wrote predictor correlation table")
 
     _emit_log(logger, f"    Evaluation complete: {dataset_id}")
 
