@@ -34,6 +34,7 @@ from funmirbench.evaluate import (
 from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
 from funmirbench.logger import parse_log_level, setup_logging
+from funmirbench.publication_dataset_reports import write_publication_predictor_reports
 from funmirbench.publication_plots import write_publication_common_comparison_plots
 from funmirbench.publication_reports import write_publication_run_pdf_report
 
@@ -262,6 +263,21 @@ def run_benchmark(config_path):
             perturbation=meta.perturbation,
             min_common_coverage=publication_min_common_coverage,
             logger=logger.info,
+        )
+        write_publication_predictor_reports(
+            reports_dir=dataset_dir / "reports",
+            plots_dir=dataset_dir / "plots",
+            dataset_id=meta.id,
+            mirna=meta.miRNA,
+            cell_line=meta.cell_line,
+            perturbation=meta.perturbation,
+            geo_accession=meta.geo_accession,
+            de_table_path=str(meta.full_path),
+            predictor_output_paths=predictor_output_paths,
+            metric_rows=evaluation["metric_rows"],
+            tool_labels=tool_labels,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
         )
         joined_frames.append(joined.copy())
         metric_rows.extend(evaluation["metric_rows"])
