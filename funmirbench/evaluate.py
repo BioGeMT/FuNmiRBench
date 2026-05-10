@@ -1751,18 +1751,39 @@ def evaluate_joined_dataframe(
     predictor_correlation_tsv = None
     comparisons = []
     coverage_by_tool = {}
+    evaluated_score_cols = []
+    evaluated_tool_ids = []
+    evaluated_local_rank_cols = []
 
     _emit_log(logger, f"    Evaluation start: {dataset_id} | tools={tool_ids}")
 
-    for score_col, tool_id in zip(score_cols, tool_ids):
+    for score_col, tool_id, local_rank_col in zip(score_cols, tool_ids, local_rank_cols):
         _emit_log(logger, f"    Tool: {tool_id} | preparing scored pairs")
         tool_plots_dir = predictor_plots_dir / tool_id
         tool_plots_dir.mkdir(parents=True, exist_ok=True)
-        scored, coverage_info = _prepare_scored_frame(
-            joined, score_col=score_col,
-            fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
-            perturbation=perturbation,
-        )
+        try:
+            scored, coverage_info = _prepare_scored_frame(
+                joined, score_col=score_col,
+                fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
+                perturbation=perturbation,
+            )
+        except ValueError as exc:
+            message = str(exc)
+            valid_rows = joined["logFC"].notna() & joined["FDR"].notna()
+            if "FDR" in joined.columns:
+                valid_rows = valid_rows & (joined["FDR"].astype(float) > 0)
+            scored_rows = int(joined.loc[valid_rows, score_col].notna().sum())
+            total_valid_rows = int(valid_rows.sum())
+            sparse_scoring = scored_rows < total_valid_rows
+            skip_sparse_reason = (
+                message.startswith("No scored rows remain")
+                or message.startswith("No positives remain")
+                or message.startswith("No negatives remain")
+            )
+            if not (skip_sparse_reason and sparse_scoring):
+                raise
+            _emit_log(logger, f"    Tool: {tool_id} | skipped: {exc}")
+            continue
         scatter_png = tool_plots_dir / "score_vs_expected_effect.png"
         gsea_png = tool_plots_dir / "gsea_enrichment.png"
         pr_curve_png = tool_plots_dir / "precision_recall_curve.png"
@@ -1867,14 +1888,23 @@ def evaluate_joined_dataframe(
             "coverage": coverage_info["coverage"],
         })
         coverage_by_tool[tool_id] = coverage_info["coverage"]
+        evaluated_score_cols.append(score_col)
+        evaluated_tool_ids.append(tool_id)
+        evaluated_local_rank_cols.append(local_rank_col)
         dataset_plots[f"{tool_id}_scatter"] = str(scatter_png)
         dataset_plots[f"{tool_id}_gsea_enrichment"] = str(gsea_png)
         dataset_plots[f"{tool_id}_pr_curve"] = str(pr_curve_png)
         dataset_plots[f"{tool_id}_roc_curve"] = str(roc_curve_png)
 
+    if not evaluated_score_cols:
+        raise ValueError(f"No predictors had scored rows for {dataset_id}.")
+
     heatmap_png = heatmap_plots_dir / "algorithms_vs_genes.png"
     _plot_algorithms_vs_genes_heatmap(
-        joined, score_cols=score_cols, rank_cols=local_rank_cols, tool_ids=tool_ids,
+        joined,
+        score_cols=evaluated_score_cols,
+        rank_cols=evaluated_local_rank_cols,
+        tool_ids=evaluated_tool_ids,
         dataset_id=dataset_id, out_path=heatmap_png,
         fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
         perturbation=perturbation,
@@ -1885,8 +1915,8 @@ def evaluate_joined_dataframe(
     top_positive_heatmap_png = heatmap_plots_dir / "top_10pct_positive_genes.png"
     wrote_top_positive_heatmap = _plot_top_positive_heatmap(
         joined,
-        rank_cols=local_rank_cols,
-        tool_ids=tool_ids,
+        rank_cols=evaluated_local_rank_cols,
+        tool_ids=evaluated_tool_ids,
         dataset_id=dataset_id,
         out_path=top_positive_heatmap_png,
         fdr_threshold=fdr_threshold,
@@ -1898,68 +1928,76 @@ def evaluate_joined_dataframe(
         dataset_plots["top_10pct_positive_heatmap"] = str(top_positive_heatmap_png)
         _emit_log(logger, f"    Dataset: {dataset_id} | wrote top-positive heatmap")
 
-    if len(score_cols) >= 2:
+    if len(evaluated_score_cols) >= 2:
         comparison_pr_png = comparison_plots_dir / "precision_recall_common.png"
         comparison_pr_all_png = comparison_plots_dir / "precision_recall_all_scored.png"
         comparison_roc_png = comparison_plots_dir / "roc_common.png"
         comparison_roc_all_png = comparison_plots_dir / "roc_all_scored.png"
         comparison_gsea_png = comparison_plots_dir / "gsea_common.png"
         comparison_cdf_png = comparison_plots_dir / "top_100_effect_cdfs.png"
-        common_pr = _prepare_common_scored_frame(
-            joined,
-            score_cols=score_cols,
-            fdr_threshold=fdr_threshold,
-            abs_logfc_threshold=abs_logfc_threshold,
-            perturbation=perturbation,
-        )
-        common_comparisons = [
-            {
-                "tool_id": tool_id,
-                "gene_id": common_pr["gene_id"],
-                "y_true": common_pr["is_positive"],
-                "y_score": common_pr[score_col],
-                "coverage": coverage_by_tool.get(tool_id, float("nan")),
-            }
-            for score_col, tool_id in zip(score_cols, tool_ids)
-        ]
-        _plot_predictor_pr_curves(
-            common_comparisons,
-            dataset_id=dataset_id,
-            out_path=comparison_pr_png,
-        )
+        try:
+            common_pr = _prepare_common_scored_frame(
+                joined,
+                score_cols=evaluated_score_cols,
+                fdr_threshold=fdr_threshold,
+                abs_logfc_threshold=abs_logfc_threshold,
+                perturbation=perturbation,
+            )
+        except ValueError as exc:
+            common_comparisons = []
+            _emit_log(logger, f"    Dataset: {dataset_id} | skipped common comparison plots: {exc}")
+        else:
+            common_comparisons = [
+                {
+                    "tool_id": tool_id,
+                    "gene_id": common_pr["gene_id"],
+                    "y_true": common_pr["is_positive"],
+                    "y_score": common_pr[score_col],
+                    "coverage": coverage_by_tool.get(tool_id, float("nan")),
+                }
+                for score_col, tool_id in zip(evaluated_score_cols, evaluated_tool_ids)
+            ]
+            _plot_predictor_pr_curves(
+                common_comparisons,
+                dataset_id=dataset_id,
+                out_path=comparison_pr_png,
+            )
         _plot_predictor_pr_curves_own_scored(
             comparisons,
             dataset_id=dataset_id,
             out_path=comparison_pr_all_png,
         )
-        _plot_predictor_roc_curves(
-            common_comparisons,
-            dataset_id=dataset_id,
-            out_path=comparison_roc_png,
-        )
+        if common_comparisons:
+            _plot_predictor_roc_curves(
+                common_comparisons,
+                dataset_id=dataset_id,
+                out_path=comparison_roc_png,
+            )
         _plot_predictor_roc_curves_own_scored(
             comparisons,
             dataset_id=dataset_id,
             out_path=comparison_roc_all_png,
         )
-        _plot_predictor_gsea_curves(
-            common_comparisons,
-            dataset_id=dataset_id,
-            out_path=comparison_gsea_png,
-        )
+        if common_comparisons:
+            _plot_predictor_gsea_curves(
+                common_comparisons,
+                dataset_id=dataset_id,
+                out_path=comparison_gsea_png,
+            )
         _plot_top_prediction_effect_cdfs(
             joined,
-            score_cols=score_cols,
-            tool_ids=tool_ids,
+            score_cols=evaluated_score_cols,
+            tool_ids=evaluated_tool_ids,
             dataset_id=dataset_id,
             out_path=comparison_cdf_png,
             perturbation=perturbation,
         )
-        dataset_plots["predictor_pr_curves"] = str(comparison_pr_png)
+        if common_comparisons:
+            dataset_plots["predictor_pr_curves"] = str(comparison_pr_png)
+            dataset_plots["predictor_roc_curves"] = str(comparison_roc_png)
+            dataset_plots["predictor_gsea_curves"] = str(comparison_gsea_png)
         dataset_plots["predictor_pr_curves_all_scored"] = str(comparison_pr_all_png)
-        dataset_plots["predictor_roc_curves"] = str(comparison_roc_png)
         dataset_plots["predictor_roc_curves_all_scored"] = str(comparison_roc_all_png)
-        dataset_plots["predictor_gsea_curves"] = str(comparison_gsea_png)
         dataset_plots["predictor_top100_effect_cdfs"] = str(comparison_cdf_png)
         _emit_log(
             logger,
@@ -1969,7 +2007,9 @@ def evaluate_joined_dataframe(
         corr_png = comparison_plots_dir / "predictor_correlation_heatmap.png"
         corr_tsv = reports_dir / f"{dataset_id}__predictor_correlation.tsv"
         corr_matrix = _plot_predictor_correlation_heatmap(
-            joined, rank_cols=local_rank_cols, tool_ids=tool_ids,
+            joined,
+            rank_cols=evaluated_local_rank_cols,
+            tool_ids=evaluated_tool_ids,
             dataset_id=dataset_id, out_path=corr_png,
             top_fraction=predictor_top_fraction,
         )
