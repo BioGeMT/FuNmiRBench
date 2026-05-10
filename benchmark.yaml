@@ -11,7 +11,7 @@ predictions_tsv: metadata/predictions_info.tsv
 # The default repo config ships with a small 3-dataset demo selection.
 # Edit or comment these active rows to benchmark other subsets.
 experiments:
-  id: [GSE109725_OE_miR_204_5p, GSE118315_KO_miR_124_3p, GSE210778_OE_miR_375_3p]
+  id: [GSE109725_OE_miR_204_5p, GSE118315_KO_miR_124_3p, GSE210778_OE_miR_375_3p, GSE124530_OE_miR_16_5p]
   # mirna_name: [hsa-miR-375-3p]
   # mirna_sequence: [UUUGUUCGUUCGGCUCGCGUGA]
   # article_pubmed_id: [https://pubmed.ncbi.nlm.nih.gov/36074222]
@@ -25,9 +25,9 @@ experiments:
 
 # Filter predictors by ANY column in the predictions TSV.
 # The default repo config compares two random baselines, the cheating and perfect
-# demo predictors, and TargetScan.
+# demo predictors, TargetScan, miRDB, and TEC-miTarget.
 predictors:
-  tool_id: [random, random_3000, cheating, perfect, targetscan]
+  tool_id: [random, random_3000, cheating, perfect, targetscan, mirdb_mirtarget, tec-mitarget]
   # official_name: [Random, Random (3000 per dataset), Cheating, Perfect]
   # organism: [Homo sapiens]
   # score_type: [probability]

@@ -4,3 +4,5 @@ random_3000	Random (3000 per dataset)	Homo sapiens	probability	higher_is_stronge
 cheating	Cheating	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/cheating/cheating_standardized.tsv
 perfect	Perfect	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/perfect/perfect_standardized.tsv
 targetscan	TargetScan v8	Homo sapiens	raw_score	lower_is_stronger	context++ raw	ensembl_v115	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/targetscan/targetscan_standardized.tsv
+mirdb_mirtarget	miRDB	Homo sapiens	raw_score	higher_is_stronger	miRDB score	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv
+tec-mitarget	TEC-miTarget	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/tec-mitarget/tec_mitarget_standardized.tsv
