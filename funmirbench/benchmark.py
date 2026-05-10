@@ -26,6 +26,11 @@ from funmirbench.benchmark_reports import (
     _init_run_layout,
     write_run_readme,
 )
+from funmirbench.common_predictions import (
+    cleanup_correlation_artifacts,
+    write_combined_common_prediction_summary,
+    write_common_prediction_summary,
+)
 from funmirbench.evaluate import (
     REPORT_PAGE_SIZE,
     evaluate_joined_dataframe,
@@ -75,6 +80,7 @@ def _finalize_run_bundle(
     tool_ids,
     metric_rows,
     joined_frames,
+    common_prediction_summaries,
     tool_labels,
     fdr_threshold,
     abs_logfc_threshold,
@@ -96,6 +102,11 @@ def _finalize_run_bundle(
         tool_labels=tool_labels,
         logger=logger.info,
     )
+    common_summary_path = write_combined_common_prediction_summary(
+        common_prediction_summaries,
+        layout["combined_tables_dir"],
+    )
+    combined_outputs.setdefault("tables", {})["common_prediction_summary"] = str(common_summary_path)
     combination_outputs = write_predictor_combination_outputs(
         joined_frames,
         layout["combined_tables_dir"],
@@ -219,6 +230,7 @@ def run_benchmark(config_path):
     metric_rows = []
     dataset_outputs = []
     joined_frames = []
+    common_prediction_summaries = []
     fdr_threshold = float(eval_cfg.get("fdr_threshold", 0.05))
     abs_logfc_threshold = float(eval_cfg.get("abs_logfc_threshold", 1.0))
     predictor_top_fraction = float(eval_cfg.get("predictor_top_fraction", 0.10))
@@ -279,6 +291,17 @@ def run_benchmark(config_path):
             min_common_coverage=publication_min_common_coverage,
             logger=logger.info,
         )
+        common_summary_path, common_prediction_summary = write_common_prediction_summary(
+            joined,
+            dataset_dir / "reports",
+            dataset_id=meta.id,
+            tool_ids=tool_ids,
+            publication_min_common_coverage=publication_min_common_coverage,
+        )
+        common_prediction_summaries.append(common_prediction_summary)
+        removed = cleanup_correlation_artifacts(dataset_dir)
+        if removed:
+            logger.info(f"  Removed correlation artifacts for {meta.id}: {len(removed)} file(s)")
         write_publication_predictor_reports(
             reports_dir=dataset_dir / "reports",
             plots_dir=dataset_dir / "plots",
@@ -293,6 +316,7 @@ def run_benchmark(config_path):
             tool_labels=tool_labels,
             fdr_threshold=fdr_threshold,
             abs_logfc_threshold=abs_logfc_threshold,
+            common_prediction_summary=common_prediction_summary,
         )
         joined_frames.append(joined.copy())
         metric_rows.extend(evaluation["metric_rows"])
@@ -308,7 +332,7 @@ def run_benchmark(config_path):
                 "dataset_dir": str(dataset_dir),
                 "predictor_output_paths": predictor_output_paths,
                 "plots": evaluation["plots"],
-                "predictor_correlation_tsv": evaluation["predictor_correlation_tsv"],
+                "common_prediction_summary_tsv": str(common_summary_path),
             }
         )
         logger.info(f"  Finished {meta.id}")
@@ -324,6 +348,7 @@ def run_benchmark(config_path):
         tool_ids=tool_ids,
         metric_rows=metric_rows,
         joined_frames=joined_frames,
+        common_prediction_summaries=common_prediction_summaries,
         tool_labels=tool_labels,
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
