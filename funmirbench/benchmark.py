@@ -35,6 +35,7 @@ from funmirbench.evaluate import (
 from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
 from funmirbench.logger import parse_log_level, setup_logging
+from funmirbench.publication_plots import write_publication_common_comparison_plots
 
 
 logger = logging.getLogger(__name__)
@@ -206,6 +207,7 @@ def run_benchmark(config_path):
     abs_logfc_threshold = float(eval_cfg.get("abs_logfc_threshold", 1.0))
     predictor_top_fraction = float(eval_cfg.get("predictor_top_fraction", 0.10))
     write_top_prediction_cdfs = bool(eval_cfg.get("write_top_prediction_cdfs", True))
+    publication_min_common_coverage = float(eval_cfg.get("publication_min_common_coverage", 0.10))
     validate_threshold_sensitive_predictors(
         predictions,
         root=root,
@@ -247,6 +249,18 @@ def run_benchmark(config_path):
             predictor_output_paths=predictor_output_paths,
             tool_labels=tool_labels,
             write_top_prediction_cdfs=write_top_prediction_cdfs,
+            logger=logger.info,
+        )
+        write_publication_common_comparison_plots(
+            joined,
+            evaluation=evaluation,
+            dataset_metric_rows=evaluation["metric_rows"],
+            plots_dir=dataset_dir / "plots",
+            dataset_id=meta.id,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
+            perturbation=meta.perturbation,
+            min_common_coverage=publication_min_common_coverage,
             logger=logger.info,
         )
         joined_frames.append(joined.copy())
