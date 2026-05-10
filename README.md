@@ -297,9 +297,10 @@ normal workflow is just to edit or uncomment filters.
 
 ## Outputs
 
-After a benchmark run, `results/` contains one new run folder, for example:
+After a benchmark run, `results/` contains one new run folder whose name summarizes the selected
+datasets, miRNAs, predictors, perturbation mix, cell-line count, and evaluation thresholds. For example:
 
-- `results/tag-demo__exp3__pred2__oe1__ko1__kd0__cell3/`
+- `results/tag-demo__datasets-gse109725-oe-mir-204-5p-gse118315-ko-mir-124-3p-plus1__mirnas-hsa-mir-204-5p-hsa-mir-124-3p-plus1__tools-random-cheating__pert-ko-oe__cell3__fdr0p05-effect1-top10pct/`
 
 Inside each run folder you get:
 
