@@ -156,19 +156,3 @@ def write_combined_common_prediction_summary(dataset_summaries, out_tables_dir):
     else:
         pd.DataFrame().to_csv(path, sep="\t", index=False)
     return path
-
-
-def cleanup_correlation_artifacts(dataset_dir):
-    """Remove correlation outputs from generated publication bundles."""
-    dataset_dir = pathlib.Path(dataset_dir)
-    removed = []
-    for rel in [
-        "plots/comparisons/predictor_correlation_heatmap.png",
-        "reports/{dataset_id}__predictor_correlation.tsv",
-    ]:
-        rel_path = rel.format(dataset_id=dataset_dir.name)
-        path = dataset_dir / rel_path
-        if path.exists():
-            path.unlink()
-            removed.append(path)
-    return removed
