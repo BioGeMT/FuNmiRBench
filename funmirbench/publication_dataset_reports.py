@@ -79,6 +79,28 @@ def _block(ax, title, lines, *, x, y, width, body_size=9.2):
     return current_y
 
 
+def _common_prediction_lines(common_prediction_summary):
+    if common_prediction_summary is None or common_prediction_summary.empty:
+        return ["Common-prediction summary unavailable for this dataset."]
+    rows = []
+    order = [
+        "publication_common_set",
+        "all_real_predictors_common_set",
+        "pairwise_common_set",
+    ]
+    for summary_type in order:
+        subset = common_prediction_summary[common_prediction_summary["summary_type"] == summary_type]
+        if subset.empty:
+            continue
+        for row in subset.head(4).itertuples(index=False):
+            tools = str(row.tools).replace(",", " + ")
+            rows.append(
+                f"{tools}: {int(row.rows_common):,}/{int(row.rows_total):,} genes "
+                f"({_metric_value(row.percent_common, percent=True)})"
+            )
+    return rows or ["No common real-predictor scored set was available."]
+
+
 def _plot_grid_page(pdf, *, title, subtitle, plot_paths):
     fig, ax = _new_page()
     _header(ax, title, subtitle)
@@ -115,10 +137,12 @@ def write_publication_predictor_reports(
     tool_labels,
     fdr_threshold,
     abs_logfc_threshold,
+    common_prediction_summary=None,
 ):
     reports_dir = pathlib.Path(reports_dir)
     plots_dir = pathlib.Path(plots_dir)
     written = []
+    common_lines = _common_prediction_lines(common_prediction_summary)
     for row in metric_rows:
         tool_id = str(row.get("tool_id"))
         label = str(tool_labels.get(tool_id, tool_id))
@@ -186,16 +210,25 @@ def write_publication_predictor_reports(
             )
             _block(
                 ax,
+                "Common predictions",
+                common_lines,
+                x=0.54,
+                y=0.34,
+                width=0.38,
+                body_size=8.5,
+            )
+            _block(
+                ax,
                 "Provenance",
                 [
                     f"GEO accession: {geo_accession or 'NA'}",
                     f"DE table: {_safe_relpath(de_table_path)}",
                     f"Predictor source: {_safe_relpath(predictor_output_paths.get(tool_id))}",
                 ],
-                x=0.54,
-                y=0.34,
-                width=0.38,
-                body_size=8.6,
+                x=0.06,
+                y=0.13,
+                width=0.86,
+                body_size=8.1,
             )
             _save_page(pdf, fig)
             _plot_grid_page(
