@@ -295,7 +295,7 @@ def run_benchmark(config_path):
             dataset_dir / "reports",
             dataset_id=meta.id,
             tool_ids=tool_ids,
-            publication_min_common_coverage=report_min_common_coverage,
+            report_min_common_coverage=report_min_common_coverage,
         )
         common_prediction_summaries.append(common_prediction_summary)
         write_predictor_reports(
