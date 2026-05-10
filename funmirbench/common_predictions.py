@@ -1,4 +1,4 @@
-"""Common-prediction coverage summaries for publication reports."""
+"""Common-prediction coverage summaries for benchmark reports."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def build_common_prediction_summary(
     *,
     dataset_id,
     tool_ids,
-    publication_min_common_coverage=0.10,
+    report_min_common_coverage=0.10,
     excluded_tool_ids=None,
 ):
     """Return dataset-level common prediction percentages.
@@ -67,8 +67,8 @@ def build_common_prediction_summary(
                 "rows_total": total_rows,
                 "rows_common": scored,
                 "percent_common": float(scored / total_rows) if total_rows else float("nan"),
-                "included_in_publication_common_plots": bool(
-                    total_rows and scored / total_rows >= float(publication_min_common_coverage)
+                "included_in_report_common_plots": bool(
+                    total_rows and scored / total_rows >= float(report_min_common_coverage)
                 ),
             }
         )
@@ -76,20 +76,20 @@ def build_common_prediction_summary(
     eligible_tools = [
         row["tools"]
         for row in rows
-        if row["summary_type"] == "single_predictor" and row["included_in_publication_common_plots"]
+        if row["summary_type"] == "single_predictor" and row["included_in_report_common_plots"]
     ]
     if eligible_tools:
         common = _count_common(joined, eligible_tools)
         rows.append(
             {
                 "dataset_id": dataset_id,
-                "summary_type": "publication_common_set",
+                "summary_type": "report_common_set",
                 "tools": ",".join(eligible_tools),
                 "tool_count": len(eligible_tools),
                 "rows_total": total_rows,
                 "rows_common": common,
                 "percent_common": float(common / total_rows) if total_rows else float("nan"),
-                "included_in_publication_common_plots": True,
+                "included_in_report_common_plots": True,
             }
         )
 
@@ -104,7 +104,7 @@ def build_common_prediction_summary(
                 "rows_total": total_rows,
                 "rows_common": common_all,
                 "percent_common": float(common_all / total_rows) if total_rows else float("nan"),
-                "included_in_publication_common_plots": False,
+                "included_in_report_common_plots": False,
             }
         )
 
@@ -119,7 +119,7 @@ def build_common_prediction_summary(
                 "rows_total": total_rows,
                 "rows_common": common,
                 "percent_common": float(common / total_rows) if total_rows else float("nan"),
-                "included_in_publication_common_plots": False,
+                "included_in_report_common_plots": False,
             }
         )
 
@@ -132,7 +132,7 @@ def write_common_prediction_summary(
     *,
     dataset_id,
     tool_ids,
-    publication_min_common_coverage=0.10,
+    report_min_common_coverage=0.10,
 ):
     reports_dir = pathlib.Path(reports_dir)
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -140,7 +140,7 @@ def write_common_prediction_summary(
         joined,
         dataset_id=dataset_id,
         tool_ids=tool_ids,
-        publication_min_common_coverage=publication_min_common_coverage,
+        report_min_common_coverage=report_min_common_coverage,
     )
     path = reports_dir / f"{dataset_id}__common_prediction_summary.tsv"
     summary.to_csv(path, sep="\t", index=False)
