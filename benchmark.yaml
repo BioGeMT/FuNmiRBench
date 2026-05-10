@@ -44,5 +44,7 @@ evaluation:
   abs_logfc_threshold: 1.0
   predictor_top_fraction: 0.10
   write_top_prediction_cdfs: true
+  report_min_common_coverage: 0.10
+  figure_dpi: 450
 
 out_dir: results/
