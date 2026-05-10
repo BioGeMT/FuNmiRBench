@@ -297,10 +297,11 @@ normal workflow is just to edit or uncomment filters.
 
 ## Outputs
 
-After a benchmark run, `results/` contains one new run folder whose name summarizes the selected
-datasets, miRNAs, predictors, perturbation mix, cell-line count, and evaluation thresholds. For example:
+After a benchmark run, `results/` contains one new run folder whose name starts with the run date
+and summarizes the selected datasets, miRNAs, predictors, perturbation mix, cell-line count, and
+evaluation thresholds. For example:
 
-- `results/tag-demo__datasets-gse109725-oe-mir-204-5p-gse118315-ko-mir-124-3p-plus1__mirnas-hsa-mir-204-5p-hsa-mir-124-3p-plus1__tools-random-cheating__pert-ko-oe__cell3__fdr0p05-effect1-top10pct/`
+- `results/20260510__tag-demo__datasets-gse109725-oe-mir-204-5p-plus2__mirnas-hsa-mir-204-5p-plus2__tools-random-cheating__pert-ko-oe__cell3__fdr0p05-effect1-top10pct/`
 
 Inside each run folder you get:
 
@@ -313,7 +314,7 @@ Inside each run folder you get:
 - `datasets/<dataset_id>/reports/`: per-dataset Markdown/PDF reports and correlation TSVs
 - `tables/per_experiment/`: per-experiment metric tables
 - `tables/combined/`: cross-dataset predictor summary table
-- `plots/combined/metrics/`, `plots/combined/coverage/`, `plots/combined/ranks/`: cross-dataset comparison plots grouped by theme
+- `plots/combined/metrics/`, `plots/combined/ranks/`: cross-dataset comparison plots grouped by theme
 - `summary.json`: run summary
 
 When 2 or more predictors are selected, each dataset gets:

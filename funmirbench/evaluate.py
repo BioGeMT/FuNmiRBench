@@ -998,7 +998,7 @@ def _plot_top_prediction_effect_cdfs(
     if work.empty:
         raise ValueError("No usable rows remain for top-prediction effect CDF plot.")
 
-    fig, ax = plt.subplots(figsize=(6.8, 5.2))
+    fig, ax = plt.subplots(figsize=(7.4, 5.4))
     _style_axes(ax, grid_axis="both")
 
     background_x, background_y = _ecdf(work["expected_effect"])
@@ -1013,6 +1013,7 @@ def _plot_top_prediction_effect_cdfs(
         label=f"All genes (n={len(work):,})",
     )
 
+    medians = []
     for score_col, tool_id in zip(score_cols, tool_ids):
         scored = work[work[score_col].notna()].copy()
         if scored.empty:
@@ -1025,6 +1026,8 @@ def _plot_top_prediction_effect_cdfs(
         scored = scored.sort_values(sort_cols, ascending=ascending, kind="mergesort")
         top_count = min(int(top_n), len(scored))
         top_values = scored["expected_effect"].head(top_count).to_numpy(dtype=float)
+        median_effect = float(np.nanmedian(top_values))
+        medians.append(median_effect)
         x_values, y_values = _ecdf(top_values)
         ax.step(
             x_values,
@@ -1032,15 +1035,29 @@ def _plot_top_prediction_effect_cdfs(
             where="post",
             color=_tool_color(tool_id),
             linewidth=2.2,
-            label=f"{_tool_label(tool_id)} top {top_count}",
+            label=f"{_tool_label(tool_id)} top {top_count} | med {median_effect:.2f}",
         )
 
     ax.axvline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle=":", alpha=0.8)
+    if medians:
+        ax.axvline(
+            float(np.nanmedian(work["expected_effect"])),
+            color="#7A8798",
+            linewidth=1.0,
+            linestyle="--",
+            alpha=0.7,
+            label="all-gene median",
+        )
+        limit = _nice_symmetric_limit(
+            np.concatenate([work["expected_effect"].to_numpy(dtype=float), np.asarray(medians)]),
+            floor=1.0,
+        )
+        ax.set_xlim(-limit, limit)
     ax.set_xlabel("Perturbation-aware effect", fontsize=10)
     ax.set_ylabel("Cumulative fraction", fontsize=10)
     ax.set_ylim(0, 1.02)
     ax.set_title(
-        f"Top {int(top_n)} prediction effect CDFs",
+        f"Top prediction effect CDFs",
         fontsize=11,
         fontweight="semibold",
         loc="left",
@@ -1710,6 +1727,7 @@ def evaluate_joined_dataframe(
     de_table_path=None, joined_tsv=None,
     predictor_output_paths=None,
     tool_labels=None,
+    write_top_prediction_cdfs=False,
     logger=None,
 ):
     plots_dir.mkdir(parents=True, exist_ok=True)
@@ -1934,7 +1952,7 @@ def evaluate_joined_dataframe(
         comparison_roc_png = comparison_plots_dir / "roc_common.png"
         comparison_roc_all_png = comparison_plots_dir / "roc_all_scored.png"
         comparison_gsea_png = comparison_plots_dir / "gsea_common.png"
-        comparison_cdf_png = comparison_plots_dir / "top_100_effect_cdfs.png"
+        comparison_cdf_png = comparison_plots_dir / f"top_{TOP_PREDICTION_CDF_N}_effect_cdfs.png"
         try:
             common_pr = _prepare_common_scored_frame(
                 joined,
@@ -1984,24 +2002,26 @@ def evaluate_joined_dataframe(
                 dataset_id=dataset_id,
                 out_path=comparison_gsea_png,
             )
-        _plot_top_prediction_effect_cdfs(
-            joined,
-            score_cols=evaluated_score_cols,
-            tool_ids=evaluated_tool_ids,
-            dataset_id=dataset_id,
-            out_path=comparison_cdf_png,
-            perturbation=perturbation,
-        )
+        if write_top_prediction_cdfs:
+            _plot_top_prediction_effect_cdfs(
+                joined,
+                score_cols=evaluated_score_cols,
+                tool_ids=evaluated_tool_ids,
+                dataset_id=dataset_id,
+                out_path=comparison_cdf_png,
+                perturbation=perturbation,
+            )
         if common_comparisons:
             dataset_plots["predictor_pr_curves"] = str(comparison_pr_png)
             dataset_plots["predictor_roc_curves"] = str(comparison_roc_png)
             dataset_plots["predictor_gsea_curves"] = str(comparison_gsea_png)
         dataset_plots["predictor_pr_curves_all_scored"] = str(comparison_pr_all_png)
         dataset_plots["predictor_roc_curves_all_scored"] = str(comparison_roc_all_png)
-        dataset_plots["predictor_top100_effect_cdfs"] = str(comparison_cdf_png)
+        if write_top_prediction_cdfs:
+            dataset_plots["predictor_top100_effect_cdfs"] = str(comparison_cdf_png)
         _emit_log(
             logger,
-            f"    Dataset: {dataset_id} | wrote PR/ROC/GSEA comparison plots and top-100 effect CDF",
+            f"    Dataset: {dataset_id} | wrote PR/ROC/GSEA comparison plots",
         )
 
         corr_png = comparison_plots_dir / "predictor_correlation_heatmap.png"
@@ -2156,67 +2176,6 @@ def _plot_cross_dataset_metric_distribution(metrics_df, *, metric_name, out_path
         pad=14,
     )
     _save_figure(fig, out_path)
-
-
-def _plot_metric_vs_performance(summary_df, *, x_metric_col, x_label, title, out_path):
-    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.8), sharex=True, sharey=False)
-    metric_specs = [("aps_mean", "Mean APS"), ("auroc_mean", "Mean AUROC")]
-    x_values = summary_df[x_metric_col].astype(float).to_numpy()
-
-    for ax, (metric_col, metric_label) in zip(axes, metric_specs):
-        _style_axes(ax, grid_axis="both")
-        values = summary_df[metric_col].astype(float).to_numpy()
-        for index, tool_id in enumerate(summary_df["tool_id"].tolist()):
-            color = _tool_color(tool_id)
-            ax.scatter(
-                x_values[index],
-                values[index],
-                s=80,
-                color=color,
-                edgecolors="white",
-                linewidths=0.5,
-                zorder=3,
-            )
-            ax.text(
-                x_values[index] + 0.01,
-                values[index],
-                _tool_label(tool_id),
-                fontsize=8.5,
-                color="#22303C",
-                va="center",
-            )
-        ax.set_xlim(0, 1.02)
-        ax.set_ylim(0, 1.02)
-        ax.set_xlabel(x_label, fontsize=10)
-        ax.set_ylabel(metric_label, fontsize=10)
-    axes[0].set_title(
-        title,
-        fontsize=11,
-        fontweight="semibold",
-        loc="left",
-        pad=14,
-    )
-    _save_figure(fig, out_path)
-
-
-def _plot_coverage_vs_performance(summary_df, *, out_path):
-    _plot_metric_vs_performance(
-        summary_df,
-        x_metric_col="coverage_mean",
-        x_label="Mean coverage",
-        title="Coverage vs performance",
-        out_path=out_path,
-    )
-
-
-def _plot_positive_coverage_vs_performance(summary_df, *, out_path):
-    _plot_metric_vs_performance(
-        summary_df,
-        x_metric_col="positive_coverage_mean",
-        x_label="Mean positive coverage",
-        title="Positive coverage vs performance",
-        out_path=out_path,
-    )
 
 
 def _rank_distribution_metadata(rank_type):
@@ -2377,9 +2336,8 @@ def write_cross_dataset_summaries(
     plots_dir.mkdir(parents=True, exist_ok=True)
     _set_tool_labels(tool_labels)
     metric_plots_dir = plots_dir / "metrics"
-    coverage_plots_dir = plots_dir / "coverage"
     rank_plots_dir = plots_dir / "ranks"
-    for path in (metric_plots_dir, coverage_plots_dir, rank_plots_dir):
+    for path in (metric_plots_dir, rank_plots_dir):
         path.mkdir(parents=True, exist_ok=True)
     metrics_df = pd.DataFrame(metric_rows)
     if metrics_df.empty:
@@ -2407,13 +2365,6 @@ def write_cross_dataset_summaries(
         )
         distribution_paths[f"cross_dataset_{metric_name}_distribution"] = str(metric_path)
         _emit_log(logger, f"  Wrote cross-dataset {metric_name} distribution: {metric_path}")
-
-    positive_coverage_scatter_path = coverage_plots_dir / "positive_coverage_vs_performance.png"
-    _plot_positive_coverage_vs_performance(summary, out_path=positive_coverage_scatter_path)
-    _emit_log(
-        logger,
-        f"  Wrote positive coverage vs performance plot: {positive_coverage_scatter_path}",
-    )
 
     rank_distribution_paths = {}
     if joined_frames:
@@ -2447,7 +2398,6 @@ def write_cross_dataset_summaries(
         },
         "plots": {
             **distribution_paths,
-            "positive_coverage_vs_performance": str(positive_coverage_scatter_path),
             **rank_distribution_paths,
         },
     }

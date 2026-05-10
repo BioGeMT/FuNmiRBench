@@ -135,7 +135,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
     assert (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").is_file()
     assert (tmp_path / "plots" / "metrics" / "cross_dataset_coverage_distribution.png").is_file()
     assert (tmp_path / "plots" / "metrics" / "cross_dataset_spearman_distribution.png").is_file()
-    assert (tmp_path / "plots" / "coverage" / "positive_coverage_vs_performance.png").is_file()
+    assert not (tmp_path / "plots" / "coverage" / "positive_coverage_vs_performance.png").exists()
     assert (tmp_path / "plots" / "ranks" / "positive_background_global_rank_distributions.png").is_file()
     summary_text = (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").read_text(encoding="utf-8")
     assert "aps_mean" in summary_text
@@ -143,9 +143,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
     assert outputs["plots"]["cross_dataset_aps_distribution"].endswith(
         "cross_dataset_aps_distribution.png"
     )
-    assert outputs["plots"]["positive_coverage_vs_performance"].endswith(
-        "positive_coverage_vs_performance.png"
-    )
+    assert "positive_coverage_vs_performance" not in outputs["plots"]
     assert outputs["plots"]["positive_background_global_rank_distributions"].endswith(
         "positive_background_global_rank_distributions.png"
     )
@@ -302,7 +300,7 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
     assert "predictor_roc_curves" in result["plots"]
     assert "predictor_roc_curves_all_scored" in result["plots"]
     assert "predictor_gsea_curves" in result["plots"]
-    assert "predictor_top100_effect_cdfs" in result["plots"]
+    assert "predictor_top100_effect_cdfs" not in result["plots"]
     assert "top_10pct_positive_heatmap" in result["plots"]
     assert (tmp_path / "plots" / "predictors" / "mock" / "score_vs_expected_effect.png").is_file()
     assert (tmp_path / "plots" / "predictors" / "mock" / "gsea_enrichment.png").is_file()
@@ -314,7 +312,7 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
     assert (tmp_path / "plots" / "comparisons" / "roc_common.png").is_file()
     assert (tmp_path / "plots" / "comparisons" / "roc_all_scored.png").is_file()
     assert (tmp_path / "plots" / "comparisons" / "gsea_common.png").is_file()
-    assert (tmp_path / "plots" / "comparisons" / "top_100_effect_cdfs.png").is_file()
+    assert not (tmp_path / "plots" / "comparisons" / "top_100_effect_cdfs.png").exists()
     assert (tmp_path / "plots" / "heatmaps" / "top_10pct_positive_genes.png").is_file()
 
 

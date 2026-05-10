@@ -5,6 +5,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import datetime as dt
 
 import pandas as pd
 import pytest
@@ -124,13 +125,14 @@ def test_build_run_dir_name_summarizes_selection(tmp_path):
             "predictor_top_fraction": 0.10,
         },
         tags=["demo"],
+        run_date=dt.date(2026, 5, 10),
     )
 
     assert name.startswith(
-        "tag-demo__datasets-gse109725-oe-mir-204-5p-gse118315-ko-mir-124-3p-plus1"
+        "20260510__tag-demo__datasets-gse109725-oe-mir-204-5p-plus2"
     )
-    assert "__mirnas-hsa-mir-204-5p-hsa-mir-124-3p-plus1__" in name
-    assert "__tools-random-cheating-targetscan-plus1__" in name
+    assert "__mirnas-hsa-mir-204-5p-plus2__" in name
+    assert "__tools-random-cheating-plus2__" in name
     assert "__pert-ko-oe__cell3__fdr0p05-effect1-top10pct" in name
 
 def test_example_end_to_end(tmp_path):
@@ -267,9 +269,7 @@ def test_example_end_to_end(tmp_path):
     assert summary["cross_dataset_outputs"]["tables"]["cross_dataset_predictor_summary"].endswith(
         "cross_dataset_predictor_summary.tsv"
     )
-    assert summary["cross_dataset_outputs"]["plots"]["positive_coverage_vs_performance"].endswith(
-        "positive_coverage_vs_performance.png"
-    )
+    assert "positive_coverage_vs_performance" not in summary["cross_dataset_outputs"]["plots"]
     assert "coverage_vs_performance" not in summary["cross_dataset_outputs"]["plots"]
     assert "cross_dataset_metric_heatmap" not in summary["cross_dataset_outputs"]["plots"]
     assert set(summary["dataset_ids"]) == {
@@ -294,7 +294,7 @@ def test_example_end_to_end(tmp_path):
     assert dataset_height == pytest.approx(72.0 * benchmark.REPORT_PAGE_SIZE[1], abs=0.02)
 
     plots = list(out_dir.rglob("*.png"))
-    assert len(plots) == 60
+    assert len(plots) == 56
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "predictors" / "random" / "score_vs_expected_effect.png"
     ).is_file()
@@ -331,9 +331,7 @@ def test_example_end_to_end(tmp_path):
     assert (
         out_dir / "plots" / "combined" / "metrics" / "cross_dataset_auroc_distribution.png"
     ).is_file()
-    assert (
-        out_dir / "plots" / "combined" / "coverage" / "positive_coverage_vs_performance.png"
-    ).is_file()
+    assert not (out_dir / "plots" / "combined" / "coverage" / "positive_coverage_vs_performance.png").exists()
     assert (
         out_dir / "plots" / "combined" / "ranks" / "positive_background_local_rank_distributions.png"
     ).is_file()
@@ -358,9 +356,9 @@ def test_example_end_to_end(tmp_path):
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "gsea_common.png"
     ).is_file()
-    assert (
+    assert not (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "top_100_effect_cdfs.png"
-    ).is_file()
+    ).exists()
     assert stale_plot.exists()
     assert stale_report.exists()
 

@@ -1,6 +1,7 @@
 """Run the FuNmiRBench benchmark from a single YAML config."""
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import logging
@@ -63,8 +64,9 @@ def _format_run_number(value):
     return text.replace("-", "m").replace(".", "p")
 
 
-def build_run_dir_name(*, experiments, tool_ids, eval_cfg, tags=None):
-    parts = []
+def build_run_dir_name(*, experiments, tool_ids, eval_cfg, tags=None, run_date=None):
+    run_date = run_date or dt.date.today()
+    parts = [run_date.strftime("%Y%m%d")]
 
     if tags:
         if isinstance(tags, str):
@@ -94,9 +96,9 @@ def build_run_dir_name(*, experiments, tool_ids, eval_cfg, tags=None):
 
     parts.extend(
         [
-            _summarize_values("datasets", dataset_ids, max_items=2),
-            _summarize_values("mirnas", mirnas, max_items=2),
-            _summarize_values("tools", tool_ids, max_items=3),
+            _summarize_values("datasets", dataset_ids, max_items=1),
+            _summarize_values("mirnas", mirnas, max_items=1),
+            _summarize_values("tools", tool_ids, max_items=2),
             _summarize_values("pert", sorted(perturbations), max_items=3),
             f"cell{len(cell_lines)}",
         ]
@@ -348,6 +350,41 @@ def _report_takeaways(summary_df):
     return takeaways
 
 
+def _coverage_analysis_lines(summary_df):
+    if summary_df is None or summary_df.empty:
+        return ["Cross-dataset predictor summary is unavailable for this run."]
+    lines = []
+    sparse = summary_df[summary_df["coverage_mean"].astype(float) < 0.25].copy()
+    if not sparse.empty:
+        sparse_labels = [
+            f"{row.tool_id} ({_format_summary_value(row.coverage_mean, percent=True)} coverage; "
+            f"{int(row.aps_count)} evaluated datasets)"
+            for row in sparse.itertuples(index=False)
+        ]
+        lines.append("Sparse predictors: " + ", ".join(sparse_labels) + ". Treat their metrics as subset-specific.")
+    coverage_gap = (
+        summary_df["positive_coverage_mean"].astype(float)
+        - summary_df["coverage_mean"].astype(float)
+    )
+    if coverage_gap.notna().any():
+        row = summary_df.loc[coverage_gap.idxmax()]
+        lines.append(
+            "Largest positive-coverage enrichment: "
+            f"{row['tool_id']} scores positives at "
+            f"{_format_summary_value(row['positive_coverage_mean'], percent=True)} versus "
+            f"{_format_summary_value(row['coverage_mean'], percent=True)} overall coverage."
+        )
+    non_oracle = summary_df[~summary_df["tool_id"].astype(str).isin(["cheating", "perfect"])].copy()
+    if not non_oracle.empty:
+        row = non_oracle.sort_values(["aps_mean", "auroc_mean"], ascending=False).iloc[0]
+        lines.append(
+            "Best non-oracle mean APS: "
+            f"{row['tool_id']} ({_format_summary_value(row['aps_mean'])}; "
+            f"AUROC {_format_summary_value(row['auroc_mean'])})."
+        )
+    return lines
+
+
 def write_run_readme(
     out_dir,
     *,
@@ -395,8 +432,8 @@ def write_run_readme(
         "## Cross-Dataset Summary",
         (
             "Coverage, positive coverage, and mean metric performance are summarized numerically below. "
-            "The PDF report carries the same summary table, so there is no separate combined coverage scatter "
-            "or mean-metric heatmap in this run package."
+            "The PDF report carries the same summary and analysis text, so coverage-vs-performance is reported "
+            "as a table instead of a separate scatter plot."
         ),
         "",
     ]
@@ -421,7 +458,7 @@ def write_run_readme(
         "- `datasets/<dataset_id>/reports/`: per-dataset Markdown/PDF reports and correlation TSVs",
         "- `tables/per_experiment/`: metric tables across datasets, one row per experiment",
         "- `tables/combined/`: cross-dataset predictor summary table",
-        "- `plots/combined/metrics/`, `plots/combined/coverage/`, `plots/combined/ranks/`: cross-dataset comparison plots grouped by theme",
+        "- `plots/combined/metrics/`, `plots/combined/ranks/`: cross-dataset comparison plots grouped by theme",
         "- `summary.json`: machine-readable run summary",
         "",
         "## Datasets",
@@ -470,7 +507,6 @@ def write_run_readme(
         ]
     )
     combined_plot_descriptions = {
-        "positive_coverage_vs_performance": "mean positive coverage against mean APS and mean AUROC",
         "positive_background_local_rank_distributions": (
             "dataset-local rank separation of GT positives from background genes"
         ),
@@ -618,6 +654,7 @@ def write_run_pdf_report(
                 "Predictor scores are aligned so that higher always means stronger before evaluation.",
                 "Per-dataset heatmaps and agreement plots use dataset-local tie-aware dense ranks.",
                 "Combined PR/ROC/GSEA plots use only the common set of genes scored by all compared predictors.",
+                "Top-prediction effect CDFs are optional diagnostics and are not written by default.",
             ],
             x=0.06,
             y=0.69,
@@ -629,6 +666,7 @@ def write_run_pdf_report(
             [
                 "Cross-dataset coverage and performance are summarized numerically in the predictor table on the next page.",
                 "The exact numeric source for the report is tables/combined/cross_dataset_predictor_summary.tsv.",
+                "Sparse predictors can be skipped for datasets where their scored subset lacks positives or background genes.",
             ],
             x=0.54,
             y=0.69,
@@ -654,6 +692,9 @@ def write_run_pdf_report(
         takeaways = _report_takeaways(summary_df)
         if takeaways:
             add_block(ax, "Quick Takeaways", takeaways, x=0.06, y=0.85, width=0.88)
+        coverage_lines = _coverage_analysis_lines(summary_df)
+        if coverage_lines:
+            add_block(ax, "Coverage Analysis", coverage_lines, x=0.06, y=0.69, width=0.88)
         if summary_df is not None and not summary_df.empty:
             display_df = summary_df[
                 [
@@ -685,7 +726,7 @@ def write_run_pdf_report(
                 colLabels=display_df.columns.tolist(),
                 cellLoc="center",
                 colLoc="center",
-                bbox=[0.06, 0.18, 0.88, 0.48],
+                bbox=[0.06, 0.16, 0.88, 0.38],
             )
             table.auto_set_font_size(False)
             table.set_fontsize(8.8)
@@ -702,8 +743,8 @@ def write_run_pdf_report(
                 0.06,
                 0.11,
                 (
-                    "Coverage columns replace the removed combined coverage scatter, and the mean metric columns replace "
-                    "the removed combined metric heatmap. Use the TSV for the full count/median/std/min/max summary."
+                    "Coverage and positive coverage are table-first diagnostics. This avoids over-reading a scatter "
+                    "when sparse predictors are evaluated on very different subsets. Use the TSV for count/median/std/min/max."
                 ),
                 fontsize=9.2,
                 color="#22303C",
@@ -749,7 +790,6 @@ def write_run_pdf_report(
             "Included Combined Figures",
             [
                 "plots/combined/metrics/cross_dataset_<metric>_distribution.png: one figure per metric showing how that metric varies across the selected datasets",
-                "positive_coverage_vs_performance.png: mean positive coverage against mean APS and AUROC",
                 "positive_background_local_rank_distributions.png: whether positives rank above background on the dataset-local rank scale",
                 "positive_background_global_rank_distributions.png: whether positives rank above background on the predictor-global rank scale",
             ],
@@ -767,11 +807,6 @@ def write_run_pdf_report(
                 f"Spread of {metric_name.upper()} across the selected datasets for every predictor.",
             )
         plot_descriptions.update({
-            "positive_coverage_vs_performance": (
-                "Positive coverage vs performance",
-                "Mean positive coverage is plotted against mean APS and mean AUROC. "
-                "This is especially helpful for sparse predictors where overall coverage alone can be misleading."
-            ),
             "positive_background_local_rank_distributions": (
                 "Positive vs background local rank distributions",
                 "Dataset-local rank distributions aggregated across datasets, split into GT positives and background genes. "
@@ -964,6 +999,7 @@ def run_benchmark(config_path):
     fdr_threshold = float(eval_cfg.get("fdr_threshold", 0.05))
     abs_logfc_threshold = float(eval_cfg.get("abs_logfc_threshold", 1.0))
     predictor_top_fraction = float(eval_cfg.get("predictor_top_fraction", 0.10))
+    write_top_prediction_cdfs = bool(eval_cfg.get("write_top_prediction_cdfs", False))
     validate_threshold_sensitive_predictors(
         predictions,
         root=root,
@@ -1004,6 +1040,7 @@ def run_benchmark(config_path):
             joined_tsv=joined_path,
             predictor_output_paths=predictor_output_paths,
             tool_labels=tool_labels,
+            write_top_prediction_cdfs=write_top_prediction_cdfs,
             logger=logger.info,
         )
         joined_frames.append(joined.copy())
