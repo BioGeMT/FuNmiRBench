@@ -95,6 +95,10 @@ def build_run_dir_name(*, experiments, tool_ids, eval_cfg, tags=None, run_date=N
 def filter_df(df, filters):
     """AND across columns, OR within each column's value list."""
     for col, values in filters.items():
+        if col not in df.columns:
+            raise ValueError(
+                f"Filter column {col!r} was not found. Available columns: {sorted(df.columns)}"
+            )
         if not isinstance(values, list):
             values = [values]
         df = df[df[col].isin(values)]
