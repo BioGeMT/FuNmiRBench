@@ -119,7 +119,10 @@ def _load_common_prediction_summary(combined_outputs):
     path = pathlib.Path(path)
     if not path.is_file():
         return None
-    return pd.read_csv(path, sep="\t")
+    try:
+        return pd.read_csv(path, sep="\t")
+    except pd.errors.EmptyDataError:
+        return None
 
 
 def _draw_common_prediction_page(pdf, combined_outputs):
@@ -142,7 +145,7 @@ def _draw_common_prediction_page(pdf, combined_outputs):
     )
     display = selected[["dataset_id", "Set", "tools", "Common predictions"]].copy()
     display.columns = ["Dataset", "Set", "Predictors", "Common predictions"]
-    fig, ax = _new_page(landscape=True)
+    fig, ax = _new_page()
     fig.text(0.04, 0.965, "Common prediction coverage", fontsize=13, fontweight="bold", color=PUBLICATION_BLUE, va="top", ha="left")
     fig.text(
         0.04,
@@ -209,12 +212,12 @@ def _plot_items(combined_outputs):
 
 def _draw_plot_page(pdf, *, title, caption, path):
     image = plt.imread(path)
-    fig, _ = _new_page(landscape=True)
+    fig, _ = _new_page()
     fig.text(0.04, 0.965, title, fontsize=13, fontweight="bold", color=PUBLICATION_BLUE, va="top", ha="left")
-    caption_lines = textwrap.wrap(caption, width=150)
+    caption_lines = textwrap.wrap(caption, width=100)
     for i, line in enumerate(caption_lines[:2]):
         fig.text(0.04, 0.925 - i * 0.026, line, fontsize=9.3, color="#22303C", va="top", ha="left")
-    image_ax = fig.add_axes([0.025, 0.035, 0.95, 0.825])
+    image_ax = fig.add_axes([0.06, 0.08, 0.88, 0.76])
     image_ax.imshow(image, interpolation="nearest")
     image_ax.axis("off")
     _save_page(pdf, fig)
