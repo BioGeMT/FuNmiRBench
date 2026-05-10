@@ -30,6 +30,8 @@ from funmirbench.common_predictions import (
     write_combined_common_prediction_summary,
     write_common_prediction_summary,
 )
+from funmirbench.comparison_plots import write_common_comparison_plots
+from funmirbench.dataset_reports import write_predictor_reports
 from funmirbench.evaluate import (
     REPORT_PAGE_SIZE,
     evaluate_joined_dataframe,
@@ -39,10 +41,8 @@ from funmirbench.evaluate import (
 from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
 from funmirbench.logger import parse_log_level, setup_logging
-from funmirbench.publication_combinations import write_predictor_combination_outputs
-from funmirbench.publication_dataset_reports import write_publication_predictor_reports
-from funmirbench.publication_plots import write_publication_common_comparison_plots
-from funmirbench.publication_reports import write_publication_run_pdf_report
+from funmirbench.predictor_combinations import write_predictor_combination_outputs
+from funmirbench.run_report import write_run_pdf_report
 from funmirbench.validate_experiments import (
     format_validation_failure,
     log_validation_summary,
@@ -133,7 +133,7 @@ def _finalize_run_bundle(
         abs_logfc_threshold=abs_logfc_threshold,
         predictor_top_fraction=predictor_top_fraction,
     )
-    report_path = write_publication_run_pdf_report(
+    report_path = write_run_pdf_report(
         out_dir,
         config_path=config_path,
         dataset_outputs=dataset_outputs,
@@ -185,7 +185,9 @@ def run_benchmark(config_path):
     abs_logfc_threshold = float(eval_cfg.get("abs_logfc_threshold", 1.0))
     predictor_top_fraction = float(eval_cfg.get("predictor_top_fraction", 0.10))
     write_top_prediction_cdfs = bool(eval_cfg.get("write_top_prediction_cdfs", True))
-    publication_min_common_coverage = float(eval_cfg.get("publication_min_common_coverage", 0.10))
+    report_min_common_coverage = float(
+        eval_cfg.get("report_min_common_coverage", eval_cfg.get("publication_min_common_coverage", 0.10))
+    )
 
     logger.info("Syncing selected experiment DE tables from Zenodo...")
     synced = sync_zenodo_experiments(
@@ -223,7 +225,7 @@ def run_benchmark(config_path):
     if not predictions:
         raise ValueError("Predictor selection resolved to no predictors.")
 
-    evaluate_module.FIGURE_DPI = int(eval_cfg.get("publication_figure_dpi", 450))
+    evaluate_module.FIGURE_DPI = int(eval_cfg.get("figure_dpi", eval_cfg.get("publication_figure_dpi", 450)))
     logger.info(f"Figure DPI: {evaluate_module.FIGURE_DPI}")
     out_root = (root / config.get("out_dir", "results")).resolve()
     out_root.mkdir(parents=True, exist_ok=True)
@@ -294,7 +296,7 @@ def run_benchmark(config_path):
             write_top_prediction_cdfs=write_top_prediction_cdfs,
             logger=logger.info,
         )
-        write_publication_common_comparison_plots(
+        write_common_comparison_plots(
             joined,
             evaluation=evaluation,
             dataset_metric_rows=evaluation["metric_rows"],
@@ -303,7 +305,7 @@ def run_benchmark(config_path):
             fdr_threshold=fdr_threshold,
             abs_logfc_threshold=abs_logfc_threshold,
             perturbation=meta.perturbation,
-            min_common_coverage=publication_min_common_coverage,
+            min_common_coverage=report_min_common_coverage,
             logger=logger.info,
         )
         common_summary_path, common_prediction_summary = write_common_prediction_summary(
@@ -311,10 +313,10 @@ def run_benchmark(config_path):
             dataset_dir / "reports",
             dataset_id=meta.id,
             tool_ids=tool_ids,
-            publication_min_common_coverage=publication_min_common_coverage,
+            publication_min_common_coverage=report_min_common_coverage,
         )
         common_prediction_summaries.append(common_prediction_summary)
-        write_publication_predictor_reports(
+        write_predictor_reports(
             reports_dir=dataset_dir / "reports",
             plots_dir=dataset_dir / "plots",
             dataset_id=meta.id,
