@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import datetime as dt
-import hashlib
 import json
 import pathlib
-import re
 import urllib.parse
 
 import pandas as pd
@@ -19,77 +17,16 @@ DEFAULT_DEMO_ABS_LOGFC_THRESHOLD = 1.0
 THRESHOLD_SENSITIVE_DEMO_TOOLS = {"cheating", "perfect"}
 
 
-def _slugify(value):
-    text = str(value).strip().lower()
-    text = re.sub(r"[^a-z0-9]+", "-", text)
-    text = text.strip("-")
-    return text or "na"
-
-
-def _summarize_values(prefix, values, *, max_items=2):
-    items = [_slugify(value) for value in values if str(value).strip()]
-    if not items:
-        return f"{prefix}-none"
-
-    digest = hashlib.sha1("|".join(items).encode("utf-8")).hexdigest()[:8]
-    if len(items) <= max_items:
-        body = "-".join(items)
-    else:
-        body = "-".join(items[:max_items]) + f"-plus{len(items) - max_items}"
-
-    part = f"{prefix}-{body}"
-    if len(part) > 80:
-        return f"{prefix}-{len(items)}items-{digest}"
-    return part
-
-
-def _format_run_number(value):
-    text = f"{float(value):g}"
-    return text.replace("-", "m").replace(".", "p")
-
-
 def build_run_dir_name(*, experiments, tool_ids, eval_cfg, tags=None, run_date=None):
+    """Return the date-based run directory name.
+
+    Detailed dataset/predictor/threshold metadata is recorded in README.md and
+    summary.json. Keeping the directory name date-only makes result paths short
+    and readable; collisions are handled by the caller with ``__rN`` suffixes.
+    """
+    del experiments, tool_ids, eval_cfg, tags
     run_date = run_date or dt.date.today()
-    parts = [run_date.strftime("%Y%m%d")]
-
-    if tags:
-        if isinstance(tags, str):
-            tags = [tags]
-        parts.append(_summarize_values("tag", tags, max_items=3))
-
-    dataset_ids = [meta.id for meta in experiments]
-    mirnas = [meta.miRNA for meta in experiments]
-    perturbations = {
-        str(meta.perturbation).strip().upper()
-        for meta in experiments
-        if str(meta.perturbation).strip()
-    }
-    cell_lines = {
-        str(meta.cell_line).strip()
-        for meta in experiments
-        if str(meta.cell_line).strip() and str(meta.cell_line).strip().upper() != "NA"
-    }
-
-    eval_parts = []
-    if "fdr_threshold" in eval_cfg:
-        eval_parts.append(f"fdr{_format_run_number(eval_cfg['fdr_threshold'])}")
-    if "abs_logfc_threshold" in eval_cfg:
-        eval_parts.append(f"effect{_format_run_number(eval_cfg['abs_logfc_threshold'])}")
-    if "predictor_top_fraction" in eval_cfg:
-        eval_parts.append(f"top{_format_run_number(float(eval_cfg['predictor_top_fraction']) * 100)}pct")
-
-    parts.extend(
-        [
-            _summarize_values("datasets", dataset_ids, max_items=1),
-            _summarize_values("mirnas", mirnas, max_items=1),
-            _summarize_values("tools", tool_ids, max_items=2),
-            _summarize_values("pert", sorted(perturbations), max_items=3),
-            f"cell{len(cell_lines)}",
-        ]
-    )
-    if eval_parts:
-        parts.append("-".join(eval_parts))
-    return "__".join(parts)
+    return run_date.strftime("%Y%m%d")
 
 
 def filter_df(df, filters):
