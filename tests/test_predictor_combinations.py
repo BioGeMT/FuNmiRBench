@@ -1,6 +1,9 @@
 import pandas as pd
 
-from funmirbench.predictor_combinations import compute_predictor_combination_summary
+from funmirbench.predictor_combinations import (
+    compute_predictor_combination_summary,
+    write_predictor_combination_outputs,
+)
 
 
 def test_combination_summary_excludes_oracles_and_scores_rank_mean():
@@ -36,3 +39,34 @@ def test_combination_summary_excludes_oracles_and_scores_rank_mean():
     assert combo["positive_coverage_mean"] == 1.0
     assert "delta_aps_vs_best_single" in summary.columns
     assert "beats_best_single_aps" in summary.columns
+
+
+def test_combination_outputs_do_not_write_size_performance_plot(tmp_path):
+    joined = pd.DataFrame(
+        {
+            "gene_id": ["g1", "g2", "g3", "g4"],
+            "logFC": [-2.0, -1.5, 0.2, 0.1],
+            "FDR": [0.01, 0.02, 0.5, 0.8],
+            "score_targetscan": [0.9, 0.8, 0.2, 0.1],
+            "score_mirdb_mirtarget": [0.85, 0.7, 0.3, 0.2],
+        }
+    )
+
+    outputs = write_predictor_combination_outputs(
+        [joined],
+        tmp_path / "tables",
+        tmp_path / "plots",
+        tool_ids=["targetscan", "mirdb_mirtarget"],
+        fdr_threshold=0.05,
+        abs_logfc_threshold=1.0,
+        max_combination_size=2,
+    )
+
+    assert "predictor_combination_frontier" in outputs["plots"]
+    assert "predictor_combination_size_performance" not in outputs["plots"]
+    assert not (
+        tmp_path
+        / "plots"
+        / "combinations"
+        / "predictor_combination_size_performance.png"
+    ).exists()

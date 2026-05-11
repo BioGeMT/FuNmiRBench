@@ -184,10 +184,6 @@ def _plot_items(combined_outputs):
             "Predictor-combination performance frontier",
             "Coverage-aware comparison of individual real predictors and rank-mean predictor combinations. Random and oracle predictors are excluded; frontier points are not dominated in both mean positive coverage and mean APS.",
         ),
-        "predictor_combination_size_performance": (
-            "Predictor-combination accuracy by size",
-            "Mean APS by number of predictors in the score. The dashed line marks the best single predictor; red points beat that single-predictor baseline.",
-        )
     }
     for metric_name in ["coverage", "positive_coverage", "aps", "pr_auc", "spearman", "auroc"]:
         descriptions[f"cross_dataset_{metric_name}_distribution"] = (
@@ -203,6 +199,10 @@ def _plot_items(combined_outputs):
             "positive_background_global_rank_distributions": (
                 "Positive vs background global rank distributions",
                 "Predictor-global rank distributions aggregated across datasets, using each predictor's full standardized file.",
+            ),
+            "positive_recovery_by_prediction_count": (
+                "GT-positive recovery by prediction count",
+                "Figure 4-style cumulative recovery curves showing mean GT positives recovered as more top-ranked predictions per dataset are admitted.",
             ),
         }
     )
@@ -326,7 +326,6 @@ def write_publication_run_pdf_report(
             "Included figure families",
             [
                 "Predictor-combination frontier tests whether any real-predictor ensemble improves over the best single predictor.",
-                "Predictor-combination size performance shows whether pairs or triples beat the best single predictor on mean APS.",
                 "Common-prediction percentages report overlap directly; correlation plots are not generated for publication bundles.",
                 "Rank-distribution plots compare GT-positive genes against background genes across datasets.",
                 "Per-dataset directories contain CDFs, common-set comparisons, own-scored comparisons, heatmaps, and per-predictor reports.",
