@@ -278,80 +278,7 @@ def write_predictor_combination_frontier_plot(summary_df, out_path, *, title="Pr
     fig.text(
         0.125,
         0.94,
-        "Rank-mean ensembles over available scores; random/oracle predictors excluded. Points on the frontier are not dominated in both coverage and APS.",
-        fontsize=8.8,
-        color=NEUTRAL_COLOR,
-    )
-    ax.legend(frameon=False, fontsize=8.5, loc="lower right")
-    _save_figure(fig, out_path)
-    return out_path
-
-
-def write_predictor_combination_size_plot(summary_df, out_path, *, title="Predictor-combination accuracy by size"):
-    fig, ax = plt.subplots(figsize=(7.8, 5.2))
-    _style_axes(ax, grid_axis="y")
-    if summary_df.empty:
-        ax.text(0.5, 0.5, "No real predictor combinations available", ha="center", va="center")
-        _save_figure(fig, out_path)
-        return out_path
-
-    work = summary_df.copy()
-    best_single = work.loc[work["combination_size"] == 1, "aps_mean"].max()
-    sizes = sorted(work["combination_size"].unique())
-    positions = np.arange(len(sizes), dtype=float)
-    data = [
-        work.loc[work["combination_size"] == size, "aps_mean"].dropna().astype(float).tolist()
-        for size in sizes
-    ]
-    box = ax.boxplot(
-        data,
-        positions=positions,
-        widths=0.45,
-        patch_artist=True,
-        showfliers=False,
-    )
-    for patch in box["boxes"]:
-        patch.set_facecolor("#D7E3F3")
-        patch.set_edgecolor("#5B7FA6")
-        patch.set_alpha(0.55)
-    for median in box["medians"]:
-        median.set_color("#17324D")
-        median.set_linewidth(1.5)
-
-    for index, size in enumerate(sizes):
-        subset = work[work["combination_size"] == size].sort_values("aps_mean", ascending=False)
-        jitter = np.linspace(-0.12, 0.12, num=len(subset)) if len(subset) > 1 else np.array([0.0])
-        colors = np.where(subset["aps_mean"].astype(float) > best_single, "#D1495B", "#2A6F97")
-        ax.scatter(
-            np.full(len(subset), positions[index]) + jitter,
-            subset["aps_mean"].astype(float),
-            s=44,
-            color=colors,
-            edgecolors="white",
-            linewidths=0.4,
-            zorder=3,
-        )
-        label_rows = subset.head(2)
-        for offset, (_, row) in enumerate(label_rows.iterrows()):
-            ax.annotate(
-                str(row["combination_id"]).replace("+", " + "),
-                (positions[index] + jitter[offset], float(row["aps_mean"])),
-                xytext=(4, 6),
-                textcoords="offset points",
-                fontsize=7.6,
-            )
-
-    ax.axhline(best_single, color=NEUTRAL_COLOR, linestyle="--", linewidth=1.2, label="best single predictor APS")
-    ax.set_xticks(positions)
-    ax.set_xticklabels([str(int(size)) for size in sizes])
-    ax.set_xlabel("Number of predictors in score", fontsize=10)
-    ax.set_ylabel("Mean APS", fontsize=10)
-    ax.set_ylim(0, min(1.02, max(0.2, float(work["aps_mean"].max()) * 1.22)))
-    ax.set_title(title, loc="left", fontsize=12, fontweight="semibold", pad=14)
-    fig.text(
-        0.125,
-        0.94,
-        "Red points beat the best single predictor by mean APS; dashed line marks the best single-predictor APS.",
+        "Points on the frontier are not dominated in both coverage and APS.",
         fontsize=8.8,
         color=NEUTRAL_COLOR,
     )
@@ -386,16 +313,12 @@ def write_predictor_combination_outputs(
     summary_df.to_csv(table_path, sep="\t", index=False)
     plot_path = out_plots_dir / "predictor_combination_frontier.png"
     write_predictor_combination_frontier_plot(summary_df, plot_path)
-    size_plot_path = out_plots_dir / "predictor_combination_size_performance.png"
-    write_predictor_combination_size_plot(summary_df, size_plot_path)
     if logger is not None:
         logger(f"Wrote predictor-combination summary: {table_path}")
         logger(f"Wrote predictor-combination frontier: {plot_path}")
-        logger(f"Wrote predictor-combination size performance: {size_plot_path}")
     return {
         "tables": {"predictor_combination_summary": str(table_path)},
         "plots": {
             "predictor_combination_frontier": str(plot_path),
-            "predictor_combination_size_performance": str(size_plot_path),
         },
     }
