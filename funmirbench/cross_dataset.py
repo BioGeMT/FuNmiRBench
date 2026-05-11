@@ -240,6 +240,119 @@ def _plot_rank_class_distributions(
     return True
 
 
+def _plot_positive_recovery_by_prediction_count(
+    joined_frames,
+    *,
+    out_path,
+    fdr_threshold,
+    abs_logfc_threshold,
+    max_predictions=300,
+):
+    combined = pd.concat(joined_frames, ignore_index=True)
+    rank_specs = ev._rank_distribution_specs(combined, rank_types=("local", "global", "score"))
+    if not rank_specs:
+        return False
+
+    dataset_col = "dataset_id" if "dataset_id" in combined.columns else None
+    keep_cols = ["gene_id", "logFC", "FDR", *[column for _, column, _ in rank_specs]]
+    for optional in ("dataset_id", "perturbation"):
+        if optional in combined.columns:
+            keep_cols.append(optional)
+    keep_cols = list(dict.fromkeys(keep_cols))
+    work = combined[keep_cols].copy()
+    work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
+    if work.empty:
+        return False
+
+    work = ev._annotate_ground_truth(work)
+    work["is_positive"] = ev._positive_mask(
+        work,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+    ).astype(int)
+    groups = (
+        list(work.groupby(dataset_col, sort=True))
+        if dataset_col
+        else [("all_datasets", work)]
+    )
+
+    max_predictions = int(max_predictions)
+    if max_predictions <= 0:
+        return False
+    x_values = np.arange(1, max_predictions + 1, dtype=int)
+    plotted = False
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.2))
+    ev._style_axes(ax, grid_axis="both")
+    for tool_id, column, column_type in rank_specs:
+        dataset_curves = []
+        for _, dataset_frame in groups:
+            if column_type == "score":
+                values = ev._rank_scale_scores(dataset_frame[column])
+            else:
+                values = dataset_frame[column].astype(float)
+            scored = dataset_frame.loc[values.notna(), ["gene_id", "is_positive"]].copy()
+            if scored.empty:
+                continue
+            scored["rank_value"] = values.loc[scored.index].astype(float)
+            scored = scored.sort_values(
+                ["rank_value", "gene_id"],
+                ascending=[False, True],
+                kind="mergesort",
+            )
+            hits = scored["is_positive"].to_numpy(dtype=int)
+            if hits.size == 0:
+                continue
+            cumulative = np.cumsum(hits)
+            curve = np.repeat(float(cumulative[-1]), max_predictions)
+            observed = min(max_predictions, cumulative.size)
+            curve[:observed] = cumulative[:observed].astype(float)
+            dataset_curves.append(curve)
+
+        if not dataset_curves:
+            continue
+        mean_curve = np.vstack(dataset_curves).mean(axis=0)
+        if not np.isfinite(mean_curve).any():
+            continue
+        plotted = True
+        ax.plot(
+            x_values,
+            mean_curve,
+            linewidth=2.0,
+            color=ev._tool_color(tool_id),
+            label=ev._tool_label(tool_id),
+        )
+
+    if not plotted:
+        plt.close(fig)
+        return False
+
+    ax.set_xlim(1, max_predictions)
+    ax.set_ylim(bottom=0)
+    ax.set_xlabel("Predicted targets per dataset", fontsize=10)
+    ax.set_ylabel("Mean GT positives recovered", fontsize=10)
+    ax.set_title(
+        "GT-positive recovery by prediction count",
+        fontsize=11,
+        fontweight="semibold",
+        loc="left",
+        pad=14,
+    )
+    fig.text(
+        0.125,
+        0.955,
+        (
+            "Figure 4-style cumulative recovery: each curve counts GT positives recovered "
+            "as more top-ranked predictions per dataset are admitted."
+        ),
+        fontsize=9,
+        color=ev.NEUTRAL_COLOR,
+    )
+    ax.legend(frameon=False, fontsize=8.6, loc="upper left", bbox_to_anchor=(1.02, 1.0))
+    ev._save_figure(fig, out_path)
+    return True
+
+
 def write_cross_dataset_summaries(
     metric_rows,
     tables_dir,
@@ -310,6 +423,16 @@ def write_cross_dataset_summaries(
             if wrote_rank_distribution:
                 rank_distribution_paths[plot_key] = str(rank_distribution_path)
                 ev._emit_log(logger, f"  Wrote {rank_type} rank distribution plot: {rank_distribution_path}")
+        recovery_path = rank_plots_dir / "positive_recovery_by_prediction_count.png"
+        wrote_recovery = _plot_positive_recovery_by_prediction_count(
+            joined_frames,
+            out_path=recovery_path,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
+        )
+        if wrote_recovery:
+            rank_distribution_paths["positive_recovery_by_prediction_count"] = str(recovery_path)
+            ev._emit_log(logger, f"  Wrote positive recovery plot: {recovery_path}")
 
     return {
         "tables": {

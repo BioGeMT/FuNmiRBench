@@ -202,7 +202,6 @@ def run_benchmark(config_path):
 
     eval_cfg = config.get("evaluation", {})
     evaluate_module.FIGURE_DPI = int(eval_cfg.get("figure_dpi", eval_cfg.get("publication_figure_dpi", 450)))
-    logger.info(f"Figure DPI: {evaluate_module.FIGURE_DPI}")
     out_root = (root / config.get("out_dir", "results")).resolve()
     out_root.mkdir(parents=True, exist_ok=True)
     run_dir_name = build_run_dir_name(

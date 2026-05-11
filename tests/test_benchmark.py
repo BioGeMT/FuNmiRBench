@@ -250,6 +250,9 @@ def test_example_end_to_end(tmp_path):
         out_dir / "plots" / "combined" / "ranks" / "positive_background_global_rank_distributions.png"
     ).is_file()
     assert (
+        out_dir / "plots" / "combined" / "ranks" / "positive_recovery_by_prediction_count.png"
+    ).is_file()
+    assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "heatmaps" / "top_10pct_positive_genes.png"
     ).is_file()
     assert (

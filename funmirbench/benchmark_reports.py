@@ -602,6 +602,7 @@ def write_run_pdf_report(
                 "plots/combined/metrics/cross_dataset_<metric>_distribution.png: one figure per metric showing how that metric varies across the selected datasets",
                 "positive_background_local_rank_distributions.png: whether positives rank above background on the dataset-local rank scale",
                 "positive_background_global_rank_distributions.png: whether positives rank above background on the predictor-global rank scale",
+                "positive_recovery_by_prediction_count.png: Figure 4-style cumulative recovery of GT positives as more top predictions per dataset are admitted",
             ],
             x=0.06,
             y=0.45,
@@ -626,6 +627,10 @@ def write_run_pdf_report(
                 "Positive vs background global rank distributions",
                 "Predictor-global rank distributions aggregated across datasets, split into GT positives and background genes. "
                 "This keeps each predictor on the rank scale of its full standardized file."
+            ),
+            "positive_recovery_by_prediction_count": (
+                "GT-positive recovery by prediction count",
+                "Figure 4-style cumulative recovery curves showing how many GT positives are recovered, on average, as more top-ranked predictions per dataset are admitted.",
             ),
         })
         for key, (title, caption) in plot_descriptions.items():

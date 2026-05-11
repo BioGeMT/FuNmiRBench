@@ -134,6 +134,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
     assert (tmp_path / "plots" / "metrics" / "cross_dataset_spearman_distribution.png").is_file()
     assert not (tmp_path / "plots" / "coverage" / "positive_coverage_vs_performance.png").exists()
     assert (tmp_path / "plots" / "ranks" / "positive_background_global_rank_distributions.png").is_file()
+    assert (tmp_path / "plots" / "ranks" / "positive_recovery_by_prediction_count.png").is_file()
     summary_text = (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").read_text(encoding="utf-8")
     assert "aps_mean" in summary_text
     assert outputs["tables"]["cross_dataset_predictor_summary"].endswith("cross_dataset_predictor_summary.tsv")
@@ -143,6 +144,9 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
     assert "positive_coverage_vs_performance" not in outputs["plots"]
     assert outputs["plots"]["positive_background_global_rank_distributions"].endswith(
         "positive_background_global_rank_distributions.png"
+    )
+    assert outputs["plots"]["positive_recovery_by_prediction_count"].endswith(
+        "positive_recovery_by_prediction_count.png"
     )
     assert "positive_background_local_rank_distributions" not in outputs["plots"]
     assert "cross_dataset_metric_heatmap" not in outputs["plots"]
