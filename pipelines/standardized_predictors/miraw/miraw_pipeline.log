@@ -1,0 +1,22 @@
+2026-05-18 16:59:13 | INFO | miraw_pipeline | Starting miRAW standardization pipeline
+2026-05-18 16:59:13 | INFO | miraw_pipeline | Step 1/8: Resolve external miRBase/BioMart resources
+2026-05-18 16:59:13 | INFO | miraw_utils | Using cached miRBase mature.fa resource: pipelines/standardized_predictors/miraw/data/resources/mirbase/mature.fa
+2026-05-18 16:59:13 | INFO | miraw_utils | Using cached BioMart Ensembl-to-gene-name mapping table: pipelines/standardized_predictors/miraw/data/resources/biomart/hsapiens_ensembl_to_gene_name.tsv
+2026-05-18 16:59:13 | INFO | miraw_pipeline | Step 2/8: Load raw miRAW predictions
+2026-05-18 17:15:23 | INFO | miraw_utils | Loaded 49223901 parsed miRAW rows from /mnt/raid1/vasiliki/Projects/funmirbench/FuNmiRBench/pipelines/standardized_predictors/miraw/miraw_best_per_pair.txt
+2026-05-18 17:16:23 | INFO | miraw_utils | Drop invalid parsed miRAW rows: 49223901 -> 49223901 rows
+2026-05-18 17:17:06 | INFO | miraw_utils | Drop exact duplicate parsed miRAW rows: 49223901 -> 49223901 rows
+2026-05-18 17:17:15 | INFO | miraw_pipeline | Step 3/8: Collapse to the best Prediction score per Ensembl_ID-miRNA pair
+2026-05-18 17:18:14 | INFO | miraw_utils | Collapse miRAW rows to best score per Ensembl_ID-miRNA_Name pair: 49223901 -> 49223901 rows
+2026-05-18 17:18:17 | INFO | miraw_pipeline | Step 4/8: Create miRNA name-to-MIMAT mapping from miRBase mature.fa
+2026-05-18 17:18:17 | INFO | miraw_utils | Loaded 2656 human miRNA->MIMAT mappings
+2026-05-18 17:18:17 | INFO | miraw_pipeline | Step 5/8: Create Ensembl-to-gene-name mapping from BioMart
+2026-05-18 17:18:17 | INFO | miraw_utils | Loaded 48698 Ensembl->gene-name mappings
+2026-05-18 17:18:17 | INFO | miraw_pipeline | Step 6/8: Map miRNA names to MIMAT IDs
+2026-05-18 17:18:34 | INFO | miraw_utils | Drop miRAW rows with miRNA names that cannot map to MIMAT IDs: 49223901 -> 49223901 rows
+2026-05-18 17:18:36 | INFO | miraw_pipeline | Step 7/8: Map Ensembl IDs to gene names
+2026-05-18 17:19:06 | INFO | miraw_utils | Drop miRAW rows whose Ensembl IDs cannot be mapped to gene names: 49223901 -> 48055095 rows
+2026-05-18 17:19:08 | INFO | miraw_pipeline | Step 8/8: Build and write final standardized output table
+2026-05-18 17:19:25 | INFO | miraw_utils | Drop invalid final miRAW rows: 48055095 -> 48055095 rows
+2026-05-18 17:19:50 | INFO | miraw_utils | Drop exact duplicate final miRAW rows: 48055095 -> 48055095 rows
+2026-05-18 17:23:53 | INFO | miraw_pipeline | Output written to: data/predictions/miraw/miraw_standardized.tsv
