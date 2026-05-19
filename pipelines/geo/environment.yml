@@ -8,5 +8,6 @@ dependencies:
   - biopython
   - pandas
   - pyyaml
+  - requests
   - sra-tools
   - pigz

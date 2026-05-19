@@ -80,7 +80,9 @@ conda activate funmirbench-geo
 Run from the **repo root**:
 
 ```bash
-python pipelines/geo/geo_download.py --tsv metadata/mirna_experiment_info.tsv
+python pipelines/geo/geo_download.py \
+    --tsv metadata/mirna_experiment_info.tsv \
+    --entrez-email your@email.com
 ```
 
 Key options:
@@ -88,6 +90,7 @@ Key options:
 | Flag | Default | Description |
 |---|---|---|
 | `--tsv` | *(required)* | Path to the metadata TSV |
+| `--entrez-email` | *(required)* | Email address for the NCBI Entrez API |
 | `--output` | `data/experiments/raw` | Where FASTQs are downloaded |
 | `--config-output-dir` | `pipelines/experiments/configs` | Where YAML configs are written |
 | `--threads` | `4` | Threads for `fasterq-dump` |

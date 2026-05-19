@@ -42,9 +42,6 @@ logging.basicConfig(level=logging.INFO,
                     datefmt="%Y-%m-%d %H:%M:%S")
 logger = logging.getLogger(__name__)
 
-# NCBI requires an email for Entrez API
-Entrez.email = "zacharopoulou.eli@gmail.com"
-
 # Repo root: two levels up from this file (pipelines/geo/geo_download.py)
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -422,7 +419,6 @@ def parse_experiment_metadata(tsv_path):
             "condition_samples": condition_samples,
             "raw_data_dir": raw_data_dir,
             # fields for the YAML metadata section
-            "mirna_sequence": get("mirna_sequence"),
             "organism": get("organism"),
             "tested_cell_line": get("tested_cell_line"),
             "treatment": get("treatment"),
@@ -555,6 +551,7 @@ def download_experiment(experiment, output_dir, threads):
     logger.info("[%s] Resolved %d SRR run(s)", gse, len(srr_infos))
 
     log_step(2, step_total, f"{gse}: downloading SRR FASTQ files", prefix="EXP")
+    failed_srrs = []
     for idx, srr_info in enumerate(srr_infos, start=1):
         try:
             logger.info(
@@ -564,6 +561,13 @@ def download_experiment(experiment, output_dir, threads):
             download_srr(srr_info.srr, gse_output_dir, threads=threads, layout=srr_info.layout)
         except Exception as e:
             logger.error("Failed to download %s: %s", srr_info.srr, e)
+            failed_srrs.append(srr_info.srr)
+
+    if failed_srrs:
+        raise RuntimeError(
+            f"{gse}: {len(failed_srrs)} SRR download(s) failed: {failed_srrs}. "
+            "Aborting manifest and config generation to avoid referencing missing files."
+        )
 
     log_step(3, step_total, f"{gse}: writing manifest", prefix="EXP")
     control_entries, treated_entries = build_geo_sample_entries(
@@ -665,8 +669,13 @@ def main():
         "--threads", "-t", type=int, default=4,
         help="Threads for fasterq-dump (default: 4)",
     )
+    parser.add_argument(
+        "--entrez-email", required=True,
+        help="Email address for NCBI Entrez API (required by NCBI)",
+    )
 
     args = parser.parse_args()
+    Entrez.email = args.entrez_email
 
     total_steps = 4
     log_step(1, total_steps, f"loading experiments metadata from {args.tsv}")
