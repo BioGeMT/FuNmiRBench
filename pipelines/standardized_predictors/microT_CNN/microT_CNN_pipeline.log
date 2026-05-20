@@ -1,0 +1,16 @@
+2026-05-20 19:39:24 | INFO | pipeline | Starting pipeline
+2026-05-20 19:39:24 | INFO | pipeline | Step 1/5: Resolve raw microT-CNN predictions and external miRBase resources
+2026-05-20 19:39:24 | INFO | utils | Using cached miRBase mature.fa resource: pipelines/standardized_predictors/microT_CNN/data/resources/mirbase/mature.fa
+2026-05-20 19:39:24 | INFO | utils | Downloading microT-CNN all-score prediction file: pipelines/standardized_predictors/microT_CNN/data/microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz
+2026-05-20 19:40:01 | INFO | utils | Saved microT-CNN all-score prediction file: pipelines/standardized_predictors/microT_CNN/data/microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz
+2026-05-20 19:40:01 | INFO | pipeline | Step 2/5: Load raw microT-CNN predictions
+2026-05-20 19:43:54 | INFO | utils | Drop invalid raw microT-CNN prediction rows: 48281465 -> 48281465 rows
+2026-05-20 19:44:24 | INFO | utils | Drop exact duplicate raw microT-CNN prediction rows: 48281465 -> 48281465 rows
+2026-05-20 19:44:45 | INFO | utils | Check raw microT-CNN rows for duplicate miRNA-Ensembl Gene ID prediction pairs from raw column 1: 0 duplicate pairs involving 0 rows
+2026-05-20 19:45:17 | INFO | pipeline | Step 3/5: Create miRNA name-to-MIMAT mapping from miRBase mature.fa
+2026-05-20 19:45:17 | INFO | pipeline | Step 4/5: Map prediction miRNA names to MIMAT IDs
+2026-05-20 19:45:32 | INFO | utils | Drop prediction rows with miRNA names that cannot map to MIMAT IDs: 48281465 -> 48281464 rows
+2026-05-20 19:45:34 | INFO | pipeline | Step 5/5: Build and write final standardized output table
+2026-05-20 19:46:22 | INFO | utils | Drop final Ensembl_ID-miRNA_ID pairs with conflicting scores after NCBI/RefSeq-to-gene mapping: 48281464 -> 48281464 rows
+2026-05-20 19:46:39 | INFO | utils | Drop duplicate final Ensembl_ID-miRNA_ID pairs with identical scores after NCBI/RefSeq-to-gene mapping: 48281464 -> 48281464 rows
+2026-05-20 19:50:00 | INFO | pipeline | Output written to: data/predictions/microT_CNN/microT_CNN_standardized.tsv

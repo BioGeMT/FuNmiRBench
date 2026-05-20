@@ -1,0 +1,31 @@
+[
+  {
+    "id": "0001",
+    "geo_accession": "GSE210778",
+    "miRNA": "hsa-miR-375-3p",
+    "miRNA_sequence": "UUUGUUCGUUCGGCUCGCGUGA",
+    "cell_line": "HUV-EC-C",
+    "tissue": "Umbilical cord, Umbilical vein, Vascular endothelium",
+    "perturbation": "overexpression",
+    "organism": "Homo sapiens",
+    "method": "RNA-Seq",
+    "treatment": "Overexpression of miR-375-3p",
+    "pubmed_id": "https://pubmed.ncbi.nlm.nih.gov/36074222",
+    "gse_url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE210778",
+    "control_samples": [
+        "GSM6437108",
+        "GSM6437109",
+        "GSM6437110",
+        "GSM6437111",
+        "GSM6437112"
+    ],
+    "condition_samples": [
+        "GSM6437113",
+        "GSM6437114",
+        "GSM6437115",
+        "GSM6437116",
+        "GSM6437117"
+    ],
+    "data_path": "data/processed_GEO/GSE210778_edger_out_oe_hsa_miR_375_3p_oe.tsv"
+  }
+]
