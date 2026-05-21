@@ -77,6 +77,76 @@ def test_validate_threshold_sensitive_predictors_requires_matching_metadata(tmp_
         )
 
 
+def test_run_benchmark_stops_on_experiment_validation_errors(tmp_path, monkeypatch):
+    config = tmp_path / "benchmark.yaml"
+    experiments_tsv = tmp_path / "experiments.tsv"
+    predictions_tsv = tmp_path / "predictions.tsv"
+    results_dir = tmp_path / "results"
+
+    de_table = tmp_path / "data" / "experiments" / "processed" / "18745741" / "demo.tsv"
+    de_table.parent.mkdir(parents=True, exist_ok=True)
+    de_table.write_text(
+        "gene_id\tlogFC\tFDR\tPValue\n"
+        "ENSG1\t-2.0\t0.01\t0.001\n",
+        encoding="utf-8",
+    )
+    pd.DataFrame(
+        [
+            {
+                "id": "T001",
+                "mirna_name": "hsa-miR-test",
+                "tested_cell_line": "HeLa",
+                "tissue": "cervix",
+                "experiment_type": "OE",
+                "organism": "Homo sapiens",
+                "gse_url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE000001",
+                "de_table_path": "data/experiments/processed/18745741/demo.tsv",
+            }
+        ]
+    ).to_csv(experiments_tsv, sep="\t", index=False)
+
+    score_path = tmp_path / "scores.tsv"
+    score_path.write_text(
+        "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+        "ENSG1\tGENE1\t\thsa-miR-test\t0.9\n",
+        encoding="utf-8",
+    )
+    pd.DataFrame(
+        [
+            {
+                "tool_id": "random",
+                "predictor_output_path": str(score_path),
+            }
+        ]
+    ).to_csv(predictions_tsv, sep="\t", index=False)
+
+    config.write_text(
+        "\n".join(
+            [
+                f"experiments_tsv: {experiments_tsv}",
+                f"predictions_tsv: {predictions_tsv}",
+                "experiments:",
+                "  id: [T001]",
+                "predictors:",
+                "  tool_id: [random]",
+                f"out_dir: {results_dir}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(benchmark, "sync_zenodo_experiments", lambda *args, **kwargs: [])
+
+    with pytest.raises(ValueError, match="Experiment validation failed") as excinfo:
+        benchmark.run_benchmark(config)
+
+    message = str(excinfo.value)
+    assert "T001 [ground_truth_classes]" in message
+    assert "no negative genes" in message
+    assert not results_dir.exists()
+
+
 def test_example_end_to_end(tmp_path):
     """Run a small two-predictor benchmark config and check outputs."""
     repo_root = pathlib.Path(__file__).resolve().parents[1]
@@ -349,7 +419,8 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
     score_path = tmp_path / "scores.tsv"
     score_path.write_text(
         "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
-        "ENSG1\tGENE1\t\thsa-miR-test\t0.9\n",
+        "ENSG1\tGENE1\t\thsa-miR-test\t0.9\n"
+        "ENSG2\tGENE2\t\thsa-miR-test\t0.1\n",
         encoding="utf-8",
     )
     pd.DataFrame(
@@ -385,7 +456,8 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(
             "gene_id\tlogFC\tFDR\tPValue\n"
-            "ENSG1\t-2.0\t0.01\t0.001\n",
+            "ENSG1\t-2.0\t0.01\t0.001\n"
+            "ENSG2\t0.2\t0.50\t0.500\n",
             encoding="utf-8",
         )
         return [dest]
@@ -418,8 +490,8 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
     assert out_dir.parent == results_dir.resolve()
     assert sync_calls == [(["data/experiments/processed/18745741/demo.tsv"], tmp_path, None, 120, False)]
     joined = pd.read_csv(out_dir / "datasets" / "T001" / "joined.tsv", sep="\t")
-    assert joined["gene_id"].tolist() == ["ENSG1"]
-    assert joined["score_random"].tolist() == [0.9]
+    assert joined["gene_id"].tolist() == ["ENSG1", "ENSG2"]
+    assert joined["score_random"].tolist() == [0.9, 0.1]
 
 
 def test_run_benchmark_passes_post_evaluation_joined_frames(tmp_path, monkeypatch):
@@ -446,7 +518,8 @@ def test_run_benchmark_passes_post_evaluation_joined_frames(tmp_path, monkeypatc
     score_path = tmp_path / "scores.tsv"
     score_path.write_text(
         "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
-        "ENSG1\tGENE1\t\thsa-miR-test\t0.9\n",
+        "ENSG1\tGENE1\t\thsa-miR-test\t0.9\n"
+        "ENSG2\tGENE2\t\thsa-miR-test\t0.1\n",
         encoding="utf-8",
     )
     pd.DataFrame(
@@ -479,7 +552,8 @@ def test_run_benchmark_passes_post_evaluation_joined_frames(tmp_path, monkeypatc
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(
             "gene_id\tlogFC\tFDR\tPValue\n"
-            "ENSG1\t-2.0\t0.01\t0.001\n",
+            "ENSG1\t-2.0\t0.01\t0.001\n"
+            "ENSG2\t0.2\t0.50\t0.500\n",
             encoding="utf-8",
         )
         return [dest]
@@ -487,7 +561,7 @@ def test_run_benchmark_passes_post_evaluation_joined_frames(tmp_path, monkeypatc
     captured = {}
 
     def fake_evaluate_joined_dataframe(joined, *args, **kwargs):
-        joined["local_rank_random"] = [0.8]
+        joined["local_rank_random"] = [0.8, 0.2]
         return {
             "metric_rows": [],
             "plots": [],

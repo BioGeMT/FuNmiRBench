@@ -94,6 +94,35 @@ def test_validate_experiments_accepts_benchmark_ready_table(tmp_path, monkeypatc
     assert summary.benchmark_ready == 1
 
 
+def test_validate_experiments_applies_filters(tmp_path):
+    experiments_tsv = _write_registry(
+        tmp_path,
+        [
+            _registry_row(id="T001"),
+            _registry_row(
+                id="T002",
+                de_table_path="data/experiments/processed/18745741/bad.tsv",
+            ),
+        ],
+    )
+    _write_de_table(tmp_path, _valid_de_table())
+    _write(
+        tmp_path / "data" / "experiments" / "processed" / "18745741" / "bad.tsv",
+        "gene_id\tlogFC\n"
+        "ENSG00000000001\t-2.0\n",
+    )
+
+    summary = validate_experiments(
+        experiments_tsv,
+        root=tmp_path,
+        filters={"id": ["T001"]},
+    )
+
+    assert summary.ok
+    assert summary.total == 1
+    assert summary.benchmark_ready == 1
+
+
 def test_validate_experiments_requires_registry_columns(tmp_path, monkeypatch):
     experiments_tsv = _write_registry(
         tmp_path,

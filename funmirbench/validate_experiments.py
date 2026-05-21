@@ -76,6 +76,21 @@ def _duplicate_values(values: pd.Series) -> list[str]:
     return sorted(normalized[normalized.duplicated()].unique().tolist())
 
 
+def _filter_registry(df: pd.DataFrame, filters: dict | None) -> pd.DataFrame:
+    if not filters:
+        return df
+
+    for column, values in filters.items():
+        if column not in df.columns:
+            raise ValueError(
+                f"Experiment filter column {column!r} was not found in the experiment registry."
+            )
+        if not isinstance(values, list):
+            values = [values]
+        df = df[df[column].isin(values)]
+    return df
+
+
 def _normalize_de_table(path: pathlib.Path) -> pd.DataFrame:
     de = read_de_table(path)
     gene_src = find_gene_id_column(de)
@@ -322,12 +337,14 @@ def validate_experiments(
     experiments_tsv: str | pathlib.Path,
     *,
     root: pathlib.Path | None = None,
+    filters: dict | None = None,
     fdr_threshold: float = 0.05,
     abs_logfc_threshold: float = 1.0,
 ) -> ValidationSummary:
     experiments_tsv = pathlib.Path(experiments_tsv).expanduser().resolve()
     root = pathlib.Path(root).expanduser().resolve() if root is not None else None
     df = pd.read_csv(experiments_tsv, sep="\t", dtype=str).fillna("")
+    df = _filter_registry(df, filters)
 
     issues = _registry_issues(df)
     if any(issue.check == "registry_columns" for issue in issues):
@@ -391,6 +408,24 @@ def validate_experiments(
         benchmark_ready=max(0, int(len(df)) - len(invalid_dataset_ids)),
         issues=issues,
     )
+
+
+def format_validation_failure(summary: ValidationSummary) -> str:
+    lines = [
+        f"Experiment validation failed with {len(summary.issues)} issue(s).",
+        f"Datasets in metadata: {summary.total}",
+        f"Files present: {summary.files_present}",
+        f"Benchmark-ready datasets: {summary.benchmark_ready}",
+    ]
+    for issue in summary.issues[:MAX_LOGGED_ISSUES]:
+        location = f" ({issue.path})" if issue.path else ""
+        lines.append(
+            f"- {issue.dataset_id} [{issue.check}]: {issue.message}{location}"
+        )
+    remaining = len(summary.issues) - MAX_LOGGED_ISSUES
+    if remaining > 0:
+        lines.append(f"- ... {remaining} more issue(s)")
+    return "\n".join(lines)
 
 
 def log_validation_summary(summary: ValidationSummary) -> None:

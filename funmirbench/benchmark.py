@@ -26,6 +26,11 @@ from funmirbench.evaluate import (
 from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
 from funmirbench.logger import parse_log_level, setup_logging
+from funmirbench.validate_experiments import (
+    format_validation_failure,
+    log_validation_summary,
+    validate_experiments,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -105,6 +110,10 @@ def parse_args():
 def filter_df(df, filters):
     """AND across columns, OR within each column's value list."""
     for col, values in filters.items():
+        if col not in df.columns:
+            raise ValueError(
+                f"Filter column {col!r} was not found. Available columns: {sorted(df.columns)}"
+            )
         if not isinstance(values, list):
             values = [values]
         df = df[df[col].isin(values)]
@@ -892,22 +901,37 @@ def run_benchmark(config_path):
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
     root = config_path.parent
+    experiments_tsv = root / config["experiments_tsv"]
+    experiment_filters = config.get("experiments")
+    eval_cfg = config.get("evaluation", {})
+    fdr_threshold = float(eval_cfg.get("fdr_threshold", 0.05))
+    abs_logfc_threshold = float(eval_cfg.get("abs_logfc_threshold", 1.0))
+    predictor_top_fraction = float(eval_cfg.get("predictor_top_fraction", 0.10))
 
     logger.info("Syncing selected experiment DE tables from Zenodo...")
     synced = sync_zenodo_experiments(
-        selected_experiment_paths(
-            root / config["experiments_tsv"],
-            config.get("experiments"),
-        ),
+        selected_experiment_paths(experiments_tsv, experiment_filters),
         repo=root,
     )
     logger.info(f"Synced {len(synced)} experiment DE tables.")
 
+    logger.info("Validating selected experiments...")
+    validation_summary = validate_experiments(
+        experiments_tsv,
+        root=root,
+        filters=experiment_filters,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+    )
+    log_validation_summary(validation_summary)
+    if not validation_summary.ok:
+        raise ValueError(format_validation_failure(validation_summary))
+
     logger.info("Loading experiments...")
     experiments = load_experiments(
-        root / config["experiments_tsv"],
+        experiments_tsv,
         root,
-        config.get("experiments"),
+        experiment_filters,
     )
     if not experiments:
         raise ValueError("Experiment selection resolved to no datasets.")
@@ -920,7 +944,6 @@ def run_benchmark(config_path):
     if not predictions:
         raise ValueError("Predictor selection resolved to no predictors.")
 
-    eval_cfg = config.get("evaluation", {})
     out_root = (root / config.get("out_dir", "results")).resolve()
     out_root.mkdir(parents=True, exist_ok=True)
     run_dir_name = build_run_dir_name(
@@ -946,9 +969,6 @@ def run_benchmark(config_path):
     metric_rows = []
     dataset_outputs = []
     joined_frames = []
-    fdr_threshold = float(eval_cfg.get("fdr_threshold", 0.05))
-    abs_logfc_threshold = float(eval_cfg.get("abs_logfc_threshold", 1.0))
-    predictor_top_fraction = float(eval_cfg.get("predictor_top_fraction", 0.10))
     validate_threshold_sensitive_predictors(
         predictions,
         root=root,
