@@ -15,12 +15,12 @@ def resolve_cli_path(path: Path, root: Path) -> Path:
 
 def main() -> None:
     root = repo_root()
-    pipeline_dir = root / "pipelines" / "standardized_predictors" / "microT_CNN"
+    pipeline_dir = root / "pipelines" / "standardized_predictors" / "microt_cnn"
     parser = argparse.ArgumentParser()
     parser.add_argument("--predictions-file", type=Path, default=pipeline_dir / "data" / "microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz", help="Raw all-score predictions file from microT-CNN")
     parser.add_argument("--resources-dir", type=Path, default=pipeline_dir / "data" / "resources", help="Directory for downloaded miRBase files")
-    parser.add_argument("--output", type=Path, default=root / "data" / "predictions" / "microT_CNN" / "microT_CNN_standardized.tsv", help="Output TSV path")
-    parser.add_argument("--log-file", type=Path, default=pipeline_dir / "microT_CNN_pipeline.log", help="Log file path")
+    parser.add_argument("--output", type=Path, default=root / "data" / "predictions" / "microt_cnn" / "microt_cnn_standardized.tsv", help="Output TSV path")
+    parser.add_argument("--log-file", type=Path, default=pipeline_dir / "microt_cnn_pipeline.log", help="Log file path")
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level. Default: INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] )
 
     args = parser.parse_args()

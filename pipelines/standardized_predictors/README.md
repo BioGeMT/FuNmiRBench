@@ -17,7 +17,7 @@ Current predictor pipelines:
 - `cheating/`
 - `targetscan/`
 - `tec-mitarget/`
-- `microT_CNN/`
+- `microt_cnn/`
 
 ## Standardized Schema
 
@@ -37,7 +37,7 @@ Not every demo pipeline currently populates every column, but they all write thi
 
 - `targetscan/`
 - `tec-mitarget/`
-- `microT_CNN/`
+- `microt_cnn/`
 - `mock/`
 - `cheating/`
 

@@ -6,7 +6,7 @@ This directory contains the standardization pipeline for microT-CNN gene-level p
 
 - `pipeline.py`: CLI entrypoint for the pipeline.
 - `utils.py`: helpers for logging, downloads, cleaning, mapping, and output construction.
-- `microT_CNN_pipeline.log`: example log from a completed run (created when you run the pipeline).
+- `microt_cnn_pipeline.log`: example log from a completed run (created when you run the pipeline).
 
 ## What The Pipeline Does
 
@@ -38,7 +38,7 @@ The output TSV contains:
 By default, the standardized file is written to:
 
 ```
-data/predictions/microT_CNN/microT_CNN_standardized.tsv
+data/predictions/microt_cnn/microt_cnn_standardized.tsv
 ```
 
 relative to the repository root.
@@ -48,8 +48,8 @@ relative to the repository root.
 The pipeline downloads external resources only when the expected cache files are missing. By default, the cache files are:
 
 ```
-pipelines/standardized_predictors/microT_CNN/data/resources/mirbase/mature.fa
-pipelines/standardized_predictors/microT_CNN/data/microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz
+pipelines/standardized_predictors/microt_cnn/data/resources/mirbase/mature.fa
+pipelines/standardized_predictors/microt_cnn/data/microt_cnn_prediction_result_human_all_scores_gene_level.tsv.gz
 ```
 
 The log notes whether each resource was reused from cache or downloaded.
@@ -61,23 +61,23 @@ From the repository root:
 ```bash
 conda env create -f pipelines/standardized_predictors/environment.yml
 conda activate standardized_predictors
-python pipelines/standardized_predictors/microT_CNN/pipeline.py
+python pipelines/standardized_predictors/microt_cnn/pipeline.py
 ```
 
 Or using the repo's `uv` environment:
 
 ```bash
-uv run pipelines/standardized_predictors/microT_CNN/pipeline.py
+uv run pipelines/standardized_predictors/microt_cnn/pipeline.py
 ```
 
 ## CLI Arguments
 
 ```bash
-python pipelines/standardized_predictors/microT_CNN/pipeline.py \
-  --predictions-file pipelines/standardized_predictors/microT_CNN/data/microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz \
-  --resources-dir pipelines/standardized_predictors/microT_CNN/data/resources \
-  --output data/predictions/microT_CNN/microT_CNN_standardized.tsv \
-  --log-file pipelines/standardized_predictors/microT_CNN/microT_CNN_pipeline.log \
+python pipelines/standardized_predictors/microt_cnn/pipeline.py \
+  --predictions-file pipelines/standardized_predictors/microt_cnn/data/microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz \
+  --resources-dir pipelines/standardized_predictors/microt_cnn/data/resources \
+  --output data/predictions/microt_cnn/microt_cnn_standardized.tsv \
+  --log-file pipelines/standardized_predictors/microt_cnn/microt_cnn_pipeline.log \
   --log-level INFO
 ```
 
