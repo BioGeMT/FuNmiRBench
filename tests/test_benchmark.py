@@ -317,10 +317,23 @@ def test_example_end_to_end(tmp_path):
         out_dir / "plots" / "combined" / "ranks" / "positive_background_local_rank_distributions.png"
     ).is_file()
     assert (
+        out_dir / "plots" / "combined" / "ranks" / "positive_background_local_rank_counts.png"
+    ).is_file()
+    assert (
         out_dir / "plots" / "combined" / "ranks" / "positive_background_global_rank_distributions.png"
     ).is_file()
     assert (
-        out_dir / "plots" / "combined" / "ranks" / "positive_recovery_by_prediction_count.png"
+        out_dir / "plots" / "combined" / "ranks" / "positive_background_global_rank_counts.png"
+    ).is_file()
+    assert (
+        out_dir / "plots" / "combined" / "ranks" / "positive_recovery_fraction_by_prediction_count.png"
+    ).is_file()
+    assert (
+        out_dir
+        / "plots"
+        / "combined"
+        / "combinations"
+        / "predictor_combination_expanded_frontier.png"
     ).is_file()
     assert (
         out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "heatmaps" / "top_10pct_positive_genes.png"

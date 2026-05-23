@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import pathlib
-import textwrap
 
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 
-from funmirbench.evaluate import REPORT_PAGE_SIZE, describe_gt_rule
+from funmirbench.evaluate import REPORT_PAGE_SIZE, _is_publication_tool
 
 
 BLUE = "#17324D"
@@ -17,6 +16,14 @@ MUTED = "#5B6577"
 RULE = "#D8DEE9"
 BOX_FACE = "#F5F8FC"
 BOX_EDGE = "#D8E2EF"
+TABLE_HEADER = "#E9F1FB"
+TABLE_ALT = "#F9FBFD"
+REPORT_TITLE_SIZE = 23
+REPORT_SUBTITLE_SIZE = 12.2
+REPORT_SECTION_SIZE = 13.4
+REPORT_TABLE_SIZE = 10.2
+REPORT_PLOT_TITLE_SIZE = 13.4
+REPORT_PLOT_SUBTITLE_SIZE = 10.4
 
 
 def _metric_value(value, *, percent=False):
@@ -26,10 +33,11 @@ def _metric_value(value, *, percent=False):
     return f"{value:.1%}" if percent else f"{value:.3f}"
 
 
-def _safe_relpath(path):
+def _short_path(path):
     if path is None:
         return "NA"
-    return str(path).replace("\\", "/")
+    path = pathlib.Path(str(path))
+    return path.name or str(path)
 
 
 def _new_page():
@@ -41,16 +49,34 @@ def _new_page():
 
 
 def _save_page(pdf, fig):
-    fig.set_size_inches(*REPORT_PAGE_SIZE, forward=True)
     fig.patch.set_facecolor("white")
     pdf.savefig(fig, facecolor="white")
     plt.close(fig)
 
 
 def _header(ax, title, subtitle):
-    ax.text(0.06, 0.95, title, fontsize=19, fontweight="bold", color=BLUE, va="top", ha="left")
-    ax.text(0.06, 0.915, subtitle, fontsize=10.5, color=MUTED, va="top", ha="left")
-    ax.add_line(plt.Line2D([0.06, 0.94], [0.892, 0.892], color=RULE, linewidth=1.2))
+    ax.text(
+        0.06,
+        0.955,
+        title,
+        fontsize=REPORT_TITLE_SIZE,
+        fontweight="bold",
+        color=BLUE,
+        va="top",
+        ha="left",
+        family="DejaVu Sans",
+    )
+    ax.text(
+        0.06,
+        0.916,
+        subtitle,
+        fontsize=REPORT_SUBTITLE_SIZE,
+        color=MUTED,
+        va="top",
+        ha="left",
+        family="DejaVu Sans",
+    )
+    ax.add_line(plt.Line2D([0.06, 0.94], [0.895, 0.895], color=RULE, linewidth=1.2))
 
 
 def _metric_card(ax, label, value, *, x, y):
@@ -58,7 +84,7 @@ def _metric_card(ax, label, value, *, x, y):
         x,
         y,
         f"{label}\n{value}",
-        fontsize=10.3,
+        fontsize=11.4,
         fontweight="bold",
         color=BLUE,
         va="top",
@@ -67,59 +93,171 @@ def _metric_card(ax, label, value, *, x, y):
     )
 
 
-def _block(ax, title, lines, *, x, y, width, body_size=9.2):
-    ax.text(x, y, title, fontsize=11.3, fontweight="bold", color="#2F5D8C", va="top", ha="left")
-    current_y = y - 0.034
-    wrap_width = max(28, int(width * 105))
-    for line in lines:
-        for chunk in textwrap.wrap(str(line), width=wrap_width) or [""]:
-            ax.text(x, current_y, chunk, fontsize=body_size, color="#22303C", va="top", ha="left")
-            current_y -= 0.022
-        current_y -= 0.008
-    return current_y
+def _key_value_table(ax, rows, *, bbox):
+    table = ax.table(
+        cellText=rows,
+        colLabels=["Metric", "Value"],
+        colWidths=[0.58, 0.42],
+        cellLoc="left",
+        colLoc="left",
+        bbox=bbox,
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(REPORT_TABLE_SIZE)
+    table.scale(1.0, 1.28)
+    for (row, col), cell in table.get_celld().items():
+        cell.PAD = 0.075
+        cell.set_edgecolor("#D9E2EC")
+        cell.set_linewidth(0.7)
+        if row == 0:
+            cell.set_facecolor(TABLE_HEADER)
+            cell.set_text_props(weight="bold", color=BLUE)
+        else:
+            cell.set_facecolor("#FFFFFF" if row % 2 else TABLE_ALT)
+            if col == 1:
+                cell.set_text_props(ha="right")
+    return table
 
 
-def _common_prediction_lines(common_prediction_summary):
-    if common_prediction_summary is None or common_prediction_summary.empty:
-        return ["Common-prediction summary unavailable for this dataset."]
-    rows = []
-    order = [
-        "publication_common_set",
-        "all_real_predictors_common_set",
-        "pairwise_common_set",
-    ]
-    for summary_type in order:
-        subset = common_prediction_summary[common_prediction_summary["summary_type"] == summary_type]
-        if subset.empty:
-            continue
-        for row in subset.head(4).itertuples(index=False):
-            tools = str(row.tools).replace(",", " + ")
-            rows.append(
-                f"{tools}: {int(row.rows_common):,}/{int(row.rows_total):,} genes "
-                f"({_metric_value(row.percent_common, percent=True)})"
-            )
-    return rows or ["No common real-predictor scored set was available."]
+def _wide_table(ax, rows, *, title, columns, col_widths, bbox, font_size=REPORT_TABLE_SIZE, right_align_columns=None):
+    right_align_columns = set(right_align_columns or [])
+    ax.text(
+        bbox[0],
+        bbox[1] + bbox[3] + 0.018,
+        title,
+        fontsize=REPORT_SECTION_SIZE,
+        fontweight="bold",
+        color="#2F5D8C",
+        va="bottom",
+        ha="left",
+    )
+    table = ax.table(
+        cellText=rows,
+        colLabels=columns,
+        colWidths=col_widths,
+        cellLoc="left",
+        colLoc="left",
+        bbox=bbox,
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(font_size)
+    for (row, col), cell in table.get_celld().items():
+        cell.PAD = 0.075
+        cell.set_edgecolor("#D9E2EC")
+        cell.set_linewidth(0.7)
+        if row == 0:
+            cell.set_facecolor(TABLE_HEADER)
+            cell.set_text_props(weight="bold", color=BLUE)
+        else:
+            cell.set_facecolor("#FFFFFF" if row % 2 else TABLE_ALT)
+            if col in right_align_columns:
+                cell.set_text_props(ha="right")
+    return table
+
+
+def _plot_panel_title(fig, *, title, subtitle, title_y, subtitle_y, x=0.04):
+    fig.text(
+        x,
+        title_y,
+        title,
+        fontsize=REPORT_PLOT_TITLE_SIZE,
+        fontweight="bold",
+        color=BLUE,
+        va="top",
+        ha="left",
+        family="DejaVu Sans",
+    )
+    fig.text(
+        x,
+        subtitle_y,
+        subtitle,
+        fontsize=REPORT_PLOT_SUBTITLE_SIZE,
+        color=MUTED,
+        va="top",
+        ha="left",
+        family="DejaVu Sans",
+    )
+
+
+def _plot_panel_subtitle(label):
+    subtitles = {
+        "Score vs expected effect": "Scores compared with perturbation-aware effect.",
+        "GSEA enrichment": "Running enrichment of GT positives along ranked genes.",
+        "Precision-recall": "Precision and recall over score thresholds.",
+        "ROC": "True-positive rate versus false-positive rate.",
+        "Top 10% GT-positive heatmap": "Top GT positives ordered by perturbation-aware effect.",
+        "Precision-recall by predictor": "Predictors evaluated on their own scored genes.",
+        "ROC by predictor": "Predictors evaluated on their own scored genes.",
+        "Top-prediction effect CDFs": "Effect distributions among top-ranked predictions.",
+    }
+    return subtitles.get(str(label), "Dataset-level diagnostic plot.")
 
 
 def _plot_grid_page(pdf, *, title, subtitle, plot_paths):
-    fig, ax = _new_page()
-    _header(ax, title, subtitle)
-    boxes = [
-        (0.055, 0.50, 0.42, 0.34),
-        (0.525, 0.50, 0.42, 0.34),
-        (0.055, 0.09, 0.42, 0.34),
-        (0.525, 0.09, 0.42, 0.34),
+    del title, subtitle
+    fig, _ = _new_page()
+    panels = [
+        {"title_y": 0.965, "subtitle_y": 0.940, "image_box": [0.04, 0.505, 0.92, 0.410]},
+        {"title_y": 0.485, "subtitle_y": 0.460, "image_box": [0.04, 0.025, 0.92, 0.410]},
     ]
-    for (label, path), box in zip(plot_paths, boxes):
+    for (label, path), panel in zip(plot_paths, panels):
         path = pathlib.Path(path)
         if not path.is_file():
             continue
+        _plot_panel_title(
+            fig,
+            title=str(label),
+            subtitle=_plot_panel_subtitle(label),
+            title_y=panel["title_y"],
+            subtitle_y=panel["subtitle_y"],
+        )
         image = plt.imread(path)
+        box = panel["image_box"]
         image_ax = fig.add_axes(box)
-        image_ax.imshow(image)
+        image_ax.imshow(image, interpolation="antialiased")
         image_ax.axis("off")
-        fig.text(box[0], box[1] + box[3] + 0.01, label, fontsize=8.8, color=MUTED, va="bottom", ha="left")
     _save_page(pdf, fig)
+
+
+def _chunks(items, size):
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+
+
+def _dataset_context_plots(plots_dir):
+    paths = []
+    heatmap_path = plots_dir / "heatmaps" / "top_10pct_positive_genes.png"
+    if heatmap_path.is_file():
+        paths.append(("Top 10% GT-positive heatmap", heatmap_path))
+
+    comparison_dir = plots_dir / "comparisons"
+    preferred_names = [
+        "precision_recall_all_scored.png",
+        "roc_all_scored.png",
+        "top_100_effect_cdfs.png",
+    ]
+    seen = {path for _, path in paths}
+    for filename in preferred_names:
+        path = comparison_dir / filename
+        if path.is_file() and path not in seen:
+            paths.append((_comparison_plot_label(path), path))
+            seen.add(path)
+    if comparison_dir.is_dir():
+        for path in sorted(comparison_dir.glob("*.png")):
+            if "_common" in path.stem or path in seen:
+                continue
+            paths.append((_comparison_plot_label(path), path))
+            seen.add(path)
+    return paths
+
+
+def _comparison_plot_label(path):
+    labels = {
+        "precision_recall_all_scored": "Precision-recall by predictor",
+        "roc_all_scored": "ROC by predictor",
+        "top_100_effect_cdfs": "Top-prediction effect CDFs",
+    }
+    return labels.get(path.stem, path.stem.replace("_", " ").title())
 
 
 def write_publication_predictor_reports(
@@ -138,12 +276,24 @@ def write_publication_predictor_reports(
     fdr_threshold,
     abs_logfc_threshold,
     common_prediction_summary=None,
+    skipped_tool_rows=None,
 ):
+    del common_prediction_summary
     reports_dir = pathlib.Path(reports_dir)
     plots_dir = pathlib.Path(plots_dir)
     written = []
-    common_lines = _common_prediction_lines(common_prediction_summary)
-    for row in metric_rows:
+    report_rows = [row for row in metric_rows if _is_publication_tool(row.get("tool_id"))]
+    evaluated_tool_ids = {str(row.get("tool_id")) for row in report_rows}
+    skipped_rows = [
+        row
+        for row in (skipped_tool_rows or [])
+        if _is_publication_tool(row.get("tool_id"))
+        and str(row.get("tool_id")) not in evaluated_tool_ids
+    ]
+    if not report_rows:
+        report_rows = list(metric_rows)
+    rows_to_write = [("evaluated", row) for row in report_rows] + [("skipped", row) for row in skipped_rows]
+    for row_status, row in rows_to_write:
         tool_id = str(row.get("tool_id"))
         label = str(tool_labels.get(tool_id, tool_id))
         report_path = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.pdf"
@@ -157,7 +307,73 @@ def write_publication_predictor_reports(
 
         with PdfPages(report_path) as pdf:
             fig, ax = _new_page()
-            _header(ax, f"{dataset_id} | {label}", f"{mirna} | {perturbation} | {cell_line}")
+            _header(ax, f"{dataset_id} - {label}", f"{mirna}, {perturbation}, {cell_line}")
+            if row_status == "skipped":
+                rows_total = int(row.get("rows_total", 0) or 0)
+                rows_scored = int(row.get("rows_scored", 0) or 0)
+                coverage = rows_scored / rows_total if rows_total else float("nan")
+                skip_reason = str(row.get("skip_reason") or "Predictor could not be evaluated.")
+                cards = [
+                    ("Status", "Skipped", 0.06),
+                    ("Coverage", _metric_value(coverage, percent=True), 0.29),
+                    ("Rows scored", f"{rows_scored:,}", 0.52),
+                    ("GT pos. scored", f"{int(row.get('positives_scored', 0) or 0):,}", 0.75),
+                ]
+                for label_text, value, x in cards:
+                    _metric_card(ax, label_text, value, x=x, y=0.84)
+                _key_value_table(
+                    ax,
+                    [
+                        ["Rows total", f"{rows_total:,}"],
+                        ["Rows scored", f"{rows_scored:,}"],
+                        ["Rows missing score", f"{int(row.get('rows_missing_score', 0) or 0):,}"],
+                        ["GT positives total", f"{int(row.get('positives_total', 0) or 0):,}"],
+                        ["GT positives scored", f"{int(row.get('positives_scored', 0) or 0):,}"],
+                    ],
+                    bbox=[0.06, 0.50, 0.40, 0.18],
+                )
+                _wide_table(
+                    ax,
+                    [
+                        ["Skip reason", skip_reason],
+                        ["Diagnostic plots", "Not generated for this dataset"],
+                    ],
+                    title="Evaluation status",
+                    columns=["Item", "Value"],
+                    col_widths=[0.32, 0.68],
+                    bbox=[0.52, 0.52, 0.42, 0.13],
+                    font_size=REPORT_TABLE_SIZE,
+                )
+                _wide_table(
+                    ax,
+                    [
+                        ["GT positives", f"FDR < {float(fdr_threshold)}; effect > {float(abs_logfc_threshold)}"],
+                        ["Effect sign", "-logFC for OE; +logFC for KO/KD"],
+                        ["Metric scope", "Usable ground truth plus positive and background scored genes"],
+                    ],
+                    title="Evaluation rule",
+                    columns=["Rule", "Value"],
+                    col_widths=[0.22, 0.78],
+                    bbox=[0.04, 0.30, 0.92, 0.12],
+                    font_size=REPORT_TABLE_SIZE,
+                )
+                _wide_table(
+                    ax,
+                    [
+                        ["GEO accession", geo_accession or "NA"],
+                        ["DE table file", _short_path(de_table_path)],
+                        ["Predictor file", _short_path(predictor_output_paths.get(tool_id))],
+                    ],
+                    title="Provenance",
+                    columns=["Field", "Value"],
+                    col_widths=[0.22, 0.78],
+                    bbox=[0.04, 0.10, 0.92, 0.11],
+                    font_size=REPORT_TABLE_SIZE,
+                )
+                _save_page(pdf, fig)
+                written.append(report_path)
+                continue
+
             cards = [
                 ("Coverage", _metric_value(row.get("coverage"), percent=True), 0.06),
                 ("Positive cov.", _metric_value(row.get("positive_coverage"), percent=True), 0.29),
@@ -167,75 +383,69 @@ def write_publication_predictor_reports(
             for label_text, value, x in cards:
                 _metric_card(ax, label_text, value, x=x, y=0.84)
 
-            _block(
+            metric_table_rows = [
+                ["Coverage", _metric_value(row.get("coverage"), percent=True)],
+                ["Positive coverage", _metric_value(row.get("positive_coverage"), percent=True)],
+                ["APS", _metric_value(row.get("aps"))],
+                ["PR-AUC", _metric_value(row.get("pr_auc"))],
+                ["AUROC", _metric_value(row.get("auroc"))],
+                ["Spearman", _metric_value(row.get("spearman"))],
+                ["Pearson", _metric_value(row.get("pearson"))],
+                ["GSEA ES", _metric_value(row.get("gsea_es"))],
+            ]
+            coverage_rows = [
+                ["Rows total", f"{int(row.get('rows_total', 0)):,}"],
+                ["Rows scored", f"{int(row.get('rows_scored', 0)):,}"],
+                ["Rows missing score", f"{int(row.get('rows_missing_score', 0)):,}"],
+                ["GT positives total", f"{int(row.get('positives_total', 0)):,}"],
+                ["GT positives scored", f"{int(row.get('positives_scored', 0)):,}"],
+            ]
+            _key_value_table(ax, metric_table_rows, bbox=[0.04, 0.54, 0.42, 0.20])
+            _key_value_table(ax, coverage_rows, bbox=[0.52, 0.56, 0.42, 0.17])
+            _wide_table(
                 ax,
-                "Evaluation rule",
                 [
-                    f"GT positives: {describe_gt_rule(fdr_threshold, abs_logfc_threshold)}.",
-                    "Scores are aligned so that higher values always indicate stronger predicted targeting before evaluation.",
-                    "Metrics are computed on rows with usable ground truth and an available score for this predictor.",
+                    ["GT positives", f"FDR < {float(fdr_threshold)}; effect > {float(abs_logfc_threshold)}"],
+                    ["Effect sign", "-logFC for OE; +logFC for KO/KD"],
+                    ["Score direction", "Higher aligned scores mean stronger predicted targeting"],
+                    ["Metric scope", "Usable ground truth and an available score"],
                 ],
-                x=0.06,
-                y=0.66,
-                width=0.40,
+                title="Evaluation rule",
+                columns=["Rule", "Value"],
+                col_widths=[0.22, 0.78],
+                bbox=[0.04, 0.365, 0.92, 0.115],
+                font_size=REPORT_TABLE_SIZE,
             )
-            _block(
+            _wide_table(
                 ax,
-                "Coverage details",
                 [
-                    f"Rows total: {int(row.get('rows_total', 0)):,}",
-                    f"Rows scored: {int(row.get('rows_scored', 0)):,}",
-                    f"Rows missing score: {int(row.get('rows_missing_score', 0)):,}",
-                    f"GT positives total: {int(row.get('positives_total', 0)):,}",
-                    f"GT positives scored: {int(row.get('positives_scored', 0)):,}",
+                    ["GEO accession", geo_accession or "NA"],
+                    ["DE table file", _short_path(de_table_path)],
+                    ["Predictor file", _short_path(predictor_output_paths.get(tool_id))],
                 ],
-                x=0.54,
-                y=0.66,
-                width=0.38,
-            )
-            _block(
-                ax,
-                "Metric details",
-                [
-                    f"Pearson: {_metric_value(row.get('pearson'))}",
-                    f"Spearman: {_metric_value(row.get('spearman'))}",
-                    f"APS: {_metric_value(row.get('aps'))}",
-                    f"PR-AUC: {_metric_value(row.get('pr_auc'))}",
-                    f"AUROC: {_metric_value(row.get('auroc'))}",
-                    f"GSEA ES: {_metric_value(row.get('gsea_es'))}",
-                ],
-                x=0.06,
-                y=0.34,
-                width=0.40,
-            )
-            _block(
-                ax,
-                "Common predictions",
-                common_lines,
-                x=0.54,
-                y=0.34,
-                width=0.38,
-                body_size=8.5,
-            )
-            _block(
-                ax,
-                "Provenance",
-                [
-                    f"GEO accession: {geo_accession or 'NA'}",
-                    f"DE table: {_safe_relpath(de_table_path)}",
-                    f"Predictor source: {_safe_relpath(predictor_output_paths.get(tool_id))}",
-                ],
-                x=0.06,
-                y=0.13,
-                width=0.86,
-                body_size=8.1,
+                title="Provenance",
+                columns=["Field", "Value"],
+                col_widths=[0.22, 0.78],
+                bbox=[0.04, 0.175, 0.92, 0.105],
+                font_size=REPORT_TABLE_SIZE,
             )
             _save_page(pdf, fig)
-            _plot_grid_page(
-                pdf,
-                title=f"{dataset_id} | {label} figures",
-                subtitle="Per-predictor diagnostics used to interpret score ranking, enrichment, and classification behavior.",
-                plot_paths=plot_paths,
-            )
+            for page_index, plot_chunk in enumerate(_chunks(plot_paths, 2), start=1):
+                suffix = "" if len(plot_paths) <= 2 else f" ({page_index})"
+                _plot_grid_page(
+                    pdf,
+                    title=f"{dataset_id} - {label} figures{suffix}",
+                    subtitle="Per-predictor diagnostics for score ranking, enrichment, and classification behavior.",
+                    plot_paths=plot_chunk,
+                )
+            dataset_context = _dataset_context_plots(plots_dir)
+            for page_index, context_chunk in enumerate(_chunks(dataset_context, 2), start=1):
+                suffix = "" if len(dataset_context) <= 2 else f" ({page_index})"
+                _plot_grid_page(
+                    pdf,
+                    title=f"{dataset_id} dataset-level figures{suffix}",
+                    subtitle="Top-positive heatmap and own-scored predictor comparisons; common-set comparison plots are excluded.",
+                    plot_paths=context_chunk,
+                )
         written.append(report_path)
     return written

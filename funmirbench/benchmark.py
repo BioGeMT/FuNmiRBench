@@ -102,6 +102,7 @@ def _finalize_run_bundle(
         joined_frames=joined_frames,
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
+        predictor_top_fraction=predictor_top_fraction,
         tool_labels=tool_labels,
         logger=logger.info,
     )
@@ -117,6 +118,7 @@ def _finalize_run_bundle(
         tool_ids=tool_ids,
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
+        predictor_top_fraction=predictor_top_fraction,
         logger=logger.info,
     )
     combined_outputs.setdefault("tables", {}).update(combination_outputs.get("tables", {}))
@@ -223,6 +225,19 @@ def run_benchmark(config_path):
     )
     if not predictions:
         raise ValueError("Predictor selection resolved to no predictors.")
+    publication_predictions = {
+        tool_id: meta
+        for tool_id, meta in predictions.items()
+        if evaluate_module._is_publication_tool(tool_id)
+    }
+    if publication_predictions:
+        excluded_tool_ids = [tool_id for tool_id in predictions if tool_id not in publication_predictions]
+        if excluded_tool_ids:
+            logger.info(
+                "Excluding control/mock predictors from publication outputs: "
+                + ", ".join(excluded_tool_ids)
+            )
+        predictions = publication_predictions
 
     evaluate_module.FIGURE_DPI = int(eval_cfg.get("figure_dpi", eval_cfg.get("publication_figure_dpi", 450)))
     out_root = (root / config.get("out_dir", "results")).resolve()
@@ -325,6 +340,7 @@ def run_benchmark(config_path):
             de_table_path=str(meta.full_path),
             predictor_output_paths=predictor_output_paths,
             metric_rows=evaluation["metric_rows"],
+            skipped_tool_rows=evaluation.get("skipped_tool_rows", []),
             tool_labels=tool_labels,
             fdr_threshold=fdr_threshold,
             abs_logfc_threshold=abs_logfc_threshold,

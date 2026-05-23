@@ -50,7 +50,7 @@ def build_common_prediction_summary(
     """Return dataset-level common prediction percentages.
 
     Percentages use the joined table row count as denominator. Controls/oracles are
-    excluded by default so the summary focuses on real predictors.
+    excluded by default.
     """
     total_rows = int(len(joined))
     real_tools = _available_real_tools(joined, tool_ids, excluded_tool_ids=excluded_tool_ids)

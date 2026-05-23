@@ -37,11 +37,13 @@ def test_combination_summary_excludes_oracles_and_scores_rank_mean():
     assert combo["dataset_count"] == 1
     assert combo["aps_mean"] == 1.0
     assert combo["positive_coverage_mean"] == 1.0
+    assert combo["intersection_precision_mean"] == 1.0
+    assert combo["intersection_recovery_mean"] == 0.5
     assert "delta_aps_vs_best_single" in summary.columns
     assert "beats_best_single_aps" in summary.columns
 
 
-def test_combination_outputs_do_not_write_size_performance_plot(tmp_path):
+def test_combination_outputs_write_expanded_frontier_plot(tmp_path):
     joined = pd.DataFrame(
         {
             "gene_id": ["g1", "g2", "g3", "g4"],
@@ -49,6 +51,8 @@ def test_combination_outputs_do_not_write_size_performance_plot(tmp_path):
             "FDR": [0.01, 0.02, 0.5, 0.8],
             "score_targetscan": [0.9, 0.8, 0.2, 0.1],
             "score_mirdb_mirtarget": [0.85, 0.7, 0.3, 0.2],
+            "score_tec-mitarget": [0.95, None, 0.9, 0.1],
+            "score_random": [0.1, 0.8, 0.4, 0.6],
         }
     )
 
@@ -56,14 +60,40 @@ def test_combination_outputs_do_not_write_size_performance_plot(tmp_path):
         [joined],
         tmp_path / "tables",
         tmp_path / "plots",
-        tool_ids=["targetscan", "mirdb_mirtarget"],
+        tool_ids=["targetscan", "mirdb_mirtarget", "tec-mitarget", "random"],
         fdr_threshold=0.05,
         abs_logfc_threshold=1.0,
         max_combination_size=2,
     )
 
-    assert "predictor_combination_frontier" in outputs["plots"]
+    assert "predictor_combination_frontier" not in outputs["plots"]
+    assert "predictor_combination_expanded_frontier" in outputs["plots"]
+    assert "predictor_combination_selected_frontier" not in outputs["plots"]
+    assert "predictor_combination_selected_frontier_all" not in outputs["plots"]
     assert "predictor_combination_size_performance" not in outputs["plots"]
+    assert (
+        tmp_path
+        / "plots"
+        / "combinations"
+        / "predictor_combination_frontier.png"
+    ).exists() is False
+    assert (
+        tmp_path
+        / "plots"
+        / "combinations"
+        / "predictor_combination_expanded_frontier.png"
+    ).is_file()
+    assert (
+        tmp_path
+        / "plots"
+        / "combinations"
+        / "predictor_combination_selected_frontier.png"
+    ).exists() is False
+    summary_text = (tmp_path / "tables" / "predictor_combination_summary.tsv").read_text(
+        encoding="utf-8"
+    )
+    assert "random" not in summary_text
+    assert "tec-mitarget" in summary_text
     assert not (
         tmp_path
         / "plots"

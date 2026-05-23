@@ -44,7 +44,11 @@ def test_audit_run_flags_missing_auroc_metric_table(tmp_path):
                 "cross_dataset_spearman_distribution": "spearman.png",
                 "cross_dataset_auroc_distribution": "auroc.png",
                 "positive_background_local_rank_distributions": "local.png",
+                "positive_background_local_rank_counts": "local_counts.png",
                 "positive_background_global_rank_distributions": "global.png",
+                "positive_background_global_rank_counts": "global_counts.png",
+                "positive_recovery_fraction_by_prediction_count": "recovery_fraction.png",
+                "predictor_combination_expanded_frontier": "expanded_frontier.png",
             },
         },
     }
@@ -89,7 +93,11 @@ def test_audit_run_warns_about_sparse_non_oracle_headline_candidates(tmp_path):
                 "cross_dataset_spearman_distribution": "spearman.png",
                 "cross_dataset_auroc_distribution": "auroc.png",
                 "positive_background_local_rank_distributions": "local.png",
+                "positive_background_local_rank_counts": "local_counts.png",
                 "positive_background_global_rank_distributions": "global.png",
+                "positive_background_global_rank_counts": "global_counts.png",
+                "positive_recovery_fraction_by_prediction_count": "recovery_fraction.png",
+                "predictor_combination_expanded_frontier": "expanded_frontier.png",
             },
         },
     }

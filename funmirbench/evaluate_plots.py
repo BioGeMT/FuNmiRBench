@@ -14,7 +14,7 @@ from funmirbench.evaluate_common import *
 def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, positives_total, out_path):
     pearson = float(df[score_col].corr(df["expected_effect"], method="pearson"))
     spearman = float(df[score_col].corr(df["expected_effect"], method="spearman"))
-    fig, ax = plt.subplots(figsize=(7.2, 5.0))
+    fig, ax = plt.subplots(figsize=(8.6, 5.6))
     positive_mask = df["is_positive"].astype(bool)
     negatives = df.loc[~positive_mask]
     positives = df.loc[positive_mask]
@@ -48,25 +48,16 @@ def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, positi
     score_max = float(df[score_col].max())
     if score_min <= 0.0 <= score_max:
         ax.axvline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle=":", alpha=0.75)
-    ax.set_xlabel(f"{_tool_label(tool_id)} score", fontsize=10)
-    ax.set_ylabel("Expected target effect", fontsize=10)
-    ax.set_title(
-        f"{_tool_label(tool_id)} score vs expected effect",
-        fontsize=11,
-        fontweight="semibold",
-        loc="left",
-        pad=14,
-    )
-    fig.text(
-        0.125,
-        0.955,
-        (
+    ax.set_xlabel(f"{_tool_label(tool_id)} score", fontsize=PLOT_AXIS_LABEL_SIZE)
+    ax.set_ylabel("Expected target effect", fontsize=PLOT_AXIS_LABEL_SIZE)
+    _add_figure_heading(
+        fig,
+        title=f"{_tool_label(tool_id)} score vs expected effect",
+        subtitle=(
             f"{_dataset_caption(dataset_id)}"
             f"  |  n={len(df):,} genes"
             f"  |  positives={_positive_count_caption(int(positive_mask.sum()), positives_total)}"
         ),
-        fontsize=9,
-        color=NEUTRAL_COLOR,
     )
     ax.text(
         0.99,
@@ -75,10 +66,10 @@ def _plot_scatter_with_correlation(df, *, score_col, dataset_id, tool_id, positi
         transform=ax.transAxes,
         va="bottom",
         ha="right",
-        fontsize=9,
+        fontsize=10.5,
         bbox={"boxstyle": "round,pad=0.35", "facecolor": "white", "edgecolor": GRID_COLOR},
     )
-    ax.legend(frameon=False, loc="upper right", fontsize=9)
+    ax.legend(frameon=False, loc="upper right", fontsize=PLOT_LEGEND_SIZE)
     _save_figure(fig, out_path)
     return pearson, spearman
 
@@ -109,7 +100,7 @@ def _plot_gsea_enrichment(df, *, score_col, dataset_id, tool_id, positives_total
     fig, axes = plt.subplots(
         2,
         1,
-        figsize=(7.2, 5.0),
+        figsize=(8.6, 5.6),
         sharex=True,
         gridspec_kw={"height_ratios": [3.6, 0.9], "hspace": 0.08},
     )
@@ -118,7 +109,7 @@ def _plot_gsea_enrichment(df, *, score_col, dataset_id, tool_id, positives_total
         ax.set_facecolor("white")
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-        ax.tick_params(colors="#3C4858", labelsize=9)
+        ax.tick_params(colors="#3C4858", labelsize=11.0)
 
     curve_ax.grid(True, axis="y", color=GRID_COLOR, linewidth=0.8, alpha=0.9)
     curve_ax.set_axisbelow(True)
@@ -132,24 +123,15 @@ def _plot_gsea_enrichment(df, *, score_col, dataset_id, tool_id, positives_total
         s=26,
         zorder=3,
     )
-    curve_ax.set_ylabel("Running ES", fontsize=10)
-    curve_ax.set_title(
-        f"{_tool_label(tool_id)} enrichment of GT positives",
-        fontsize=11,
-        fontweight="semibold",
-        loc="left",
-        pad=14,
-    )
-    fig.text(
-        0.125,
-        0.965,
-        (
+    curve_ax.set_ylabel("Running ES", fontsize=PLOT_AXIS_LABEL_SIZE)
+    _add_figure_heading(
+        fig,
+        title=f"{_tool_label(tool_id)} enrichment of GT positives",
+        subtitle=(
             f"{_dataset_caption(dataset_id)}"
             f"  |  positives={_positive_count_caption(total_hits, positives_total)}"
             f"  |  ES={es:.3f}"
         ),
-        fontsize=9,
-        color=NEUTRAL_COLOR,
     )
 
     hit_ax.axhspan(0.0, 1.0, color="#E5E7EB", alpha=1.0, zorder=0)
@@ -170,9 +152,9 @@ def _plot_gsea_enrichment(df, *, score_col, dataset_id, tool_id, positives_total
     hit_ax.vlines(hit_positions, 0.0, 1.0, color=POSITIVE_COLOR, linewidth=0.9, zorder=3)
     hit_ax.set_ylim(0.0, 1.0)
     hit_ax.set_yticks([])
-    hit_ax.set_ylabel("Hits", fontsize=9)
+    hit_ax.set_ylabel("Hits", fontsize=11)
     hit_ax.spines["left"].set_visible(False)
-    hit_ax.set_xlabel("Ranked genes", fontsize=10)
+    hit_ax.set_xlabel("Ranked genes", fontsize=PLOT_AXIS_LABEL_SIZE)
 
     _save_figure(fig, out_path)
     return es
@@ -195,7 +177,7 @@ def _plot_single_predictor_pr_curve(item, *, dataset_id, out_path):
     baseline = float(item["y_true"].mean())
     predictor_color = _tool_color(item["tool_id"])
 
-    fig, ax = plt.subplots(figsize=(6.1, 4.9))
+    fig, ax = plt.subplots(figsize=(8.6, 5.6))
     _style_axes(ax, grid_axis="both")
     ax.plot(
         recall,
@@ -213,28 +195,19 @@ def _plot_single_predictor_pr_curve(item, *, dataset_id, out_path):
     )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
-    ax.set_xlabel("Recall", fontsize=10)
-    ax.set_ylabel("Precision", fontsize=10)
-    ax.set_title(
-        f"{_tool_label(item['tool_id'])} precision-recall",
-        fontsize=11,
-        fontweight="semibold",
-        loc="left",
-        pad=14,
-    )
-    fig.text(
-        0.125,
-        0.955,
-        (
+    ax.set_xlabel("Recall", fontsize=PLOT_AXIS_LABEL_SIZE)
+    ax.set_ylabel("Precision", fontsize=PLOT_AXIS_LABEL_SIZE)
+    _add_figure_heading(
+        fig,
+        title=f"{_tool_label(item['tool_id'])} precision-recall curve",
+        subtitle=(
             f"{_dataset_caption(dataset_id)}"
             f"  |  n={len(item['y_true']):,}"
             f"  |  positives={_positive_count_caption(int(item['y_true'].sum()), item['positives_total'])}"
             f"  |  cov={item['coverage']:.0%}"
         ),
-        fontsize=9,
-        color=NEUTRAL_COLOR,
     )
-    ax.legend(frameon=False, fontsize=8.8, loc="upper right")
+    ax.legend(frameon=False, fontsize=PLOT_LEGEND_SIZE, loc="upper right")
     _save_figure(fig, out_path)
 
 
@@ -243,7 +216,7 @@ def _plot_single_predictor_roc_curve(item, *, dataset_id, out_path):
     auroc = roc_auc_score(item["y_true"], item["y_score"])
     predictor_color = _tool_color(item["tool_id"])
 
-    fig, ax = plt.subplots(figsize=(6.1, 4.9))
+    fig, ax = plt.subplots(figsize=(8.6, 5.6))
     _style_axes(ax, grid_axis="both")
     ax.plot(
         fpr,
@@ -262,33 +235,24 @@ def _plot_single_predictor_roc_curve(item, *, dataset_id, out_path):
     )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
-    ax.set_xlabel("False positive rate", fontsize=10)
-    ax.set_ylabel("True positive rate", fontsize=10)
-    ax.set_title(
-        f"{_tool_label(item['tool_id'])} ROC",
-        fontsize=11,
-        fontweight="semibold",
-        loc="left",
-        pad=14,
-    )
-    fig.text(
-        0.125,
-        0.955,
-        (
+    ax.set_xlabel("False positive rate", fontsize=PLOT_AXIS_LABEL_SIZE)
+    ax.set_ylabel("True positive rate", fontsize=PLOT_AXIS_LABEL_SIZE)
+    _add_figure_heading(
+        fig,
+        title=f"{_tool_label(item['tool_id'])} ROC curve",
+        subtitle=(
             f"{_dataset_caption(dataset_id)}"
             f"  |  n={len(item['y_true']):,}"
             f"  |  positives={_positive_count_caption(int(item['y_true'].sum()), item['positives_total'])}"
             f"  |  cov={item['coverage']:.0%}"
         ),
-        fontsize=9,
-        color=NEUTRAL_COLOR,
     )
-    ax.legend(frameon=False, fontsize=8.8, loc="lower right")
+    ax.legend(frameon=False, fontsize=PLOT_LEGEND_SIZE, loc="lower right")
     _save_figure(fig, out_path)
 
 
 def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
-    fig, ax = plt.subplots(figsize=(6.4, 5.1))
+    fig, ax = plt.subplots(figsize=(8.6, 5.6))
     _style_axes(ax, grid_axis="both")
     baseline = None
     for item in comparisons:
@@ -316,26 +280,17 @@ def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
         )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
-    ax.set_xlabel("Recall", fontsize=10)
-    ax.set_ylabel("Precision", fontsize=10)
-    ax.set_title(
-        "Precision-recall comparison (common scored pairs)",
-        fontsize=11,
-        fontweight="semibold",
-        loc="left",
-        pad=14,
-    )
+    ax.set_xlabel("Recall", fontsize=PLOT_AXIS_LABEL_SIZE)
+    ax.set_ylabel("Precision", fontsize=PLOT_AXIS_LABEL_SIZE)
     comparison_size = len(comparisons[0]["y_true"]) if comparisons else 0
-    fig.text(
-        0.125,
-        0.955,
-        f"{_dataset_caption(dataset_id)}  |  common n={comparison_size:,}",
-        fontsize=9,
-        color=NEUTRAL_COLOR,
+    _add_figure_heading(
+        fig,
+        title="Precision-recall comparison on common scored genes",
+        subtitle=f"{_dataset_caption(dataset_id)}  |  common n={comparison_size:,}",
     )
     ax.legend(
         frameon=False,
-        fontsize=8.8,
+        fontsize=PLOT_LEGEND_SIZE,
         loc="upper left",
         bbox_to_anchor=(1.02, 1.0),
         borderaxespad=0.0,
@@ -344,7 +299,7 @@ def _plot_predictor_pr_curves(comparisons, *, dataset_id, out_path):
 
 
 def _plot_predictor_pr_curves_own_scored(comparisons, *, dataset_id, out_path):
-    fig, ax = plt.subplots(figsize=(6.6, 5.2))
+    fig, ax = plt.subplots(figsize=(8.6, 5.6))
     _style_axes(ax, grid_axis="both")
     for item in comparisons:
         precision, recall, _ = precision_recall_curve(item["y_true"], item["y_score"])
@@ -362,25 +317,16 @@ def _plot_predictor_pr_curves_own_scored(comparisons, *, dataset_id, out_path):
         )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
-    ax.set_xlabel("Recall", fontsize=10)
-    ax.set_ylabel("Precision", fontsize=10)
-    ax.set_title(
-        "Precision-recall comparison (each predictor's scored pairs)",
-        fontsize=11,
-        fontweight="semibold",
-        loc="left",
-        pad=14,
-    )
-    fig.text(
-        0.125,
-        0.955,
-        f"{_dataset_caption(dataset_id)}  |  own scored sets",
-        fontsize=9,
-        color=NEUTRAL_COLOR,
+    ax.set_xlabel("Recall", fontsize=PLOT_AXIS_LABEL_SIZE)
+    ax.set_ylabel("Precision", fontsize=PLOT_AXIS_LABEL_SIZE)
+    _add_figure_heading(
+        fig,
+        title="Precision-recall comparison on each predictor's scored genes",
+        subtitle=f"{_dataset_caption(dataset_id)}  |  own scored sets",
     )
     ax.legend(
         frameon=False,
-        fontsize=8.4,
+        fontsize=PLOT_LEGEND_SIZE,
         loc="upper left",
         bbox_to_anchor=(1.02, 1.0),
         borderaxespad=0.0,
@@ -427,7 +373,7 @@ def _prepare_common_scored_frame(
 
 
 def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
-    fig, ax = plt.subplots(figsize=(6.4, 5.1))
+    fig, ax = plt.subplots(figsize=(8.6, 5.6))
     _style_axes(ax, grid_axis="both")
     for item in comparisons:
         fpr, tpr, _ = roc_curve(item["y_true"], item["y_score"])
@@ -449,26 +395,17 @@ def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
     )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
-    ax.set_xlabel("False positive rate", fontsize=10)
-    ax.set_ylabel("True positive rate", fontsize=10)
-    ax.set_title(
-        "ROC comparison (common scored pairs)",
-        fontsize=11,
-        fontweight="semibold",
-        loc="left",
-        pad=14,
-    )
+    ax.set_xlabel("False positive rate", fontsize=PLOT_AXIS_LABEL_SIZE)
+    ax.set_ylabel("True positive rate", fontsize=PLOT_AXIS_LABEL_SIZE)
     comparison_size = len(comparisons[0]["y_true"]) if comparisons else 0
-    fig.text(
-        0.125,
-        0.955,
-        f"{_dataset_caption(dataset_id)}  |  common n={comparison_size:,}",
-        fontsize=9,
-        color=NEUTRAL_COLOR,
+    _add_figure_heading(
+        fig,
+        title="ROC comparison on common scored genes",
+        subtitle=f"{_dataset_caption(dataset_id)}  |  common n={comparison_size:,}",
     )
     ax.legend(
         frameon=False,
-        fontsize=8.8,
+        fontsize=PLOT_LEGEND_SIZE,
         loc="upper left",
         bbox_to_anchor=(1.02, 1.0),
         borderaxespad=0.0,
@@ -477,7 +414,7 @@ def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
 
 
 def _plot_predictor_roc_curves_own_scored(comparisons, *, dataset_id, out_path):
-    fig, ax = plt.subplots(figsize=(6.6, 5.2))
+    fig, ax = plt.subplots(figsize=(8.6, 5.6))
     _style_axes(ax, grid_axis="both")
     for item in comparisons:
         fpr, tpr, _ = roc_curve(item["y_true"], item["y_score"])
@@ -503,25 +440,16 @@ def _plot_predictor_roc_curves_own_scored(comparisons, *, dataset_id, out_path):
     )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
-    ax.set_xlabel("False positive rate", fontsize=10)
-    ax.set_ylabel("True positive rate", fontsize=10)
-    ax.set_title(
-        "ROC comparison (each predictor's scored pairs)",
-        fontsize=11,
-        fontweight="semibold",
-        loc="left",
-        pad=14,
-    )
-    fig.text(
-        0.125,
-        0.955,
-        f"{_dataset_caption(dataset_id)}  |  own scored sets",
-        fontsize=9,
-        color=NEUTRAL_COLOR,
+    ax.set_xlabel("False positive rate", fontsize=PLOT_AXIS_LABEL_SIZE)
+    ax.set_ylabel("True positive rate", fontsize=PLOT_AXIS_LABEL_SIZE)
+    _add_figure_heading(
+        fig,
+        title="ROC comparison on each predictor's scored genes",
+        subtitle=f"{_dataset_caption(dataset_id)}  |  own scored sets",
     )
     ax.legend(
         frameon=False,
-        fontsize=8.4,
+        fontsize=PLOT_LEGEND_SIZE,
         loc="upper left",
         bbox_to_anchor=(1.02, 1.0),
         borderaxespad=0.0,
@@ -530,7 +458,7 @@ def _plot_predictor_roc_curves_own_scored(comparisons, *, dataset_id, out_path):
 
 
 def _plot_predictor_gsea_curves(comparisons, *, dataset_id, out_path):
-    fig, ax = plt.subplots(figsize=(6.8, 5.2))
+    fig, ax = plt.subplots(figsize=(8.6, 5.6))
     _style_axes(ax, grid_axis="both")
     for item in comparisons:
         order_frame = {"y_true": item["y_true"], "y_score": item["y_score"]}
@@ -563,26 +491,17 @@ def _plot_predictor_gsea_curves(comparisons, *, dataset_id, out_path):
             color=_tool_color(item["tool_id"]),
         )
     ax.axhline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle="--", alpha=0.8)
-    ax.set_xlabel("Ranked genes", fontsize=10)
-    ax.set_ylabel("Running ES", fontsize=10)
-    ax.set_title(
-        "GSEA comparison (common scored pairs)",
-        fontsize=11,
-        fontweight="semibold",
-        loc="left",
-        pad=14,
-    )
+    ax.set_xlabel("Ranked genes", fontsize=PLOT_AXIS_LABEL_SIZE)
+    ax.set_ylabel("Running ES", fontsize=PLOT_AXIS_LABEL_SIZE)
     comparison_size = len(comparisons[0]["y_true"]) if comparisons else 0
-    fig.text(
-        0.125,
-        0.955,
-        f"{_dataset_caption(dataset_id)}  |  common n={comparison_size:,}",
-        fontsize=9,
-        color=NEUTRAL_COLOR,
+    _add_figure_heading(
+        fig,
+        title="GSEA comparison on common scored genes",
+        subtitle=f"{_dataset_caption(dataset_id)}  |  common n={comparison_size:,}",
     )
     ax.legend(
         frameon=False,
-        fontsize=8.8,
+        fontsize=PLOT_LEGEND_SIZE,
         loc="upper left",
         bbox_to_anchor=(1.02, 1.0),
         borderaxespad=0.0,
@@ -608,7 +527,7 @@ def _plot_top_prediction_effect_cdfs(
     if work.empty:
         raise ValueError("No usable rows remain for top-prediction effect CDF plot.")
 
-    fig, ax = plt.subplots(figsize=(7.4, 5.4))
+    fig, ax = plt.subplots(figsize=(8.6, 5.6))
     _style_axes(ax, grid_axis="both")
 
     background_x, background_y = _ecdf(work["expected_effect"])
@@ -663,30 +582,21 @@ def _plot_top_prediction_effect_cdfs(
             floor=1.0,
         )
         ax.set_xlim(-limit, limit)
-    ax.set_xlabel("Perturbation-aware effect", fontsize=10)
-    ax.set_ylabel("Cumulative fraction", fontsize=10)
+    ax.set_xlabel("Perturbation-aware effect", fontsize=PLOT_AXIS_LABEL_SIZE)
+    ax.set_ylabel("Cumulative fraction", fontsize=PLOT_AXIS_LABEL_SIZE)
     ax.set_ylim(0, 1.02)
-    ax.set_title(
-        f"Top prediction effect CDFs",
-        fontsize=11,
-        fontweight="semibold",
-        loc="left",
-        pad=14,
-    )
-    fig.text(
-        0.125,
-        0.955,
-        (
+    _add_figure_heading(
+        fig,
+        title="Top predicted-target effect distributions",
+        subtitle=(
             f"{_dataset_caption(dataset_id)}"
             f"  |  top {int(top_n)} per predictor"
             "  |  higher values indicate stronger perturbation-consistent effect"
         ),
-        fontsize=9,
-        color=NEUTRAL_COLOR,
     )
     ax.legend(
         frameon=False,
-        fontsize=8.6,
+        fontsize=PLOT_LEGEND_SIZE,
         loc="upper left",
         bbox_to_anchor=(1.02, 1.0),
         borderaxespad=0.0,
@@ -739,7 +649,7 @@ def _plot_algorithms_vs_genes_heatmap(
         vmax=1,
         interpolation="nearest",
     )
-    axes[0].set_title("GT status", fontsize=10, fontweight="semibold")
+    axes[0].set_title("GT status", fontsize=11, fontweight="semibold")
     axes[0].set_xticks([])
 
     logfc_image = axes[1].imshow(
@@ -747,7 +657,7 @@ def _plot_algorithms_vs_genes_heatmap(
         norm=TwoSlopeNorm(vmin=-max_abs_logfc, vcenter=0.0, vmax=max_abs_logfc),
         interpolation="nearest",
     )
-    axes[1].set_title("logFC", fontsize=10, fontweight="semibold")
+    axes[1].set_title("logFC", fontsize=11, fontweight="semibold")
     axes[1].set_xticks([])
 
     score_cmap = PREDICTOR_HEATMAP_CMAP.copy()
@@ -760,12 +670,12 @@ def _plot_algorithms_vs_genes_heatmap(
         vmax=1,
         interpolation="nearest",
     )
-    axes[2].set_title("Predictor scores", fontsize=10, fontweight="semibold")
+    axes[2].set_title("Predictor scores", fontsize=11, fontweight="semibold")
     axes[2].set_xticks(range(len(tool_ids)))
     axes[2].set_xticklabels(
         [_wrap_axis_label(_tool_label(tool_id)) for tool_id in tool_ids],
-        rotation=30,
-        ha="right",
+        rotation=0,
+        ha="center",
     )
 
     if len(work) <= 40:
@@ -778,7 +688,7 @@ def _plot_algorithms_vs_genes_heatmap(
         for axis in axes:
             axis.set_yticks([])
 
-    axes[0].set_ylabel("genes ranked by logFC", fontsize=10, color="#3C4858")
+    axes[0].set_ylabel("genes ranked by logFC", fontsize=PLOT_AXIS_LABEL_SIZE, color="#3C4858")
     _add_figure_heading(
         fig,
         title="Gene-level benchmarking overview",
@@ -859,7 +769,7 @@ def _plot_top_positive_heatmap(
         norm=TwoSlopeNorm(vmin=-max_abs_logfc, vcenter=0.0, vmax=max_abs_logfc),
         interpolation="nearest",
     )
-    axes[0].set_title("logFC", fontsize=10, fontweight="semibold")
+    axes[0].set_title("logFC", fontsize=11, fontweight="semibold")
     axes[0].set_xticks([])
 
     score_cmap = PREDICTOR_HEATMAP_CMAP.copy()
@@ -872,12 +782,12 @@ def _plot_top_positive_heatmap(
         vmax=1,
         interpolation="nearest",
     )
-    axes[1].set_title("Predictor scores", fontsize=10, fontweight="semibold")
+    axes[1].set_title("Predictor scores", fontsize=11, fontweight="semibold")
     axes[1].set_xticks(range(len(tool_ids)))
     axes[1].set_xticklabels(
         [_wrap_axis_label(_tool_label(tool_id)) for tool_id in tool_ids],
-        rotation=30,
-        ha="right",
+        rotation=0,
+        ha="center",
     )
 
     labels = work["gene_id"].tolist()
@@ -885,7 +795,7 @@ def _plot_top_positive_heatmap(
     axes[0].set_yticklabels(labels, fontsize=7)
     axes[1].set_yticks([])
 
-    axes[0].set_ylabel("top positives ranked by logFC", fontsize=10, color="#3C4858")
+    axes[0].set_ylabel("top positives ranked by logFC", fontsize=PLOT_AXIS_LABEL_SIZE, color="#3C4858")
     _add_figure_heading(
         fig,
         title=f"Top {int(positive_fraction * 100)}% of benchmark positives",

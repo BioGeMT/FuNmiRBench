@@ -67,6 +67,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
                 "FDR": [0.01, 0.6, 0.02],
                 "global_rank_mock": [0.9, 0.3, 0.7],
                 "global_rank_cheating": [0.98, 0.2, 0.8],
+                "global_rank_targetscan": [0.85, 0.2, 0.65],
             }
         ),
         pd.DataFrame(
@@ -77,6 +78,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
                 "FDR": [0.03, 0.4, 0.01],
                 "global_rank_mock": [0.8, 0.4, 0.6],
                 "global_rank_cheating": [0.96, 0.1, 0.75],
+                "global_rank_targetscan": [0.72, 0.35, 0.62],
             }
         ),
     ]
@@ -116,6 +118,20 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
                 "cell_line": "HeLa",
                 "perturbation": "OE",
                 "geo_accession": "GSE1",
+                "tool_id": "targetscan",
+                "coverage": 0.7,
+                "positive_coverage": 0.5,
+                "aps": 0.65,
+                "pr_auc": 0.63,
+                "spearman": 0.3,
+                "auroc": 0.74,
+            },
+            {
+                "dataset_id": "D001",
+                "mirna": "mir-1",
+                "cell_line": "HeLa",
+                "perturbation": "OE",
+                "geo_accession": "GSE1",
                 "tool_id": "cheating",
                 "coverage": 1.0,
                 "positive_coverage": 1.0,
@@ -134,7 +150,8 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
     assert (tmp_path / "plots" / "metrics" / "cross_dataset_spearman_distribution.png").is_file()
     assert not (tmp_path / "plots" / "coverage" / "positive_coverage_vs_performance.png").exists()
     assert (tmp_path / "plots" / "ranks" / "positive_background_global_rank_distributions.png").is_file()
-    assert (tmp_path / "plots" / "ranks" / "positive_recovery_by_prediction_count.png").is_file()
+    assert (tmp_path / "plots" / "ranks" / "positive_background_global_rank_counts.png").is_file()
+    assert (tmp_path / "plots" / "ranks" / "positive_recovery_fraction_by_prediction_count.png").is_file()
     summary_text = (tmp_path / "tables" / "cross_dataset_predictor_summary.tsv").read_text(encoding="utf-8")
     assert "aps_mean" in summary_text
     assert outputs["tables"]["cross_dataset_predictor_summary"].endswith("cross_dataset_predictor_summary.tsv")
@@ -145,10 +162,14 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
     assert outputs["plots"]["positive_background_global_rank_distributions"].endswith(
         "positive_background_global_rank_distributions.png"
     )
-    assert outputs["plots"]["positive_recovery_by_prediction_count"].endswith(
-        "positive_recovery_by_prediction_count.png"
+    assert outputs["plots"]["positive_background_global_rank_counts"].endswith(
+        "positive_background_global_rank_counts.png"
+    )
+    assert outputs["plots"]["positive_recovery_fraction_by_prediction_count"].endswith(
+        "positive_recovery_fraction_by_prediction_count.png"
     )
     assert "positive_background_local_rank_distributions" not in outputs["plots"]
+    assert "positive_background_local_rank_counts" not in outputs["plots"]
     assert "cross_dataset_metric_heatmap" not in outputs["plots"]
     assert "coverage_vs_performance" not in outputs["plots"]
 
