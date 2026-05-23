@@ -151,68 +151,6 @@ def download_file(
     logger.info("Saved %s: %s", resource_label, relative_path)
     return output_path
 
-def _drop_invalid_rows(
-    df: pd.DataFrame,
-    columns: list[str],
-    log_label: str,
-) -> pd.DataFrame:
-    
-    before = len(df)
-    subset = df[columns]
-    normalized = subset.astype("string").apply(
-        lambda col: col.str.strip().str.lower()
-    )
-    valid_rows = (
-        ~subset.isna().any(axis=1) &          # real NaNs
-        ~(normalized == "").any(axis=1) &     # empty after strip
-        ~(normalized == "nan").any(axis=1)    # string "nan"
-    )
-    out = df.loc[valid_rows].copy()
-
-    _log_row_count_change(log_label, before, len(out))
-    return out
-
-def _drop_duplicate_rows(
-    df: pd.DataFrame,
-    columns: list[str],
-    log_label: str,
-) -> pd.DataFrame:
-    before = len(df)
-    out = df.drop_duplicates(subset=columns).copy()
-    _log_row_count_change(log_label, before, len(out))
-    return out
-
-def _log_duplicate_pair_check(
-    df: pd.DataFrame,
-    columns: list[str],
-    log_label: str,
-) -> None:
-    pair_counts = df.groupby(columns).size()
-    duplicate_pair_counts = pair_counts[pair_counts > 1]
-    logger.info(
-        "%s: %d duplicate pairs involving %d rows",
-        log_label,
-        len(duplicate_pair_counts),
-        int(duplicate_pair_counts.sum()),
-    )
-
-def _check_conflicting_prediction_scores(
-    df: pd.DataFrame,
-    query_column: str,
-    target_column: str,
-    prediction_column: str,
-    duplicate_log_label: str,
-) -> None:
-    _log_duplicate_pair_check(
-        df,
-        [query_column, target_column],
-        duplicate_log_label,
-    )
-    grouped = df.groupby([query_column, target_column])[prediction_column].nunique()
-    conflicts = grouped[grouped > 1]
-    if not conflicts.empty:
-        raise ValueError("Conflicting prediction scores found for query-target pairs. ")
-
 def load_prediction_files(
     path: Path,
     raw_gene_ID_column: str,
@@ -238,30 +176,6 @@ def load_prediction_files(
     )
     if df.empty:
         raise RuntimeError("No prediction file was loaded")
-    
-    cols = [
-        raw_gene_ID_column,
-        raw_gene_Name_column,
-        raw_mirna_column,
-        raw_prediction_column,
-    ]
-    df = _drop_invalid_rows(
-        df,
-        cols,
-        "Drop invalid raw microT-CNN prediction rows",
-    )
-    df = _drop_duplicate_rows(
-        df,
-        cols,
-        "Drop exact duplicate raw microT-CNN prediction rows",
-    )
-    _check_conflicting_prediction_scores(
-        df,
-        raw_mirna_column,
-        raw_gene_ID_column,
-        raw_prediction_column,
-        "Check raw microT-CNN rows for duplicate miRNA-Ensembl Gene ID prediction pairs from raw column 1",
-    )
 
     return df
 
@@ -302,7 +216,6 @@ def _drop_unmapped_rows(
 ) -> pd.DataFrame:
     before = len(df)
     out = df.loc[df[mapped_column].notna()].copy()
-
     _log_row_count_change(log_label, before, len(out))
     return out
 
@@ -322,48 +235,12 @@ def map_mirna_names_to_mimat(
         "Drop prediction rows with miRNA names that cannot map to MIMAT IDs",
     )
 
-def _drop_conflicting_and_duplicate_final_pairs(
-    df: pd.DataFrame,
-    ensembl_id_column: str,
-    mimat_column: str,
-    score_column: str,
-) -> pd.DataFrame:
-    before_conflict_drop = len(df)
-    grouped = df.groupby([ensembl_id_column, mimat_column])[score_column].nunique()
-    conflicts = grouped[grouped > 1]
-    conflicting_pairs = set(conflicts.index)
-    if conflicting_pairs:
-        pair_index = list(zip(df[ensembl_id_column], df[mimat_column]))
-        df = df.loc[[pair not in conflicting_pairs for pair in pair_index]].copy()
-    _log_row_count_change(
-        "Drop final Ensembl_ID-miRNA_ID pairs with conflicting scores after Ensembl mapping",
-        before_conflict_drop,
-        len(df),
-    )
-
-    before = len(df)
-    out = df.drop_duplicates(subset=[ensembl_id_column, mimat_column, score_column]).copy()
-    _log_row_count_change(
-        "Drop duplicate final Ensembl_ID-miRNA_ID pairs with identical scores after Ensembl mapping",
-        before,
-        len(out),
-    )
-    return out
-
 def build_output_table(
     df: pd.DataFrame,
     prediction_column: str,
     score_column: str,
     final_columns: list[str],
-    ensembl_id_column: str,
-    mimat_column: str,
 ) -> pd.DataFrame:
     out = df.copy()
     out[score_column] = pd.to_numeric(out[prediction_column], errors="coerce")
-    out = out.loc[:, final_columns].copy()
-    return _drop_conflicting_and_duplicate_final_pairs(
-        out,
-        ensembl_id_column,
-        mimat_column,
-        score_column,
-    )
+    return out.loc[:, final_columns].copy()

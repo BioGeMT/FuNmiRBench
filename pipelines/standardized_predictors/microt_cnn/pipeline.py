@@ -53,7 +53,7 @@ def main() -> None:
     raw_gene_Name_column = "Gene_Name"
     raw_mirna_column = "miRNA_Name"
     raw_prediction_column = "Score"
-    
+
     log_step(2, total_steps, "Load raw microT-CNN predictions")
     pred_df = load_prediction_files(
         raw_predictions_path,
@@ -66,7 +66,6 @@ def main() -> None:
     log_step(3, total_steps, "Create miRNA name-to-MIMAT mapping from miRBase mature.fa")
     mirna_name_to_mimat_map = create_mirna_name_to_mimat_mapping(mirbase_path)
 
-    # Define final schema
     mimat_column = "miRNA_ID"
     ensembl_id_column = "Ensembl_ID"
     gene_name_column = "Gene_Name"
@@ -95,8 +94,6 @@ def main() -> None:
         raw_prediction_column,
         score_column,
         final_columns,
-        ensembl_id_column,
-        mimat_column,
     )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
