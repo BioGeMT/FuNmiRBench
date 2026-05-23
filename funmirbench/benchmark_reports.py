@@ -12,6 +12,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from funmirbench.evaluate import (
     REPORT_PAGE_SIZE,
     describe_gt_rule,
+    _publication_tool_ids,
 )
 from funmirbench.cross_dataset import write_cross_dataset_summaries, write_metric_tables
 
@@ -199,6 +200,7 @@ def write_run_readme(
     predictor_top_fraction,
 ):
     summary_df = _load_cross_dataset_summary(combined_outputs)
+    display_tool_ids = _publication_tool_ids(tool_ids) or list(tool_ids)
     relative_metric_tables = {
         key: _relative_display_path(path, base_dir=out_dir)
         for key, path in metric_tables.items()
@@ -217,7 +219,7 @@ def write_run_readme(
         f"- Config: `{config_path}`",
         f"- Run directory: `{out_dir}`",
         f"- Datasets: `{len(dataset_outputs)}`",
-        f"- Predictors: `{', '.join(tool_ids)}`",
+        f"- Predictors: `{', '.join(display_tool_ids)}`",
         "",
         "## Evaluation Settings",
         f"- GT positive threshold: {describe_gt_rule(fdr_threshold, abs_logfc_threshold, markdown=True)}",
@@ -261,7 +263,7 @@ def write_run_readme(
             "- `datasets/<dataset_id>/reports/`: per-dataset Markdown/PDF reports and correlation TSVs",
             "- `tables/per_experiment/`: metric tables across datasets, one row per experiment",
             "- `tables/combined/`: cross-dataset predictor summary table",
-            "- `plots/combined/metrics/`, `plots/combined/ranks/`: cross-dataset comparison plots grouped by theme",
+            "- `plots/combined/metrics/`, `plots/combined/ranks/`, `plots/combined/combinations/`: cross-dataset comparison plots grouped by theme",
             "- `summary.json`: machine-readable run summary",
             "",
             "## Datasets",
@@ -313,8 +315,20 @@ def write_run_readme(
         "positive_background_local_rank_distributions": (
             "dataset-local rank separation of GT positives from background genes"
         ),
+        "positive_background_local_rank_counts": (
+            "dataset-local rank counts of GT positives and background genes on a log scale"
+        ),
         "positive_background_global_rank_distributions": (
             "predictor-global rank separation of GT positives from background genes"
+        ),
+        "positive_background_global_rank_counts": (
+            "predictor-global rank counts of GT positives and background genes on a log scale"
+        ),
+        "positive_recovery_fraction_by_prediction_count": (
+            "GT-positive recovery fraction with endpoint labels"
+        ),
+        "predictor_combination_expanded_frontier": (
+            "coverage/APS frontier for predictors and their combinations"
         ),
     }
     for key, path in relative_combined_outputs.get("plots", {}).items():
@@ -601,8 +615,11 @@ def write_run_pdf_report(
             [
                 "plots/combined/metrics/cross_dataset_<metric>_distribution.png: one figure per metric showing how that metric varies across the selected datasets",
                 "positive_background_local_rank_distributions.png: whether positives rank above background on the dataset-local rank scale",
+                "positive_background_local_rank_counts.png: binned dataset-local counts for positives and background genes on a log scale",
                 "positive_background_global_rank_distributions.png: whether positives rank above background on the predictor-global rank scale",
-                "positive_recovery_by_prediction_count.png: Figure 4-style cumulative recovery of GT positives as more top predictions per dataset are admitted",
+                "positive_background_global_rank_counts.png: binned predictor-global counts for positives and background genes on a log scale",
+                "positive_recovery_fraction_by_prediction_count.png: GT-positive recovery fraction with endpoint labels",
+                "predictor_combination_expanded_frontier.png: coverage/APS frontier for predictors and combinations; annotations are limited to Pareto points",
             ],
             x=0.06,
             y=0.45,
@@ -623,14 +640,28 @@ def write_run_pdf_report(
                 "Dataset-local rank distributions aggregated across datasets, split into GT positives and background genes. "
                 "Stronger predictors should push positives higher than background."
             ),
+            "positive_background_local_rank_counts": (
+                "Positive vs background local rank counts",
+                "Binned dataset-local rank counts for background genes and GT positives. "
+                "The log y-axis keeps smaller GT-positive counts readable next to large background counts."
+            ),
             "positive_background_global_rank_distributions": (
                 "Positive vs background global rank distributions",
                 "Predictor-global rank distributions aggregated across datasets, split into GT positives and background genes. "
                 "This keeps each predictor on the rank scale of its full standardized file."
             ),
-            "positive_recovery_by_prediction_count": (
-                "GT-positive recovery by prediction count",
-                "Figure 4-style cumulative recovery curves showing how many GT positives are recovered, on average, as more top-ranked predictions per dataset are admitted.",
+            "positive_background_global_rank_counts": (
+                "Positive vs background global rank counts",
+                "Binned predictor-global rank counts for background genes and GT positives. "
+                "The log y-axis keeps smaller GT-positive counts readable next to large background counts."
+            ),
+            "positive_recovery_fraction_by_prediction_count": (
+                "GT-positive recovery fraction by prediction count",
+                "Cumulative curves showing the mean fraction of GT-positive genes recovered; endpoint labels show recovery at 300 predictions per dataset.",
+            ),
+            "predictor_combination_expanded_frontier": (
+                "Predictor-combination expanded performance frontier",
+                "Coverage-versus-APS comparison of predictors and combinations; only Pareto-frontier points are annotated.",
             ),
         })
         for key, (title, caption) in plot_descriptions.items():
@@ -699,6 +730,7 @@ def finalize_run_bundle(
         joined_frames=joined_frames,
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
+        predictor_top_fraction=predictor_top_fraction,
         tool_labels=tool_labels,
         logger=logger_info,
     )

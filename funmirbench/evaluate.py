@@ -37,7 +37,8 @@ def evaluate_joined_dataframe(
     for path in (dataset_plots_dir, predictor_plots_dir, comparison_plots_dir, heatmap_plots_dir):
         path.mkdir(parents=True, exist_ok=True)
     tool_ids = [_tool_id_from_score_col(sc) for sc in score_cols]
-    _set_tool_colors(tool_ids)
+    publication_tool_ids = _publication_tool_ids(tool_ids)
+    _set_tool_colors(publication_tool_ids or tool_ids)
     global_rank_cols = []
     local_rank_cols = []
     for score_col, tool_id in zip(score_cols, tool_ids):
@@ -51,6 +52,7 @@ def evaluate_joined_dataframe(
         local_rank_cols.append(local_rank_col)
 
     metric_rows = []
+    skipped_tool_rows = []
     dataset_plots = {}
     predictor_correlation_tsv = None
     comparisons = []
@@ -87,6 +89,36 @@ def evaluate_joined_dataframe(
             if not (skip_sparse_reason and sparse_scoring):
                 raise
             _emit_log(logger, f"    Tool: {tool_id} | skipped: {exc}")
+            positives_total = 0
+            positives_scored = 0
+            try:
+                skip_frame = joined.loc[valid_rows, ["logFC", "FDR", score_col]].copy()
+                skip_frame = _annotate_ground_truth(skip_frame, perturbation=perturbation)
+                positive_mask = _positive_mask(
+                    skip_frame,
+                    fdr_threshold=fdr_threshold,
+                    abs_logfc_threshold=abs_logfc_threshold,
+                )
+                positives_total = int(positive_mask.sum())
+                positives_scored = int(positive_mask.loc[skip_frame[score_col].notna()].sum())
+            except (KeyError, ValueError, TypeError):
+                pass
+            skipped_tool_rows.append(
+                {
+                    "dataset_id": dataset_id,
+                    "mirna": mirna,
+                    "cell_line": cell_line,
+                    "perturbation": perturbation,
+                    "geo_accession": geo_accession,
+                    "tool_id": tool_id,
+                    "skip_reason": message,
+                    "rows_total": total_valid_rows,
+                    "rows_scored": scored_rows,
+                    "rows_missing_score": max(total_valid_rows - scored_rows, 0),
+                    "positives_total": positives_total,
+                    "positives_scored": positives_scored,
+                }
+            )
             continue
         scatter_png = tool_plots_dir / "score_vs_expected_effect.png"
         gsea_png = tool_plots_dir / "gsea_enrichment.png"
@@ -133,8 +165,6 @@ def evaluate_joined_dataframe(
             out_path=roc_curve_png,
         )
 
-        report_md = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.md"
-        report_pdf = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.pdf"
         metrics = {
             "rows_total": float(coverage_info["rows_total"]),
             "rows_used": float(len(scored)),
@@ -148,21 +178,24 @@ def evaluate_joined_dataframe(
             "pearson": pearson, "spearman": spearman,
             "aps": aps, "pr_auc": pr_auc, "auroc": auroc,
         }
-        _write_tool_report(
-            dataset_id=dataset_id, mirna=mirna, cell_line=cell_line,
-            perturbation=perturbation, geo_accession=geo_accession,
-            de_table_path=de_table_path, joined_tsv=joined_tsv,
-            tool_id=tool_id,
-            predictor_output_path=(predictor_output_paths or {}).get(tool_id),
-            metrics=metrics, markdown_path=report_md, pdf_path=report_pdf,
-            coverage_info=coverage_info,
-            scatter_png=scatter_png,
-            pr_curve_png=pr_curve_png,
-            roc_curve_png=roc_curve_png,
-            gsea_png=gsea_png,
-            fdr_threshold=fdr_threshold,
-            abs_logfc_threshold=abs_logfc_threshold,
-        )
+        if _is_publication_tool(tool_id):
+            report_md = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.md"
+            report_pdf = reports_dir / f"{dataset_id}__{tool_id}_evaluation_report.pdf"
+            _write_tool_report(
+                dataset_id=dataset_id, mirna=mirna, cell_line=cell_line,
+                perturbation=perturbation, geo_accession=geo_accession,
+                de_table_path=de_table_path, joined_tsv=joined_tsv,
+                tool_id=tool_id,
+                predictor_output_path=(predictor_output_paths or {}).get(tool_id),
+                metrics=metrics, markdown_path=report_md, pdf_path=report_pdf,
+                coverage_info=coverage_info,
+                scatter_png=scatter_png,
+                pr_curve_png=pr_curve_png,
+                roc_curve_png=roc_curve_png,
+                gsea_png=gsea_png,
+                fdr_threshold=fdr_threshold,
+                abs_logfc_threshold=abs_logfc_threshold,
+            )
         _emit_log(
             logger,
             (
@@ -172,7 +205,10 @@ def evaluate_joined_dataframe(
                 f"| APS={aps:.3f} | AUROC={auroc:.3f} | ES={enrichment_score:.3f}"
             ),
         )
-        _emit_log(logger, f"    Tool: {tool_id} | wrote scatter/report")
+        if _is_publication_tool(tool_id):
+            _emit_log(logger, f"    Tool: {tool_id} | wrote scatter/report")
+        else:
+            _emit_log(logger, f"    Tool: {tool_id} | wrote diagnostic plots")
 
         metric_rows.append({
             "dataset_id": dataset_id, "mirna": mirna, "cell_line": cell_line,
@@ -182,8 +218,11 @@ def evaluate_joined_dataframe(
             "rows_scored": coverage_info["rows_scored"],
             "rows_missing_score": coverage_info["rows_missing_score"],
             "coverage": coverage_info["coverage"],
+            "positives_total": coverage_info["positives_total"],
+            "positives_scored": coverage_info["positives_scored"],
             "positive_coverage": coverage_info["positive_coverage"],
-            "aps": aps, "spearman": spearman, "auroc": auroc, "pr_auc": pr_auc,
+            "aps": aps, "spearman": spearman, "pearson": pearson,
+            "auroc": auroc, "pr_auc": pr_auc, "gsea_es": enrichment_score,
         })
         comparisons.append({
             "tool_id": tool_id,
@@ -203,12 +242,31 @@ def evaluate_joined_dataframe(
     if not evaluated_score_cols:
         raise ValueError(f"No predictors had scored rows for {dataset_id}.")
 
+    plot_entries = [
+        (score_col, tool_id, rank_col, comparison)
+        for score_col, tool_id, rank_col, comparison in zip(
+            evaluated_score_cols,
+            evaluated_tool_ids,
+            evaluated_local_rank_cols,
+            comparisons,
+        )
+        if _is_publication_tool(tool_id)
+    ]
+    if not plot_entries:
+        plot_entries = list(
+            zip(evaluated_score_cols, evaluated_tool_ids, evaluated_local_rank_cols, comparisons)
+        )
+    plot_score_cols = [item[0] for item in plot_entries]
+    plot_tool_ids = [item[1] for item in plot_entries]
+    plot_local_rank_cols = [item[2] for item in plot_entries]
+    plot_comparisons = [item[3] for item in plot_entries]
+
     heatmap_png = heatmap_plots_dir / "algorithms_vs_genes.png"
     _plot_algorithms_vs_genes_heatmap(
         joined,
-        score_cols=evaluated_score_cols,
-        rank_cols=evaluated_local_rank_cols,
-        tool_ids=evaluated_tool_ids,
+        score_cols=plot_score_cols,
+        rank_cols=plot_local_rank_cols,
+        tool_ids=plot_tool_ids,
         dataset_id=dataset_id, out_path=heatmap_png,
         fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
         perturbation=perturbation,
@@ -219,8 +277,8 @@ def evaluate_joined_dataframe(
     top_positive_heatmap_png = heatmap_plots_dir / "top_10pct_positive_genes.png"
     wrote_top_positive_heatmap = _plot_top_positive_heatmap(
         joined,
-        rank_cols=evaluated_local_rank_cols,
-        tool_ids=evaluated_tool_ids,
+        rank_cols=plot_local_rank_cols,
+        tool_ids=plot_tool_ids,
         dataset_id=dataset_id,
         out_path=top_positive_heatmap_png,
         fdr_threshold=fdr_threshold,
@@ -232,7 +290,7 @@ def evaluate_joined_dataframe(
         dataset_plots["top_10pct_positive_heatmap"] = str(top_positive_heatmap_png)
         _emit_log(logger, f"    Dataset: {dataset_id} | wrote top-positive heatmap")
 
-    if len(evaluated_score_cols) >= 2:
+    if len(plot_score_cols) >= 2:
         comparison_pr_png = comparison_plots_dir / "precision_recall_common.png"
         comparison_pr_all_png = comparison_plots_dir / "precision_recall_all_scored.png"
         comparison_roc_png = comparison_plots_dir / "roc_common.png"
@@ -242,7 +300,7 @@ def evaluate_joined_dataframe(
         try:
             common_pr = _prepare_common_scored_frame(
                 joined,
-                score_cols=evaluated_score_cols,
+                score_cols=plot_score_cols,
                 fdr_threshold=fdr_threshold,
                 abs_logfc_threshold=abs_logfc_threshold,
                 perturbation=perturbation,
@@ -259,7 +317,7 @@ def evaluate_joined_dataframe(
                     "y_score": common_pr[score_col],
                     "coverage": coverage_by_tool.get(tool_id, float("nan")),
                 }
-                for score_col, tool_id in zip(evaluated_score_cols, evaluated_tool_ids)
+                for score_col, tool_id in zip(plot_score_cols, plot_tool_ids)
             ]
             _plot_predictor_pr_curves(
                 common_comparisons,
@@ -267,7 +325,7 @@ def evaluate_joined_dataframe(
                 out_path=comparison_pr_png,
             )
         _plot_predictor_pr_curves_own_scored(
-            comparisons,
+            plot_comparisons,
             dataset_id=dataset_id,
             out_path=comparison_pr_all_png,
         )
@@ -278,7 +336,7 @@ def evaluate_joined_dataframe(
                 out_path=comparison_roc_png,
             )
         _plot_predictor_roc_curves_own_scored(
-            comparisons,
+            plot_comparisons,
             dataset_id=dataset_id,
             out_path=comparison_roc_all_png,
         )
@@ -291,8 +349,8 @@ def evaluate_joined_dataframe(
         if write_top_prediction_cdfs:
             _plot_top_prediction_effect_cdfs(
                 joined,
-                score_cols=evaluated_score_cols,
-                tool_ids=evaluated_tool_ids,
+                score_cols=plot_score_cols,
+                tool_ids=plot_tool_ids,
                 dataset_id=dataset_id,
                 out_path=comparison_cdf_png,
                 perturbation=perturbation,
@@ -313,8 +371,8 @@ def evaluate_joined_dataframe(
         corr_tsv = reports_dir / f"{dataset_id}__predictor_correlation.tsv"
         corr_matrix = _build_predictor_correlation_matrix(
             joined,
-            rank_cols=evaluated_local_rank_cols,
-            tool_ids=evaluated_tool_ids,
+            rank_cols=plot_local_rank_cols,
+            tool_ids=plot_tool_ids,
             top_fraction=predictor_top_fraction,
         )
         corr_matrix.to_csv(corr_tsv, sep="\t")
@@ -325,6 +383,7 @@ def evaluate_joined_dataframe(
 
     return {
         "metric_rows": metric_rows,
+        "skipped_tool_rows": skipped_tool_rows,
         "plots": dataset_plots,
         "predictor_correlation_tsv": predictor_correlation_tsv,
         "tool_ids": tool_ids,

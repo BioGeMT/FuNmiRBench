@@ -35,7 +35,11 @@ EXPECTED_COMBINED_PLOTS = {
     "cross_dataset_spearman_distribution",
     "cross_dataset_auroc_distribution",
     "positive_background_local_rank_distributions",
+    "positive_background_local_rank_counts",
     "positive_background_global_rank_distributions",
+    "positive_background_global_rank_counts",
+    "positive_recovery_fraction_by_prediction_count",
+    "predictor_combination_expanded_frontier",
 }
 ORACLE_TOOL_IDS = {"cheating", "perfect"}
 DEFAULT_MIN_COVERAGE_FOR_HEADLINE = 0.10
@@ -63,6 +67,16 @@ def _pdf_media_boxes(path: pathlib.Path) -> list[tuple[float, float]]:
         (float(width), float(height))
         for width, height in PDF_MEDIA_BOX_PATTERN.findall(path.read_bytes())
     ]
+
+
+def _media_boxes_share_page_size(boxes: list[tuple[float, float]]) -> bool:
+    if not boxes:
+        return True
+    normalized = {
+        tuple(round(value, 2) for value in sorted((width, height)))
+        for width, height in boxes
+    }
+    return len(normalized) == 1
 
 
 def _load_cross_dataset_rows(summary: dict) -> list[dict[str, str]]:
@@ -107,7 +121,7 @@ def audit_run(run_dir: pathlib.Path, *, min_headline_coverage: float) -> list[Au
         boxes = _pdf_media_boxes(report_path)
         if len(boxes) <= 1:
             issues.append(AuditIssue("WARN", f"Run PDF has only {len(boxes)} detected page(s)."))
-        if boxes and len(set(boxes)) != 1:
+        if boxes and not _media_boxes_share_page_size(boxes):
             issues.append(AuditIssue("WARN", "Run PDF pages have inconsistent MediaBox sizes."))
 
     metric_tables = set(summary.get("metric_tables", {}))
@@ -159,7 +173,7 @@ def audit_run(run_dir: pathlib.Path, *, min_headline_coverage: float) -> list[Au
         issues.append(AuditIssue("WARN", "No per-dataset predictor report PDFs found."))
     for path in dataset_reports:
         boxes = _pdf_media_boxes(path)
-        if boxes and len(set(boxes)) != 1:
+        if boxes and not _media_boxes_share_page_size(boxes):
             issues.append(AuditIssue("WARN", f"Inconsistent page sizes in {path}"))
 
     return issues
