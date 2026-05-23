@@ -22,8 +22,13 @@ from sklearn.metrics import (
 SCORE_PREFIX = "score_"
 GLOBAL_RANK_PREFIX = "global_rank_"
 LOCAL_RANK_PREFIX = "local_rank_"
+PUBLICATION_EXCLUDED_TOOL_IDS = {"random", "random_3000", "cheating", "perfect"}
 FIGURE_DPI = 300
 REPORT_PAGE_SIZE = (8.27, 11.69)
+PLOT_TITLE_SIZE = 17.0
+PLOT_SUBTITLE_SIZE = 12.2
+PLOT_AXIS_LABEL_SIZE = 12.0
+PLOT_LEGEND_SIZE = 10.5
 NEGATIVE_COLOR = "#B8C4D6"
 POSITIVE_COLOR = "#D04E4E"
 NEUTRAL_COLOR = "#5B6577"
@@ -39,15 +44,26 @@ GT_CMAP = ListedColormap(["#EEF1F6", "#243B53"])
 MISSING_COLOR = "#D7DEE8"
 CURVE_COLORS = [
     "#1F77B4",
-    "#D1495B",
-    "#2A9D8F",
+    "#FF7F0E",
+    "#2CA02C",
+    "#D62728",
     "#9467BD",
-    "#D97D0D",
-    "#4C78A8",
+    "#17BECF",
+    "#E377C2",
+    "#BCBD22",
+    "#8C564B",
 ]
 TOP_PREDICTION_CDF_N = 100
 TOOL_LABELS = {}
 TOOL_COLORS = {}
+
+
+def _is_publication_tool(tool_id):
+    return str(tool_id) not in PUBLICATION_EXCLUDED_TOOL_IDS
+
+
+def _publication_tool_ids(tool_ids):
+    return [str(tool_id) for tool_id in tool_ids if _is_publication_tool(tool_id)]
 
 
 def _metric_plot_limits(metric_name):
@@ -157,25 +173,7 @@ def _nice_symmetric_limit(values, *, floor=1.0):
 
 
 def _add_figure_heading(fig, *, title, subtitle, x=0.08, title_y=0.975, subtitle_y=0.93):
-    fig.text(
-        x,
-        title_y,
-        title,
-        ha="left",
-        va="top",
-        fontsize=12,
-        fontweight="semibold",
-        color="black",
-    )
-    fig.text(
-        x,
-        subtitle_y,
-        subtitle,
-        ha="left",
-        va="top",
-        fontsize=8.6,
-        color=NEUTRAL_COLOR,
-    )
+    del fig, title, subtitle, x, title_y, subtitle_y
 
 
 def _add_horizontal_colorbar(fig, *, mappable, anchor_ax, label, ticks=None, height=0.014, pad=0.05):
@@ -197,14 +195,17 @@ def _style_axes(ax, *, grid_axis="y"):
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color("#A0AEC0")
     ax.spines["bottom"].set_color("#A0AEC0")
-    ax.tick_params(colors="#3C4858", labelsize=9)
+    ax.tick_params(colors="#3C4858", labelsize=12.0)
     if grid_axis:
         ax.grid(True, axis=grid_axis, color=GRID_COLOR, linewidth=0.8, alpha=0.9)
     ax.set_axisbelow(True)
 
 
 def _save_figure(fig, out_path):
+    out_path = pathlib.Path(out_path)
     fig.savefig(out_path, dpi=FIGURE_DPI, bbox_inches="tight", facecolor="white")
+    if out_path.suffix.lower() != ".svg":
+        fig.savefig(out_path.with_suffix(".svg"), format="svg", bbox_inches="tight", facecolor="white")
     plt.close(fig)
 
 
@@ -402,4 +403,3 @@ def _prepare_scored_frame(
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]
-

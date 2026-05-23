@@ -10,6 +10,7 @@ from __future__ import annotations
 import pathlib
 
 from funmirbench.evaluate import (
+    _is_publication_tool,
     SCORE_PREFIX,
     _plot_predictor_gsea_curves,
     _plot_predictor_pr_curves,
@@ -29,7 +30,7 @@ def _eligible_tools(metric_rows, *, min_coverage: float) -> list[str]:
     eligible = []
     for row in metric_rows:
         tool_id = str(row.get("tool_id", ""))
-        if not tool_id:
+        if not tool_id or not _is_publication_tool(tool_id):
             continue
         try:
             coverage = float(row.get("coverage"))
