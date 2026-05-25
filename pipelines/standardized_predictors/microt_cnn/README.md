@@ -5,7 +5,7 @@ This directory contains the standardization pipeline for microT-CNN gene-level p
 ## Files
 
 - `pipeline.py`: CLI entrypoint for the pipeline.
-- `utils.py`: helpers for logging, downloads, cleaning, mapping, and output construction.
+- `utils.py`: helpers for logging, downloads, mapping, score conversion, and output construction.
 - `microt_cnn_pipeline.log`: example log from a completed run (created when you run the pipeline).
 
 ## What The Pipeline Does
@@ -14,12 +14,12 @@ The pipeline:
 
 1. Downloads miRBase `mature.fa` version 22.1.
 2. Downloads the microT-CNN all-score predictions file (via Zenodo record by default).
-3. Loads raw predictions and drops rows with missing/invalid values in the expected columns.
-4. Deduplicates exact duplicate rows.
-5. Maps miRNA human names (`hsa-*`) to `MIMAT` IDs using `mature.fa`.
-6. Drops rows that fail miRNA name → MIMAT mapping.
-7. Converts the prediction column to numeric `Score` and builds the final output table.
-8. Writes the standardized TSV to the default location.
+3. Loads the raw prediction columns used by the standardized output.
+4. Maps miRNA human names (`hsa-*`) to `MIMAT` IDs using `mature.fa`.
+5. Drops rows that fail miRNA name -> MIMAT mapping.
+6. Converts the prediction column to numeric `Score`.
+7. Drops rows with non-numeric `Score` values after numeric conversion.
+8. Builds the final output table and writes the standardized TSV to the default location.
 
 ## Output Schema
 
@@ -31,7 +31,7 @@ The output TSV contains:
 - `miRNA_Name`
 - `Score`
 
-`miRNA_Name` is copied from the raw miRNA name column. `Score` is the numeric form of the raw prediction value.
+`miRNA_Name` is copied from the raw miRNA name column. `Score` is the numeric form of the raw prediction value. Rows with non-numeric scores are dropped.
 
 ## Output Location
 
@@ -49,7 +49,7 @@ The pipeline downloads external resources only when the expected cache files are
 
 ```
 pipelines/standardized_predictors/microt_cnn/data/resources/mirbase/mature.fa
-pipelines/standardized_predictors/microt_cnn/data/microt_cnn_prediction_result_human_all_scores_gene_level.tsv.gz
+pipelines/standardized_predictors/microt_cnn/data/microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz
 ```
 
 The log notes whether each resource was reused from cache or downloaded.
