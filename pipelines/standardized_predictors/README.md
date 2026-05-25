@@ -18,6 +18,7 @@ Current predictor pipelines:
 - `targetscan/`
 - `tec-mitarget/`
 - `microt_cnn/`
+- `mirbind2/`
 
 ## Standardized Schema
 
@@ -38,6 +39,7 @@ Not every demo pipeline currently populates every column, but they all write thi
 - `targetscan/`
 - `tec-mitarget/`
 - `microt_cnn/`
+- `mirbind2/`
 - `mock/`
 - `cheating/`
 
