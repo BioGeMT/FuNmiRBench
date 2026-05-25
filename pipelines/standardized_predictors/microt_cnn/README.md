@@ -16,10 +16,12 @@ The pipeline:
 2. Downloads the microT-CNN all-score predictions file (via Zenodo record by default).
 3. Loads the raw prediction columns used by the standardized output.
 4. Maps miRNA human names (`hsa-*`) to `MIMAT` IDs using `mature.fa`.
-5. Drops rows that fail miRNA name -> MIMAT mapping.
-6. Converts the prediction column to numeric `Score`.
-7. Drops rows with non-numeric `Score` values after numeric conversion.
-8. Builds the final output table and writes the standardized TSV to the default location.
+5. Maps raw Ensembl transcript IDs (`ENST*`) to Ensembl gene IDs (`ENSG*`) using an Ensembl v115 transcript-to-gene cache. If the cache is missing, the pipeline downloads the Ensembl v115 GTF and builds it.
+6. Drops rows that fail miRNA name -> MIMAT or transcript -> gene mapping.
+7. Converts the prediction column to numeric `Score`.
+8. Drops rows with non-numeric `Score` values after numeric conversion.
+9. Collapses transcript rows to one row per miRNA-gene pair. In the current source file this is a no-op because each mapped miRNA-gene pair appears once; if duplicates appear, the strongest score is kept and the duplicate count is logged.
+10. Builds the final output table and writes the standardized TSV to the default location.
 
 ## Output Schema
 
@@ -31,7 +33,7 @@ The output TSV contains:
 - `miRNA_Name`
 - `Score`
 
-`miRNA_Name` is copied from the raw miRNA name column. `Score` is the numeric form of the raw prediction value. Rows with non-numeric scores are dropped.
+`Ensembl_ID` is the mapped Ensembl gene ID, not the raw transcript ID. `miRNA_Name` is copied from the raw miRNA name column. `Score` is the numeric form of the raw prediction value. Rows with non-numeric scores are dropped.
 
 ## Output Location
 
@@ -75,6 +77,8 @@ uv run pipelines/standardized_predictors/microt_cnn/pipeline.py
 ```bash
 python pipelines/standardized_predictors/microt_cnn/pipeline.py \
   --predictions-file pipelines/standardized_predictors/microt_cnn/data/microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz \
+  --tx2gene-file pipelines/standardized_predictors/microt_cnn/data/resources/ensembl/ensembl115_tx2gene.tsv.gz \
+  --ensembl-gtf-file pipelines/standardized_predictors/microt_cnn/data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz \
   --resources-dir pipelines/standardized_predictors/microt_cnn/data/resources \
   --output data/predictions/microt_cnn/microt_cnn_standardized.tsv \
   --log-file pipelines/standardized_predictors/microt_cnn/microt_cnn_pipeline.log \

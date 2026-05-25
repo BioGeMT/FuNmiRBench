@@ -1,4 +1,6 @@
 import logging
+import gzip
+import csv
 from pathlib import Path
 from typing import Optional
 
@@ -164,7 +166,7 @@ def load_prediction_files(
     df = pd.read_csv(
         path,
         sep="\t",
-        header=None,
+        header=0,
         usecols=[0, 1, 2, 3],
         names=[
             raw_gene_ID_column,
@@ -178,6 +180,131 @@ def load_prediction_files(
         raise RuntimeError("No prediction file was loaded")
 
     return df
+
+def load_ensembl_tx_to_gene(path: Path) -> dict[str, str]:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing Ensembl transcript-to-gene file: {path}")
+
+    opener = gzip.open if path.suffix == ".gz" else open
+    mapping: dict[str, str] = {}
+    with opener(path, "rt", encoding="utf-8") as handle:
+        table = pd.read_csv(handle, sep="\t", dtype=str)
+
+    missing = [col for col in ("transcript_id", "gene_id") if col not in table.columns]
+    if missing:
+        raise ValueError(f"{path} missing required columns: {missing}")
+
+    for _, row in table.iterrows():
+        tx_id = str(row["transcript_id"]).split(".", 1)[0]
+        gene_id = str(row["gene_id"]).split(".", 1)[0]
+        if not tx_id or tx_id == "nan" or not gene_id or gene_id == "nan":
+            continue
+        if tx_id in mapping and mapping[tx_id] != gene_id:
+            raise ValueError(
+                f"{path}: conflicting gene mappings for transcript {tx_id}: "
+                f"{mapping[tx_id]} vs {gene_id}"
+            )
+        mapping[tx_id] = gene_id
+    return mapping
+
+def build_ensembl_tx_to_gene_from_gtf(gtf_gz_path: Path, tx2gene_path: Path) -> dict[str, str]:
+    if not gtf_gz_path.exists():
+        raise FileNotFoundError(f"Missing Ensembl GTF file: {gtf_gz_path}")
+
+    tx2gene_path.parent.mkdir(parents=True, exist_ok=True)
+    mapping: dict[str, str] = {}
+    n_transcript_rows = 0
+    with gzip.open(gtf_gz_path, "rt", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if not line or line.startswith("#"):
+                continue
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) < 9 or fields[2] != "transcript":
+                continue
+            n_transcript_rows += 1
+
+            attrs = {}
+            for part in [item.strip() for item in fields[8].strip().split(";") if item.strip()]:
+                if " " not in part:
+                    continue
+                key, value = part.split(" ", 1)
+                attrs[key] = value.strip().strip('"')
+
+            transcript_id = attrs.get("transcript_id")
+            gene_id = attrs.get("gene_id")
+            if not transcript_id or not gene_id:
+                continue
+            mapping[transcript_id.split(".", 1)[0]] = gene_id.split(".", 1)[0]
+
+    with gzip.open(tx2gene_path, "wt", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["transcript_id", "gene_id"], delimiter="\t")
+        writer.writeheader()
+        for transcript_id, gene_id in sorted(mapping.items()):
+            writer.writerow({"transcript_id": transcript_id, "gene_id": gene_id})
+
+    logger.info(
+        "Built Ensembl transcript-to-gene cache from GTF: transcript_rows=%d | mapped=%d | output=%s",
+        n_transcript_rows,
+        len(mapping),
+        resolve_path_relative_to_root(tx2gene_path),
+    )
+    return mapping
+
+def map_transcripts_to_genes(
+    df: pd.DataFrame,
+    tx_to_gene: dict[str, str],
+    transcript_column: str,
+    gene_column: str,
+) -> pd.DataFrame:
+    out = df.copy()
+    out[transcript_column] = out[transcript_column].astype(str).str.strip()
+    transcript_ids = out[transcript_column].str.split(".", n=1).str[0]
+    out[gene_column] = transcript_ids.map(tx_to_gene)
+    return _drop_unmapped_rows(
+        out,
+        gene_column,
+        "Drop prediction rows with Ensembl transcripts that cannot map to genes",
+    )
+
+def collapse_transcript_rows_to_genes(
+    df: pd.DataFrame,
+    gene_column: str,
+    gene_name_column: str,
+    mirna_name_column: str,
+    mimat_column: str,
+    score_column: str,
+) -> pd.DataFrame:
+    before = len(df)
+    duplicate_mask = df.duplicated([gene_column, mirna_name_column], keep=False)
+    duplicate_rows = int(duplicate_mask.sum())
+    if duplicate_rows:
+        duplicate_pairs = (
+            df.loc[duplicate_mask]
+            .groupby([gene_column, mirna_name_column], dropna=False)[score_column]
+            .nunique()
+        )
+        conflicting_pairs = int((duplicate_pairs > 1).sum())
+        logger.info(
+            "Transcript-to-gene collapse found %d duplicate rows across %d gene-miRNA "
+            "pairs; %d pairs had conflicting scores",
+            duplicate_rows,
+            len(duplicate_pairs),
+            conflicting_pairs,
+        )
+
+    sort_columns = [gene_column, mirna_name_column, score_column]
+    out = (
+        df.sort_values(sort_columns, ascending=[True, True, False])
+        .drop_duplicates([gene_column, mirna_name_column], keep="first")
+        .loc[:, [gene_column, gene_name_column, mimat_column, mirna_name_column, score_column]]
+        .copy()
+    )
+    _log_row_count_change(
+        "Collapse transcript rows to one row per Ensembl gene-miRNA pair",
+        before,
+        len(out),
+    )
+    return out
 
 def create_mirna_name_to_mimat_mapping(mature_fa_path: Path) -> dict[str, str]:
     mapping: dict[str, str] = {}

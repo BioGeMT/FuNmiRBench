@@ -27,7 +27,7 @@ experiments:
 # The default repo config compares two random baselines, the cheating and perfect
 # demo predictors, and TargetScan.
 predictors:
-  tool_id: [random, random_3000, cheating, perfect, targetscan]
+  tool_id: [random, random_3000, cheating, perfect, targetscan, microt_cnn]
   # official_name: [Random, Random (3000 per dataset), Cheating, Perfect]
   # organism: [Homo sapiens]
   # score_type: [probability]
