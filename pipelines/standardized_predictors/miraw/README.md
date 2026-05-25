@@ -124,7 +124,6 @@ Then run preprocessing:
 
 ```bash
 cd pipelines/standardized_predictors/miraw
-mkdir -p ~/tmp_sort
 bash miraw_preprocessing.sh
 ```
 

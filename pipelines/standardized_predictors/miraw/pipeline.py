@@ -37,10 +37,10 @@ def main() -> None:
     )
 
     parser.add_argument(
-    "--predictions-file",
-    type=Path,
-    default=pipeline_dir /  "miraw_best_per_pair.txt",
-    help="Path to the local miRAW predictions file (.txt or .txt.gz). Default: pipelines/standardized_predictors/miraw/best_per_pair.txt",
+        "--predictions-file",
+        type=Path,
+        default=pipeline_dir / "data" / "best_per_pair.txt.gz",
+        help="Path to the local preprocessed miRAW predictions file (.txt or .txt.gz). Default: pipelines/standardized_predictors/miraw/data/best_per_pair.txt.gz",
     )
 
     parser.add_argument(
