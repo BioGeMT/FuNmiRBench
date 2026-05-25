@@ -243,4 +243,7 @@ def build_output_table(
 ) -> pd.DataFrame:
     out = df.copy()
     out[score_column] = pd.to_numeric(out[prediction_column], errors="coerce")
+    before = len(out)
+    out = out.loc[out[score_column].notna()].copy()
+    _log_row_count_change("Drop prediction rows with non-numeric scores", before, len(out))
     return out.loc[:, final_columns].copy()
