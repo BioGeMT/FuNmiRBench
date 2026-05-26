@@ -10,7 +10,9 @@ the RNA-seq pipeline (`funmirbench/experiments_pipeline.py`).
 ## Overview of the full pipeline
 
 ```
-1. Fill in pipelines/geo/input_experiments.tsv
+0. (Optional) Run fetch_geo_metadata.py   →   auto-fills a row in input_experiments.tsv
+          ↓
+1. Review / fill in pipelines/geo/input_experiments.tsv
           ↓
 2. Run geo_download.py   →   pipelines/experiments/configs/{dataset_id}.yaml  (auto-generated)
           ↓
@@ -18,6 +20,38 @@ the RNA-seq pipeline (`funmirbench/experiments_pipeline.py`).
           ↓
 4. Run funmirbench/experiments_pipeline.py --config pipelines/experiments/configs/{dataset_id}.yaml
 ```
+
+---
+
+## Step 0 (Optional) — Auto-fill the TSV from GEO
+
+`fetch_geo_metadata.py` fetches metadata for a GEO series and appends a pre-filled
+row to `input_experiments.tsv`. This saves manual work for fields like organism,
+cell line, tissue, PubMed link, and sample classification.
+
+```bash
+# Rule-based only
+python pipelines/geo/fetch_geo_metadata.py --gse-url GSE93717
+
+# With Gemini Flash LLM (fills in mirna_name, experiment_type, treatment, and more)
+python pipelines/geo/fetch_geo_metadata.py --gse-url GSE93717 --llm gemini --gemini-key YOUR_KEY
+# or: export GEMINI_API_KEY=YOUR_KEY  and omit --gemini-key
+```
+
+The script prints a summary of what was auto-filled and what still needs manual editing.
+**Always verify the generated row** before proceeding — auto-filled fields may contain errors.
+
+Key options for `fetch_geo_metadata.py`:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--gse-url` | *(required)* | GEO series URL or accession (e.g. `GSE93717`) |
+| `--llm` | *(off)* | LLM backend to use (`gemini`) |
+| `--gemini-key` | `$GEMINI_API_KEY` | Gemini API key (free tier available at [aistudio.google.com](https://aistudio.google.com)) |
+| `--tsv` | `input_experiments.tsv` | Path to the TSV file to append to |
+
+When using `--llm gemini`, the script also validates the suggested `mirna_name`
+against a local miRBase `mature.fa` cache and reports whether the name is found.
 
 ---
 

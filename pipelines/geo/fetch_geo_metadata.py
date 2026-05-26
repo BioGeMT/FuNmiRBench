@@ -2,17 +2,20 @@
 Fetch GEO series metadata and append a new row to pipelines/geo/input_experiments.tsv.
 
 Uses the GEO SOFT text API to retrieve series and sample-level metadata without
-requiring SRA credentials. Auto-fills what it can from GEO; prints a summary of
-what still needs manual editing before running geo_download.py.
+requiring SRA credentials. Optionally uses the Gemini Flash LLM for smarter field
+extraction. Auto-fills what it can from GEO; prints a summary of what still needs
+manual editing before running geo_download.py.
 
 Usage:
     python pipelines/geo/fetch_geo_metadata.py --gse-url GSE93717
+    python pipelines/geo/fetch_geo_metadata.py --gse-url GSE93717 --llm gemini
     python pipelines/geo/fetch_geo_metadata.py --gse-url https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE93717
-    python pipelines/geo/fetch_geo_metadata.py --mirna-name hsa-miR-21-5p
 """
 
 import argparse
 import csv
+import json
+import os
 import re
 import sys
 import time
@@ -21,7 +24,9 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INPUT_TSV = Path(__file__).resolve().parent / "input_experiments.tsv"
+MIRBASE_CACHE_DIR = REPO_ROOT / "data" / "mirbase"
 
 TSV_COLUMNS = [
     "id", "mirna_name", "article_pubmed_id", "organism", "tested_cell_line",
@@ -239,16 +244,21 @@ def classify_samples(samples: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# miRBase sequence lookup
+# miRBase validation
 # ---------------------------------------------------------------------------
 
-def _get_cached_mature_fa(cache_dir: str = "data/mirbase", max_age_days: int = MIRBASE_CACHE_MAX_AGE_DAYS) -> Path:
+def _get_cached_mature_fa(
+    cache_dir: Path | None = None,
+    max_age_days: int = MIRBASE_CACHE_MAX_AGE_DAYS,
+) -> Path:
     """
     Return path to a local copy of miRBase mature.fa, downloading/refreshing as needed.
 
     The file is re-downloaded if it does not exist or is older than max_age_days.
     If a refresh fails but a stale copy exists, the stale copy is used with a warning.
     """
+    if cache_dir is None:
+        cache_dir = MIRBASE_CACHE_DIR
     cache_path = Path(cache_dir) / "mature.fa"
 
     needs_download = True
@@ -309,32 +319,111 @@ def _parse_mature_fa(path: Path) -> dict:
     return sequences
 
 
-def lookup_mirna_sequence(
-    mirna_name: str,
-    cache_dir: str = "data/mirbase",
-    max_age_days: int = MIRBASE_CACHE_MAX_AGE_DAYS,
-) -> str | None:
+def validate_mirna_in_mirbase(name: str) -> bool | None:
     """
-    Return the mature sequence for *mirna_name* (e.g. ``hsa-miR-21-5p``).
+    Return True if name is found in miRBase mature.fa, False if not found,
+    or None if the check could not be performed (e.g. download failure).
+    """
+    try:
+        cache_path = _get_cached_mature_fa()
+        sequences = _parse_mature_fa(cache_path)
+        return name in sequences
+    except RuntimeError:
+        return None
 
-    Downloads/refreshes miRBase mature.fa as needed (cached in *cache_dir*,
-    refreshed when older than *max_age_days* days).  Returns ``None`` if the
-    name is not found.
+
+# ---------------------------------------------------------------------------
+# LLM integration (Gemini Flash)
+# ---------------------------------------------------------------------------
+
+def call_gemini(
+    title: str,
+    summary: str,
+    sample_titles: list[str],
+    api_key: str,
+) -> dict:
     """
-    cache_path = _get_cached_mature_fa(cache_dir=cache_dir, max_age_days=max_age_days)
-    sequences = _parse_mature_fa(cache_path)
-    return sequences.get(mirna_name)
+    Use Gemini Flash to extract experiment metadata fields from GEO series text.
+
+    Returns a dict with some/all of: mirna_name, experiment_type, treatment,
+    tested_cell_line, tissue, organism. Values are strings or None.
+    """
+    try:
+        import google.generativeai as genai  # noqa: PLC0415
+    except ImportError:
+        print(
+            "ERROR: google-generativeai is not installed. "
+            "Run: pip install google-generativeai",
+            file=sys.stderr,
+        )
+        return {}
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-2.0-flash")
+
+    sample_list = "\n".join(f"  - {t}" for t in sample_titles[:20])
+
+    prompt = f"""You are a bioinformatics expert. Given the following GEO (Gene Expression Omnibus) experiment metadata, extract the fields listed below. Return a JSON object with EXACTLY these keys:
+
+{{
+  "mirna_name": "exact miRBase mature name (e.g. hsa-miR-21-5p) or null",
+  "experiment_type": "OE or KO or null",
+  "treatment": "short description of the experimental treatment or null",
+  "tested_cell_line": "cell line name without trailing 'cells' or 'cell line' (e.g. HaCaT, A549) or null",
+  "tissue": "tissue or organ type (e.g. Lung, Skin, Ovarian) or null",
+  "organism": "full organism name (e.g. Homo sapiens, Mus musculus) or null"
+}}
+
+Extraction rules:
+- mirna_name: Use exact miRBase mature miRNA format with organism prefix and arm suffix (e.g. hsa-miR-21-5p). If the arm (-3p/-5p) is ambiguous, pick the more likely one based on context. Return null if no specific miRNA is mentioned.
+- experiment_type: "OE" for overexpression/mimic/gain-of-function, "KO" for knockdown/inhibition/knockout/antagomir/loss-of-function. Return null if unclear.
+- treatment: Short phrase describing what was done (e.g. "Overexpression of miR-21-5p in HaCaT cells").
+- tested_cell_line: Clean name without "cells" or "cell line" suffix.
+- tissue: The tissue/organ this cell line originates from or the tissue type studied.
+- organism: Full Latin species name.
+
+Series title: {title}
+
+Series summary: {summary[:2000]}
+
+Sample titles:
+{sample_list}
+
+Return ONLY valid JSON — no markdown code blocks, no explanations."""
+
+    try:
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        # Strip markdown code fences if the model added them
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+        fields = json.loads(text)
+        expected = {"mirna_name", "experiment_type", "treatment", "tested_cell_line", "tissue", "organism"}
+        result = {}
+        for k in expected:
+            v = fields.get(k)
+            result[k] = str(v).strip() if v and str(v).strip().lower() not in ("null", "none", "") else None
+        return result
+    except Exception as e:
+        print(f"[LLM] Gemini call failed: {e}", file=sys.stderr)
+        return {}
 
 
 # ---------------------------------------------------------------------------
 # Row builder
 # ---------------------------------------------------------------------------
 
-def build_row(gse: str, soft_parsed: dict) -> tuple[dict, dict, dict]:
+def build_row(
+    gse: str,
+    soft_parsed: dict,
+    llm_fields: dict | None = None,
+) -> tuple[dict, dict, dict, dict]:
     """
-    Build a TSV row dict from parsed GEO SOFT data.
+    Build a TSV row dict from parsed GEO SOFT data, optionally merging LLM fields.
 
-    Returns (row, classified_samples, series_info).
+    Returns (row, classified_samples, series_info, sources).
+    sources maps each row field to one of:
+      "rule-based" | "llm" | "both" | "default" | "manual" | "llm (was: <old>)"
     """
     series = soft_parsed["series"]
     classified = classify_samples(soft_parsed["samples"])
@@ -370,12 +459,55 @@ def build_row(gse: str, soft_parsed: dict) -> tuple[dict, dict, dict]:
         "gene_id_column": "",
     }
 
+    sources = {
+        "id": "manual",
+        "mirna_name": "manual",
+        "article_pubmed_id": "rule-based" if pubmed_url != "NA" else "default",
+        "organism": "rule-based" if organisms else "manual",
+        "tested_cell_line": "rule-based" if cell_lines else "manual",
+        "treatment": "manual",
+        "tissue": "rule-based" if tissues else "manual",
+        "method": "default",
+        "experiment_type": "manual",
+        "gse_url": "rule-based",
+        "raw_data_dir": "default",
+        "control_samples": "rule-based",
+        "condition_samples": "rule-based",
+        "count_matrix_path": "default",
+        "gene_id_column": "default",
+    }
+
+    # Merge LLM fields where available
+    if llm_fields:
+        _llm_field_map = {
+            "mirna_name": "mirna_name",
+            "experiment_type": "experiment_type",
+            "treatment": "treatment",
+            "tested_cell_line": "tested_cell_line",
+            "tissue": "tissue",
+            "organism": "organism",
+        }
+        for llm_key, row_key in _llm_field_map.items():
+            llm_val = llm_fields.get(llm_key)
+            if not llm_val:
+                continue
+            current = row[row_key]
+            if current == "TO BE FILLED":
+                row[row_key] = llm_val
+                sources[row_key] = "llm"
+            elif current.lower() == llm_val.lower():
+                sources[row_key] = "both"
+            else:
+                # LLM disagrees with rule-based; prefer LLM, note the original value
+                sources[row_key] = f"llm (rule-based was: {current})"
+                row[row_key] = llm_val
+
     series_info = {
         "title": _first(series.get("Series_title")),
         "summary": _first(series.get("Series_summary")),
     }
 
-    return row, classified, series_info
+    return row, classified, series_info, sources
 
 
 # ---------------------------------------------------------------------------
@@ -412,14 +544,40 @@ def append_to_tsv(row: dict, tsv_path: Path) -> bool:
 # Summary printer
 # ---------------------------------------------------------------------------
 
-def print_summary(gse: str, row: dict, classified: dict, series_info: dict, tsv_path: Path):
+_SOURCE_LABELS = {
+    "rule-based": "[rule-based]",
+    "both":        "[LLM+rule]",
+    "default":     "[default]",
+    "manual":      "",
+    "llm":         "[LLM]",
+}
+
+
+def _source_label(src: str) -> str:
+    return _SOURCE_LABELS.get(src, f"[{src}]")
+
+
+def print_summary(
+    gse: str,
+    row: dict,
+    classified: dict,
+    series_info: dict,
+    tsv_path: Path,
+    sources: dict,
+    mirbase_valid: bool | None = None,
+    llm_used: bool = False,
+):
     sep = "=" * 60
     warn = "!" * 60
     print(warn)
     print("  IMPORTANT — PLEASE READ BEFORE PROCEEDING")
     print()
-    print("  This script uses rule-based heuristics (keyword matching")
-    print("  and majority voting), NOT an LLM or AI model.")
+    if llm_used:
+        print("  This script uses rule-based heuristics AND the Gemini Flash")
+        print("  LLM to auto-fill fields. LLM output can contain hallucinations.")
+    else:
+        print("  This script uses rule-based heuristics (keyword matching")
+        print("  and majority voting), NOT an LLM or AI model.")
     print("  All auto-filled fields may contain errors.")
     print("  Go through each field carefully and verify manually")
     print("  before running geo_download.py.")
@@ -430,19 +588,40 @@ def print_summary(gse: str, row: dict, classified: dict, series_info: dict, tsv_
     print(sep)
     print(f"\nRow appended to: {tsv_path}\n")
 
-    print("Auto-filled fields (verify each one):")
-    for field in ("article_pubmed_id", "organism", "tested_cell_line", "tissue",
-                  "gse_url", "control_samples", "condition_samples"):
-        print(f"  {field:<22} {row[field]}")
+    # Fields with auto-filled values
+    auto_fields = [
+        f for f in TSV_COLUMNS
+        if sources.get(f) not in ("manual", "default")
+        and row.get(f) not in ("TO BE FILLED", "", None)
+    ]
+    if auto_fields:
+        print("Auto-filled fields (verify each one):")
+        for field in auto_fields:
+            val = row[field]
+            label = _source_label(sources.get(field, ""))
+            extra = ""
+            if field == "mirna_name" and mirbase_valid is not None:
+                if mirbase_valid:
+                    extra = "  ← miRBase: VALID ✓"
+                else:
+                    extra = "  ← miRBase: NOT FOUND — check name and arm (-3p/-5p)"
+            print(f"  {field:<22} {val}  {label}{extra}")
 
-    print("\nFields to fill in manually (open the TSV):")
-    print("  id                     → e.g. {gse}_{experiment_type}_{mirna_name_safe}")
-    print("  mirna_name             → exact miRBase mature name, case-sensitive")
-    print("                           (e.g. hsa-miR-21-3p, NOT hsa-mir-21-3p or miR-21-3p)")
-    print("                           wrong name or wrong arm (-3p/-5p) will break")
-    print("                           downstream analysis — verify at https://mirbase.org")
-    print("  experiment_type        → OE (overexpression) or KO (knockout/knockdown/inhibition)")
-    print("  treatment              → short description of the experiment")
+    # Fields still needing manual input
+    manual_fields = [f for f in TSV_COLUMNS if row.get(f) == "TO BE FILLED"]
+    if manual_fields:
+        print("\nFields still needing manual edit (open the TSV):")
+        hints = {
+            "id":              "e.g. {gse}_{experiment_type}_{mirna_name_safe}",
+            "mirna_name":      "exact miRBase mature name (e.g. hsa-miR-21-5p, NOT hsa-mir-21-5p)\n"
+                               "                           wrong arm (-3p/-5p) will break downstream analysis\n"
+                               "                           verify at https://mirbase.org",
+            "experiment_type": "OE (overexpression) or KO (knockdown/inhibition/knockout)",
+            "treatment":       "short description of the experiment",
+        }
+        for field in manual_fields:
+            hint = hints.get(field, "")
+            print(f"  {field:<22} → {hint}" if hint else f"  {field}")
 
     uncertain = [(gsm, s) for gsm, s in classified.items() if s["group"] == "uncertain"]
     if uncertain:
@@ -466,12 +645,11 @@ def print_summary(gse: str, row: dict, classified: dict, series_info: dict, tsv_
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Fetch GEO series metadata and append a row to input_experiments.tsv. "
-            "Pass --mirna-name alone to look up a miRNA sequence from miRBase."
+            "Fetch GEO series metadata and append a row to input_experiments.tsv."
         )
     )
     parser.add_argument(
-        "--gse-url", required=False, default=None,
+        "--gse-url", required=True,
         help="GEO series URL or accession (e.g. GSE93717 or full GEO URL)",
     )
     parser.add_argument(
@@ -479,36 +657,17 @@ def main():
         help=f"Path to input_experiments.tsv (default: {INPUT_TSV})",
     )
     parser.add_argument(
-        "--mirna-name", required=False, default=None,
+        "--llm", choices=["gemini"], default=None,
+        help="Use an LLM to help fill in fields (e.g. --llm gemini)",
+    )
+    parser.add_argument(
+        "--gemini-key", default=None,
         help=(
-            "miRNA name (e.g. hsa-miR-21-5p). When given without --gse-url, "
-            "looks up and prints the mature sequence from a local miRBase cache "
-            f"(refreshed every {MIRBASE_CACHE_MAX_AGE_DAYS} days)."
+            "Gemini API key. If omitted, reads GEMINI_API_KEY from the environment. "
+            "Required when --llm gemini is set."
         ),
     )
     args = parser.parse_args()
-
-    # --- standalone sequence lookup ---
-    if args.mirna_name and not args.gse_url:
-        try:
-            seq = lookup_mirna_sequence(args.mirna_name)
-        except RuntimeError as e:
-            print(f"ERROR: {e}", file=sys.stderr)
-            return 1
-        if seq is None:
-            print(
-                f"ERROR: '{args.mirna_name}' not found in miRBase mature.fa. "
-                "Check the name or update the cache.",
-                file=sys.stderr,
-            )
-            return 1
-        print(f"miRNA:    {args.mirna_name}")
-        print(f"Sequence: {seq}")
-        return 0
-
-    # --- GEO metadata fetch ---
-    if not args.gse_url:
-        parser.error("Provide --gse-url (to fetch GEO metadata) or --mirna-name (for sequence lookup).")
 
     try:
         gse = extract_gse_accession(args.gse_url)
@@ -527,12 +686,49 @@ def main():
         print(f"ERROR: No series data found for {gse}. Check the accession.", file=sys.stderr)
         return 1
 
-    row, classified, series_info = build_row(gse, soft_parsed)
+    # Optionally call LLM
+    llm_fields = None
+    llm_used = False
+    if args.llm == "gemini":
+        api_key = args.gemini_key or os.environ.get("GEMINI_API_KEY", "")
+        if not api_key:
+            print(
+                "ERROR: Gemini API key required. Pass --gemini-key or set GEMINI_API_KEY.",
+                file=sys.stderr,
+            )
+            return 1
+        series = soft_parsed["series"]
+        title = _first(series.get("Series_title"))
+        summary = _first(series.get("Series_summary"))
+        sample_titles = [
+            _first(data.get("Sample_title"))
+            for data in soft_parsed["samples"].values()
+        ]
+        print(f"[LLM] Calling Gemini Flash for {gse}...", file=sys.stderr)
+        llm_fields = call_gemini(title, summary, sample_titles, api_key)
+        llm_used = bool(llm_fields)
+        if llm_used:
+            print(f"[LLM] Received fields: {list(k for k, v in llm_fields.items() if v)}", file=sys.stderr)
+        else:
+            print("[LLM] No fields returned; falling back to rule-based only.", file=sys.stderr)
+
+    row, classified, series_info, sources = build_row(gse, soft_parsed, llm_fields=llm_fields)
+
+    # Validate mirna_name in miRBase if it was filled
+    mirbase_valid = None
+    if row.get("mirna_name") not in ("TO BE FILLED", "", None):
+        print(f"[miRBase] Validating '{row['mirna_name']}'...", file=sys.stderr)
+        mirbase_valid = validate_mirna_in_mirbase(row["mirna_name"])
 
     tsv_path = Path(args.tsv)
     appended = append_to_tsv(row, tsv_path)
     if appended:
-        print_summary(gse, row, classified, series_info, tsv_path)
+        print_summary(
+            gse, row, classified, series_info, tsv_path,
+            sources=sources,
+            mirbase_valid=mirbase_valid,
+            llm_used=llm_used,
+        )
     return 0
 
 
