@@ -90,7 +90,7 @@ fill in the relevant columns depending on the mode.
 | `control_samples` | Comma-separated list of control sample identifiers (SRR/GSM accessions, file base-names, or count matrix column names) |
 | `condition_samples` | Comma-separated list of condition sample identifiers (same format as above) |
 | `raw_data_dir` | *Reads mode only.* Path to a local directory with pre-existing FASTQ files. Leave empty to download from GEO. |
-| `count_matrix_path` | *Count matrix mode only.* Path to the count matrix file. If set, count matrix mode is used. |
+| `count_matrix_path` | *Count matrix mode only.* Path to the count matrix file. If set, count matrix mode is used. See [example_count_matrix.csv](example_count_matrix.csv) for the expected format. |
 | `gene_id_column` | *Count matrix mode only.* Column name for gene IDs in the matrix (e.g. `ENSEMBL`). Required when `count_matrix_path` is set. |
 
 Rows with empty `control_samples` or `condition_samples` are skipped automatically,
@@ -179,6 +179,8 @@ The script looks for:
 - Paired-end (auto-detected): `{raw_data_dir}/{name}_1.fastq.gz` + `{raw_data_dir}/{name}_2.fastq.gz`
 
 ### Count matrix mode — use a pre-existing count matrix
+
+> The matrix must be a CSV with gene annotation columns (`ENSEMBL`, `name`, `type`, `chr`, `start`, `end`, `str`) followed by per-sample count columns. See [example_count_matrix.csv](example_count_matrix.csv) for the expected format.
 
 Set `count_matrix_path` to the matrix file and provide the **column names** from
 the matrix as sample identifiers.
