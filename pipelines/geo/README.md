@@ -1,8 +1,8 @@
 # GEO ingestion pipeline
 
 This pipeline is the **first stage** of the FuNmiRBench experiment processing workflow.
-It downloads raw FASTQ files from GEO/SRA (or locates local files), or verifies a
-pre-existing count matrix, and automatically generates YAML configuration files for
+It downloads raw FASTQ files from GEO/SRA (or locates local FASTQ files) or verifies a
+pre-existing count matrix and automatically generates YAML configuration files for
 the RNA-seq pipeline (`funmirbench/experiments_pipeline.py`).
 
 ---
