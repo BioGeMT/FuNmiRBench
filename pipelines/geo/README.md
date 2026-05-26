@@ -154,9 +154,6 @@ count_matrix_path:   (empty)
 gene_id_column:      (empty)
 ```
 
-Both options can be mixed within the same experiment. In all cases, NCBI
-(`prefetch` + `fasterq-dump`) is tried first; ENA is used as fallback.
-
 ### Local reads mode — use pre-existing FASTQ files
 
 Set `raw_data_dir` to the directory containing your FASTQ files and provide
