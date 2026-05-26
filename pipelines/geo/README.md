@@ -146,19 +146,8 @@ pipelines/experiments/configs/{dataset_id}.yaml
 
 ## Step 5 — Run the RNA-seq pipeline
 
-For `reads` mode, download the shared genome reference once per machine:
-```bash
-uv run funmirbench-experiments-download-examples
-```
-
-Then run the RNA-seq pipeline for each experiment:
-```bash
-conda activate funmirbench-experiments
-uv run funmirbench-experiments --config pipelines/experiments/configs/{dataset_id}.yaml
-```
-
-This calls `funmirbench/experiments_pipeline.py` internally and writes the DE table to
-`data/experiments/processed/{dataset_id}.tsv`.
+Once the YAML config is reviewed and ready, refer to the [main project README](../../README.md)
+for instructions on running the RNA-seq pipeline (`funmirbench/experiments_pipeline.py`).
 
 ---
 
