@@ -1,8 +1,8 @@
-# GEO ingestion pipeline
+# GEO Download Pipeline
 
 This pipeline is the **first stage** of the FuNmiRBench experiment processing workflow.
-It downloads raw FASTQ files from GEO/SRA (or locates local FASTQ files) or verifies a
-pre-existing count matrix and automatically generates YAML configuration files for
+It downloads raw FASTQ files from GEO/SRA (or locates local FASTQ files), or verifies a
+pre-existing count matrix, and automatically generates YAML configuration files for
 the RNA-seq pipeline (`funmirbench/experiments_pipeline.py`).
 
 ---
@@ -10,27 +10,28 @@ the RNA-seq pipeline (`funmirbench/experiments_pipeline.py`).
 ## Overview of the full pipeline
 
 ```
-1. Fill in metadata/mirna_experiment_info.tsv
+1. Fill in pipelines/geo/input_experiments.tsv
           ↓
 2. Run geo_download.py   →   pipelines/experiments/configs/{dataset_id}.yaml  (auto-generated)
           ↓
 3. Review and fine-tune the generated YAML config  ← important, see note below
           ↓
 4. Run funmirbench/experiments_pipeline.py --config pipelines/experiments/configs/{dataset_id}.yaml
-          ↓
-5. DE table written to data/experiments/processed/{dataset_id}.tsv
 ```
 
 ---
 
-## Step 1 — Fill in the metadata TSV
+## Step 1 — Fill in the input TSV
 
-Edit `metadata/mirna_experiment_info.tsv`. For each experiment you want to process,
-fill in the relevant columns depending on the mode:
+Edit `pipelines/geo/input_experiments.tsv`. For each experiment you want to process,
+fill in the relevant columns depending on the mode.
+
+> **All columns are mandatory.** If a value is not available for a given field
+> (e.g. `article_pubmed_id`), fill it with `NA` rather than leaving it empty.
 
 | Column | Description |
 |---|---|
-| `control_samples` | Comma-separated list of control sample identifiers (GSM accessions, file base-names, or count matrix column names) |
+| `control_samples` | Comma-separated list of control sample identifiers (SRR/GSM accessions, file base-names, or count matrix column names) |
 | `condition_samples` | Comma-separated list of condition sample identifiers (same format as above) |
 | `raw_data_dir` | *Reads mode only.* Path to a local directory with pre-existing FASTQ files. Leave empty to download from GEO. |
 | `count_matrix_path` | *Count matrix mode only.* Path to the count matrix file. If set, count matrix mode is used. |
@@ -123,18 +124,19 @@ Run from the **repo root**:
 
 ```bash
 python pipelines/geo/geo_download.py \
-    --tsv metadata/mirna_experiment_info.tsv \
+    --tsv pipelines/geo/input_experiments.tsv \
     --entrez-email your@email.com
 ```
+
+FASTQs are always saved to `data/experiments/raw/` and YAML configs to
+`pipelines/experiments/configs/`.
 
 Key options:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--tsv` | *(required)* | Path to the metadata TSV |
+| `--tsv` | *(required)* | Path to the input TSV |
 | `--entrez-email` | *(required)* | Email address for the NCBI Entrez API |
-| `--output` | `data/experiments/raw` | Where FASTQs are downloaded (reads mode) |
-| `--config-output-dir` | `pipelines/experiments/configs` | Where YAML configs are written |
 | `--threads` | `4` | Threads for `fasterq-dump` |
 
 ---
@@ -176,14 +178,12 @@ for instructions on running the RNA-seq pipeline (`funmirbench/experiments_pipel
 | Path | Description |
 |---|---|
 | `data/experiments/raw/{GSE}/{SRR}.fastq.gz` | Downloaded FASTQ files (GEO mode) |
-| `data/experiments/raw/{GSE}/manifest.json` | Maps GSM → SRR → file paths and group (GEO mode) |
+| `data/experiments/raw/{GSE}/manifest.json` | Maps sample → SRR → file paths and group (GEO mode) |
 | `pipelines/experiments/configs/{dataset_id}.yaml` | Auto-generated RNA-seq pipeline config |
-| `data/experiments/processed/{dataset_id}.tsv` | Final DE table (produced by RNA-seq pipeline) |
 
 ---
 
 ## Notes
 
-- Downloaded FASTQ files and DE tables are **not tracked by git** (see `.gitignore`).
 - `--entrez-email` is required for GEO mode (NCBI policy); it is not used in local or count matrix mode but is still a required argument.
 - If any SRR download fails, the entire experiment is skipped — no YAML config is written for it to avoid referencing missing files.

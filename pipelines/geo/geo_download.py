@@ -54,6 +54,9 @@ REQUIRED_TSV_COLUMNS = [
     "condition_samples",
 ]
 
+FASTQ_OUTPUT_DIR = REPO_ROOT / "data/experiments/raw"
+CONFIG_OUTPUT_DIR = REPO_ROOT / "pipelines/experiments/configs"
+
 # Default genome reference paths (Ensembl v109, downloaded by funmirbench-experiments-download-examples)
 DEFAULT_GENOME_FASTA = str(
     REPO_ROOT / "data/experiments/raw/refs/ensembl_v109"
@@ -756,14 +759,6 @@ def main():
         help="Path to experiments TSV (e.g. metadata/mirna_experiment_info.tsv)",
     )
     parser.add_argument(
-        "--output", "-o", default=str(REPO_ROOT / "data/experiments/raw"),
-        help="Output directory for downloaded FASTQ files (default: <repo_root>/data/experiments/raw)",
-    )
-    parser.add_argument(
-        "--config-output-dir", default=str(REPO_ROOT / "pipelines/experiments/configs"),
-        help="Directory to write generated YAML configs (default: <repo_root>/pipelines/experiments/configs)",
-    )
-    parser.add_argument(
         "--threads", "-t", type=int, default=4,
         help="Threads for fasterq-dump (default: 4)",
     )
@@ -784,9 +779,8 @@ def main():
         return 1
     log_step(2, total_steps, f"parsed {len(experiments)} processable experiment(s)")
 
-    output_dir = Path(args.output)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    log_step(3, total_steps, f"output directory ready: {output_dir}")
+    FASTQ_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    log_step(3, total_steps, f"output directory ready: {FASTQ_OUTPUT_DIR}")
     log_step(4, total_steps, "starting experiment processing")
 
     total_experiments = len(experiments)
@@ -798,15 +792,15 @@ def main():
             )
             if exp.get("count_matrix_path", "").strip():
                 process_count_matrix_experiment(exp)
-                generate_count_matrix_yaml_config(exp, args.config_output_dir)
+                generate_count_matrix_yaml_config(exp, CONFIG_OUTPUT_DIR)
             elif exp.get("raw_data_dir", "").strip():
                 control_entries, treated_entries = process_local_experiment(exp)
-                generate_yaml_config(exp, control_entries, treated_entries, args.config_output_dir)
+                generate_yaml_config(exp, control_entries, treated_entries, CONFIG_OUTPUT_DIR)
             else:
                 control_entries, treated_entries = download_experiment(
-                    exp, output_dir, args.threads
+                    exp, FASTQ_OUTPUT_DIR, args.threads
                 )
-                generate_yaml_config(exp, control_entries, treated_entries, args.config_output_dir)
+                generate_yaml_config(exp, control_entries, treated_entries, CONFIG_OUTPUT_DIR)
         except Exception as e:
             logger.error("Failed to process %s: %s", exp["id"], e)
 
