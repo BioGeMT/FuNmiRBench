@@ -25,33 +25,66 @@ the RNA-seq pipeline (`funmirbench/experiments_pipeline.py`).
 
 ## Step 0 (Optional) — Auto-fill the TSV from GEO
 
-`fetch_geo_metadata.py` fetches metadata for a GEO series and appends a pre-filled
-row to `input_experiments.tsv`. This saves manual work for fields like organism,
-cell line, tissue, PubMed link, and sample classification.
+`fetch_geo_metadata.py` fetches metadata for a GEO series from the NCBI SOFT API
+and appends a pre-filled row to `input_experiments.tsv`. It can optionally use the
+**Gemini Flash LLM** to fill in fields that require biological interpretation
+(miRNA name, experiment type, treatment description).
+
+### Option A — Rule-based only
+
+Uses keyword matching and majority voting across sample metadata. No API key needed.
 
 ```bash
-# Rule-based only
-python pipelines/geo/fetch_geo_metadata.py --gse-url GSE93717
+conda activate funmirbench-geo
 
-# With Gemini Flash LLM (fills in mirna_name, experiment_type, treatment, and more)
-python pipelines/geo/fetch_geo_metadata.py --gse-url GSE93717 --llm gemini --gemini-key YOUR_KEY
-# or: export GEMINI_API_KEY=YOUR_KEY  and omit --gemini-key
+python pipelines/geo/fetch_geo_metadata.py --gse-url GSE93717
 ```
 
-The script prints a summary of what was auto-filled and what still needs manual editing.
-**Always verify the generated row** before proceeding — auto-filled fields may contain errors.
+### Option B — With Gemini Flash LLM (recommended)
 
-Key options for `fetch_geo_metadata.py`:
+Adds LLM-assisted extraction of `mirna_name`, `experiment_type`, `treatment`,
+`tested_cell_line`, `tissue`, and `organism`. Also validates the suggested miRNA
+name against a local miRBase cache.
+
+#### Get a free Gemini API key
+
+1. Go to **[aistudio.google.com](https://aistudio.google.com)** and sign in with a Google account.
+2. Click **"Get API key"** → **"Create API key"**.
+3. Copy the key (starts with `AIza...`).
+
+No billing required — the free tier is sufficient for this use case.
+
+#### Run with the LLM
+
+```bash
+conda activate funmirbench-geo
+
+# Set the key once per session (recommended)
+export GEMINI_API_KEY=AIzaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+python pipelines/geo/fetch_geo_metadata.py \
+    --gse-url GSE93717 \
+    --llm gemini
+
+# Or pass the key inline
+python pipelines/geo/fetch_geo_metadata.py \
+    --gse-url GSE93717 \
+    --llm gemini \
+    --gemini-key AIzaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+```
+
+The script prints a summary of every field with a source tag (`[rule-based]`, `[LLM]`,
+`[LLM+rule]`) and a miRBase validity indicator next to the miRNA name.
+**Always verify the generated row** — auto-filled fields may contain errors.
+
+Key options:
 
 | Flag | Default | Description |
 |---|---|---|
 | `--gse-url` | *(required)* | GEO series URL or accession (e.g. `GSE93717`) |
 | `--llm` | *(off)* | LLM backend to use (`gemini`) |
-| `--gemini-key` | `$GEMINI_API_KEY` | Gemini API key (free tier available at [aistudio.google.com](https://aistudio.google.com)) |
+| `--gemini-key` | `$GEMINI_API_KEY` | Gemini API key |
 | `--tsv` | `input_experiments.tsv` | Path to the TSV file to append to |
-
-When using `--llm gemini`, the script also validates the suggested `mirna_name`
-against a local miRBase `mature.fa` cache and reports whether the name is found.
 
 ---
 
