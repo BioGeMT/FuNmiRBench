@@ -116,7 +116,6 @@ raw_data_dir:       (empty)
 count_matrix_path:  (empty)
 ```
 
-ERR and DRR accessions are also accepted.
 
 **Option B — GSM accessions**
 
