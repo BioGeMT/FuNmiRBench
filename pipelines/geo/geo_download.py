@@ -693,8 +693,11 @@ def generate_count_matrix_yaml_config(experiment, config_output_dir):
     }
 
     config_path = config_output_dir / f"{experiment['id']}.yaml"
+    yaml_str = yaml.dump(config, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    for key in ("source:", "comparison:", "metadata:"):
+        yaml_str = yaml_str.replace(f"\n{key}", f"\n\n{key}")
     with open(config_path, "w", encoding="utf-8") as f:
-        yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        f.write(yaml_str)
     logger.info("YAML config written: %s", config_path)
     return config_path
 
@@ -747,8 +750,11 @@ def generate_yaml_config(experiment, control_entries, treated_entries, config_ou
     }
 
     config_path = config_output_dir / f"{experiment['id']}.yaml"
+    yaml_str = yaml.dump(config, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    for key in ("source:", "comparison:", "metadata:"):
+        yaml_str = yaml_str.replace(f"\n{key}", f"\n\n{key}")
     with open(config_path, "w", encoding="utf-8") as f:
-        yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        f.write(yaml_str)
     logger.info("YAML config written: %s", config_path)
     return config_path
 
