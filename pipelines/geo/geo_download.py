@@ -421,18 +421,28 @@ def parse_experiment_metadata(tsv_path):
         def get(col):
             return (row.get(col) or "").strip()
 
+        control_samples = parse_sample_list(row.get("control_samples", ""))
+        condition_samples = parse_sample_list(row.get("condition_samples", ""))
+
+        # Skip rows not yet filled in — do this before any other validation
+        # so that partially-filled placeholder rows don't cause errors.
+        if not control_samples or not condition_samples:
+            logger.warning(
+                "Row %d: skipping — control_samples or condition_samples is empty.",
+                row_num,
+            )
+            continue
+
         dataset_id = get("id")
         mirna = get("mirna_name")
         experiment_type = get("experiment_type")
         gse_url_val = get("gse_url")
         gse = extract_gse_accession(gse_url_val)
-        control_samples = parse_sample_list(row.get("control_samples", ""))
-        condition_samples = parse_sample_list(row.get("condition_samples", ""))
         raw_data_dir = get("raw_data_dir")
         count_matrix_path = get("count_matrix_path")
         gene_id_column = get("gene_id_column")
 
-        # Hard errors for fields always required
+        # Hard errors for fields required on processable rows
         if not dataset_id:
             raise ValueError(f"Row {row_num} missing id in {tsv_path}")
         if not mirna:
@@ -451,14 +461,6 @@ def parse_experiment_metadata(tsv_path):
             raise ValueError(
                 f"Row {row_num} ({dataset_id}): count_matrix_path is set but gene_id_column is missing."
             )
-
-        # Skip rows not yet filled in
-        if not control_samples or not condition_samples:
-            logger.warning(
-                "Row %d (%s): skipping — control_samples or condition_samples is empty.",
-                row_num, dataset_id,
-            )
-            continue
 
         experiments.append({
             "id": dataset_id,
