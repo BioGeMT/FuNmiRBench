@@ -214,6 +214,7 @@ def resolve_gsm_to_srr(gsm_id):
 
 def resolve_gse_samples(sample_ids, max_retries=3, retry_delay=2.0):
     all_results = []
+    failed_samples = []
     for sample_id in sample_ids:
         for attempt in range(1, max_retries + 1):
             try:
@@ -223,7 +224,8 @@ def resolve_gse_samples(sample_ids, max_retries=3, retry_delay=2.0):
                     all_results.extend(resolve_gsm_to_srr(sample_id))
                 break
             except ValueError as e:
-                logger.warning(f"Failed to resolve {sample_id}: {e}")
+                logger.error("Failed to resolve %s: %s", sample_id, e)
+                failed_samples.append(sample_id)
                 break
             except Exception as e:
                 if attempt < max_retries:
@@ -237,7 +239,8 @@ def resolve_gse_samples(sample_ids, max_retries=3, retry_delay=2.0):
                         "Failed to resolve %s after %d attempts due to network/API error: %s",
                         sample_id, max_retries, e,
                     )
-    return all_results
+                    failed_samples.append(sample_id)
+    return all_results, failed_samples
 
 
 # ---------------------------------------------------------------------------
@@ -596,8 +599,13 @@ def download_experiment(experiment, output_dir, threads):
     step_total = 3
 
     log_step(1, step_total, f"{gse}: resolving GSM accessions to SRR runs", prefix="EXP")
-    srr_infos = resolve_gse_samples(all_samples)
+    srr_infos, failed_resolutions = resolve_gse_samples(all_samples)
     logger.info("[%s] Resolved %d SRR run(s)", gse, len(srr_infos))
+    if failed_resolutions:
+        raise RuntimeError(
+            f"{gse}: {len(failed_resolutions)} sample(s) could not be resolved to SRR: "
+            f"{failed_resolutions}. Aborting to avoid an incomplete experiment."
+        )
 
     log_step(2, step_total, f"{gse}: downloading SRR FASTQ files", prefix="EXP")
     failed_srrs = []
