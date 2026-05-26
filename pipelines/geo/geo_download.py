@@ -792,11 +792,14 @@ def main():
     log_step(4, total_steps, "starting experiment processing")
 
     total_experiments = len(experiments)
+    failed_experiments = []
+
     for exp_idx, exp in enumerate(experiments, start=1):
+        exp_label = f"{exp['gse']} | {exp['mirna']} | {exp['experiment_type']}"
         try:
             logger.info(
-                "[EXPERIMENT %d/%d] %s | %s | %s",
-                exp_idx, total_experiments, exp["gse"], exp["mirna"], exp["experiment_type"],
+                "[EXPERIMENT %d/%d] %s",
+                exp_idx, total_experiments, exp_label,
             )
             if exp.get("count_matrix_path", "").strip():
                 process_count_matrix_experiment(exp)
@@ -809,10 +812,33 @@ def main():
                     exp, FASTQ_OUTPUT_DIR, args.threads
                 )
                 generate_yaml_config(exp, control_entries, treated_entries, CONFIG_OUTPUT_DIR)
+            logger.info("[EXPERIMENT %d/%d] %s — DONE", exp_idx, total_experiments, exp_label)
         except Exception as e:
-            logger.error("Failed to process %s: %s", exp["id"], e)
+            logger.error(
+                "[EXPERIMENT %d/%d] %s — FAILED: %s",
+                exp_idx, total_experiments, exp_label, e,
+            )
+            failed_experiments.append((exp_label, str(e)))
 
-    return 0
+    sep = "=" * 60
+    logger.info(sep)
+    if failed_experiments:
+        logger.error(
+            "FINISHED WITH ERRORS — %d/%d experiment(s) failed:",
+            len(failed_experiments), total_experiments,
+        )
+        for label, reason in failed_experiments:
+            logger.error("  ✗ %s", label)
+            logger.error("    Reason: %s", reason)
+        logger.error(sep)
+        return 1
+    else:
+        logger.info(
+            "ALL DONE — %d/%d experiment(s) completed successfully.",
+            total_experiments, total_experiments,
+        )
+        logger.info(sep)
+        return 0
 
 
 if __name__ == "__main__":
