@@ -387,6 +387,8 @@ def parse_experiment_metadata(tsv_path):
         control_samples = parse_sample_list(row.get("control_samples", ""))
         condition_samples = parse_sample_list(row.get("condition_samples", ""))
         raw_data_dir = get("raw_data_dir")
+        count_matrix_path = get("count_matrix_path")
+        gene_id_column = get("gene_id_column")
 
         # Hard errors for fields always required
         if not dataset_id:
@@ -400,6 +402,12 @@ def parse_experiment_metadata(tsv_path):
         if not gse:
             raise ValueError(
                 f"Row {row_num} has invalid gse_url with no GEO accession: {gse_url_val}"
+            )
+
+        # count_matrix mode requires gene_id_column
+        if count_matrix_path and not gene_id_column:
+            raise ValueError(
+                f"Row {row_num} ({dataset_id}): count_matrix_path is set but gene_id_column is missing."
             )
 
         # Skip rows not yet filled in
@@ -418,6 +426,8 @@ def parse_experiment_metadata(tsv_path):
             "control_samples": control_samples,
             "condition_samples": condition_samples,
             "raw_data_dir": raw_data_dir,
+            "count_matrix_path": count_matrix_path,
+            "gene_id_column": gene_id_column,
             # fields for the YAML metadata section
             "organism": get("organism"),
             "tested_cell_line": get("tested_cell_line"),
@@ -589,7 +599,59 @@ def download_experiment(experiment, output_dir, threads):
 
 
 # ---------------------------------------------------------------------------
-# YAML config generation
+# Count matrix mode
+# ---------------------------------------------------------------------------
+
+def process_count_matrix_experiment(experiment):
+    """Count matrix mode: verify the matrix file exists."""
+    path = Path(experiment["count_matrix_path"])
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    if not path.exists():
+        raise FileNotFoundError(
+            f"count_matrix_path does not exist: {path}"
+        )
+    logger.info("Count matrix found: %s", path)
+
+
+def generate_count_matrix_yaml_config(experiment, config_output_dir):
+    """Write a count-matrix YAML config for funmirbench-experiments."""
+    config_output_dir = Path(config_output_dir)
+    config_output_dir.mkdir(parents=True, exist_ok=True)
+
+    config = {
+        "dataset_id": experiment["id"],
+        "mirna_name": experiment["mirna"],
+        "experiment_type": experiment["experiment_type"],
+        "gse": experiment["gse"],
+        "source": {
+            "mode": "count_matrix",
+            "count_matrix_path": experiment["count_matrix_path"],
+            "gene_id_column": experiment["gene_id_column"],
+        },
+        "comparison": {
+            "control_columns": experiment["control_samples"],
+            "treated_columns": experiment["condition_samples"],
+        },
+        "metadata": {
+            "organism": experiment.get("organism", ""),
+            "tested_cell_line": experiment.get("tested_cell_line", ""),
+            "treatment": experiment.get("treatment", ""),
+            "tissue": experiment.get("tissue", ""),
+            "method": "RNA-seq",
+            "article_pubmed_id": experiment.get("article_pubmed_id", ""),
+        },
+    }
+
+    config_path = config_output_dir / f"{experiment['id']}.yaml"
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    logger.info("YAML config written: %s", config_path)
+    return config_path
+
+
+# ---------------------------------------------------------------------------
+# YAML config generation (reads mode)
 # ---------------------------------------------------------------------------
 
 def generate_yaml_config(experiment, control_entries, treated_entries, config_output_dir):
@@ -698,13 +760,17 @@ def main():
                 "[EXPERIMENT %d/%d] %s | %s | %s",
                 exp_idx, total_experiments, exp["gse"], exp["mirna"], exp["experiment_type"],
             )
-            if exp.get("raw_data_dir", "").strip():
+            if exp.get("count_matrix_path", "").strip():
+                process_count_matrix_experiment(exp)
+                generate_count_matrix_yaml_config(exp, args.config_output_dir)
+            elif exp.get("raw_data_dir", "").strip():
                 control_entries, treated_entries = process_local_experiment(exp)
+                generate_yaml_config(exp, control_entries, treated_entries, args.config_output_dir)
             else:
                 control_entries, treated_entries = download_experiment(
                     exp, output_dir, args.threads
                 )
-            generate_yaml_config(exp, control_entries, treated_entries, args.config_output_dir)
+                generate_yaml_config(exp, control_entries, treated_entries, args.config_output_dir)
         except Exception as e:
             logger.error("Failed to process %s: %s", exp["id"], e)
 
