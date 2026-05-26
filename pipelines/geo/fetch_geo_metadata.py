@@ -1,5 +1,5 @@
 """
-Fetch GEO series metadata and propose a row for metadata/mirna_experiment_info.tsv.
+Fetch GEO series metadata and propose a row for pipelines/geo/input_experiments.tsv.
 
 Uses the GEO SOFT text API to retrieve series and sample-level metadata without
 requiring SRA credentials. Outputs JSON with proposed field values and raw sample
@@ -155,7 +155,7 @@ def extract_pubmed_url(series: dict) -> str:
     pmids = _as_list(series.get("Series_pubmed_id"))
     if pmids:
         return f"https://pubmed.ncbi.nlm.nih.gov/{pmids[0].strip()}"
-    return ""
+    return "NA"
 
 
 def extract_sample_info(sample_data: dict) -> dict:
@@ -308,7 +308,7 @@ def lookup_mirna_sequence(
 # Main proposal builder
 # ---------------------------------------------------------------------------
 
-def build_proposal(gse: str, soft_parsed: dict, mirna_sequence: str = "") -> dict:
+def build_proposal(gse: str, soft_parsed: dict) -> dict:
     series = soft_parsed["series"]
     classified = classify_samples(soft_parsed["samples"])
 
@@ -325,7 +325,7 @@ def build_proposal(gse: str, soft_parsed: dict, mirna_sequence: str = "") -> dic
 
     def majority(lst):
         if not lst:
-            return ""
+            return "NA"
         return max(set(lst), key=lst.count)
 
     organism = majority(organisms)
@@ -337,7 +337,7 @@ def build_proposal(gse: str, soft_parsed: dict, mirna_sequence: str = "") -> dic
     condition_gsms = [gsm for gsm, s in classified.items() if s["group"] == "condition"]
     uncertain_gsms = [gsm for gsm, s in classified.items() if s["group"] == "uncertain"]
 
-    # Fields the LLM must fill in (not derivable from GEO alone)
+    # Fields the user must fill in (not derivable from GEO alone)
     needs_review = []
     if not control_gsms:
         needs_review.append("control_samples — no samples auto-classified as control")
@@ -350,31 +350,25 @@ def build_proposal(gse: str, soft_parsed: dict, mirna_sequence: str = "") -> dic
         "mirna_name — extract from series title/summary below",
         "experiment_type — OE (overexpression) or KO (knockout/knockdown/inhibition)",
         "id — derived as {gse}_{experiment_type}_{mirna_name_safe} once above are confirmed",
-        "de_table_path — will be set to data/experiments/processed/{id}.tsv",
     ]
-    if not mirna_sequence:
-        needs_review.append(
-            "mirna_sequence — run with --mirna-name <name> to auto-fetch from miRBase, "
-            "or look up manually at https://mirbase.org"
-        )
 
     return {
         "proposed_row": {
             "id": "",
             "mirna_name": "",
-            "mirna_sequence": mirna_sequence,
             "article_pubmed_id": pubmed_url,
             "organism": organism,
             "tested_cell_line": cell_line,
-            "treatment": "",
+            "treatment": "NA",
             "tissue": tissue,
             "method": "RNA-seq",
             "experiment_type": "",
             "gse_url": gse_url,
-            "de_table_path": "",
             "raw_data_dir": "",
             "control_samples": ",".join(control_gsms),
             "condition_samples": ",".join(condition_gsms),
+            "count_matrix_path": "",
+            "gene_id_column": "",
         },
         "series_info": {
             "gse": gse,
@@ -403,7 +397,8 @@ def build_proposal(gse: str, soft_parsed: dict, mirna_sequence: str = "") -> dic
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Fetch GEO series metadata and propose a mirna_experiment_info.tsv row. "
+            "Fetch GEO series metadata and propose a row for "
+            "pipelines/geo/input_experiments.tsv. "
             "Pass --mirna-name alone to look up a miRNA sequence from miRBase."
         )
     )
@@ -414,9 +409,9 @@ def main():
     parser.add_argument(
         "--mirna-name", required=False, default=None,
         help=(
-            "miRNA name (e.g. hsa-miR-21-5p). When given, the mature sequence is "
-            "fetched from a local miRBase cache (refreshed every "
-            f"{MIRBASE_CACHE_MAX_AGE_DAYS} days) and included in the output."
+            "miRNA name (e.g. hsa-miR-21-5p). When given without --gse-url, "
+            "looks up and returns the mature sequence from a local miRBase cache "
+            f"(refreshed every {MIRBASE_CACHE_MAX_AGE_DAYS} days)."
         ),
     )
     args = parser.parse_args()
@@ -437,7 +432,7 @@ def main():
         print(json.dumps({"mirna_name": args.mirna_name, "mirna_sequence": seq}))
         return 0
 
-    # --- GEO metadata fetch (+ optional sequence lookup) ---
+    # --- GEO metadata fetch ---
     if not args.gse_url:
         parser.error("Provide --gse-url (to fetch GEO metadata) or --mirna-name (for sequence lookup).")
 
@@ -458,22 +453,7 @@ def main():
         print(json.dumps({"error": f"No series data found for {gse}. Check the accession."}))
         return 1
 
-    mirna_sequence = ""
-    if args.mirna_name:
-        try:
-            seq = lookup_mirna_sequence(args.mirna_name)
-            if seq is None:
-                print(
-                    f"[miRBase] WARNING: '{args.mirna_name}' not found in mature.fa; "
-                    "leaving mirna_sequence empty.",
-                    file=sys.stderr,
-                )
-            else:
-                mirna_sequence = seq
-        except RuntimeError as e:
-            print(f"[miRBase] WARNING: sequence lookup failed ({e}); leaving empty.", file=sys.stderr)
-
-    proposal = build_proposal(gse, soft_parsed, mirna_sequence=mirna_sequence)
+    proposal = build_proposal(gse, soft_parsed)
     print(json.dumps(proposal, indent=2, ensure_ascii=False))
     return 0
 
