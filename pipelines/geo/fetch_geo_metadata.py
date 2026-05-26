@@ -1,17 +1,18 @@
 """
-Fetch GEO series metadata and propose a row for pipelines/geo/input_experiments.tsv.
+Fetch GEO series metadata and append a new row to pipelines/geo/input_experiments.tsv.
 
 Uses the GEO SOFT text API to retrieve series and sample-level metadata without
-requiring SRA credentials. Outputs JSON with proposed field values and raw sample
-information for human/LLM review.
+requiring SRA credentials. Auto-fills what it can from GEO; prints a summary of
+what still needs manual editing before running geo_download.py.
 
 Usage:
     python pipelines/geo/fetch_geo_metadata.py --gse-url GSE93717
     python pipelines/geo/fetch_geo_metadata.py --gse-url https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE93717
+    python pipelines/geo/fetch_geo_metadata.py --mirna-name hsa-miR-21-5p
 """
 
 import argparse
-import json
+import csv
 import re
 import sys
 import time
@@ -19,6 +20,15 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import requests
+
+INPUT_TSV = Path(__file__).resolve().parent / "input_experiments.tsv"
+
+TSV_COLUMNS = [
+    "id", "mirna_name", "article_pubmed_id", "organism", "tested_cell_line",
+    "treatment", "tissue", "method", "experiment_type", "gse_url",
+    "raw_data_dir", "control_samples", "condition_samples",
+    "count_matrix_path", "gene_id_column",
+]
 
 
 GEO_SOFT_URL = (
@@ -305,89 +315,122 @@ def lookup_mirna_sequence(
 
 
 # ---------------------------------------------------------------------------
-# Main proposal builder
+# Row builder
 # ---------------------------------------------------------------------------
 
-def build_proposal(gse: str, soft_parsed: dict) -> dict:
+def build_row(gse: str, soft_parsed: dict) -> tuple[dict, dict, dict]:
+    """
+    Build a TSV row dict from parsed GEO SOFT data.
+
+    Returns (row, classified_samples, series_info).
+    """
     series = soft_parsed["series"]
     classified = classify_samples(soft_parsed["samples"])
 
-    # Series-level fields
-    title = _first(series.get("Series_title"))
-    summary = _first(series.get("Series_summary"))
     pubmed_url = extract_pubmed_url(series)
     gse_url = f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={gse}"
 
-    # Aggregate organism / cell line / tissue from samples (majority vote)
     organisms = [s["organism"] for s in classified.values() if s["organism"]]
     cell_lines = [s["cell_line"] for s in classified.values() if s["cell_line"]]
     tissues = [s["tissue"] for s in classified.values() if s["tissue"]]
 
     def majority(lst):
-        if not lst:
-            return "NA"
-        return max(set(lst), key=lst.count)
+        return max(set(lst), key=lst.count) if lst else "NA"
 
-    organism = majority(organisms)
-    cell_line = majority(cell_lines)
-    tissue = majority(tissues)
-
-    # Sample groupings
     control_gsms = [gsm for gsm, s in classified.items() if s["group"] == "control"]
     condition_gsms = [gsm for gsm, s in classified.items() if s["group"] == "condition"]
-    uncertain_gsms = [gsm for gsm, s in classified.items() if s["group"] == "uncertain"]
 
-    # Fields the user must fill in (not derivable from GEO alone)
-    needs_review = []
-    if not control_gsms:
-        needs_review.append("control_samples — no samples auto-classified as control")
-    if not condition_gsms:
-        needs_review.append("condition_samples — no samples auto-classified as condition")
-    if uncertain_gsms:
-        needs_review.append(f"sample grouping — {len(uncertain_gsms)} sample(s) unclassified: {uncertain_gsms}")
-
-    needs_review += [
-        "mirna_name — extract from series title/summary below",
-        "experiment_type — OE (overexpression) or KO (knockout/knockdown/inhibition)",
-        "id — derived as {gse}_{experiment_type}_{mirna_name_safe} once above are confirmed",
-    ]
-
-    return {
-        "proposed_row": {
-            "id": "",
-            "mirna_name": "",
-            "article_pubmed_id": pubmed_url,
-            "organism": organism,
-            "tested_cell_line": cell_line,
-            "treatment": "NA",
-            "tissue": tissue,
-            "method": "RNA-seq",
-            "experiment_type": "",
-            "gse_url": gse_url,
-            "raw_data_dir": "",
-            "control_samples": ",".join(control_gsms),
-            "condition_samples": ",".join(condition_gsms),
-            "count_matrix_path": "",
-            "gene_id_column": "",
-        },
-        "series_info": {
-            "gse": gse,
-            "title": title,
-            "summary": summary,
-        },
-        "sample_details": {
-            gsm: {
-                "title": s["title"],
-                "organism": s["organism"],
-                "cell_line": s["cell_line"],
-                "tissue": s["tissue"],
-                "group": s["group"],
-                "scores": {"control": s["ctrl_score"], "condition": s["cond_score"]},
-            }
-            for gsm, s in classified.items()
-        },
-        "needs_review": needs_review,
+    row = {
+        "id": "",
+        "mirna_name": "",
+        "article_pubmed_id": pubmed_url,
+        "organism": majority(organisms),
+        "tested_cell_line": majority(cell_lines),
+        "treatment": "NA",
+        "tissue": majority(tissues),
+        "method": "RNA-seq",
+        "experiment_type": "",
+        "gse_url": gse_url,
+        "raw_data_dir": "",
+        "control_samples": ",".join(control_gsms),
+        "condition_samples": ",".join(condition_gsms),
+        "count_matrix_path": "",
+        "gene_id_column": "",
     }
+
+    series_info = {
+        "title": _first(series.get("Series_title")),
+        "summary": _first(series.get("Series_summary")),
+    }
+
+    return row, classified, series_info
+
+
+# ---------------------------------------------------------------------------
+# TSV writer
+# ---------------------------------------------------------------------------
+
+def append_to_tsv(row: dict, tsv_path: Path) -> bool:
+    """
+    Append row to tsv_path. Returns False (and warns) if gse_url already exists.
+    Creates the file with a header if it does not exist yet.
+    """
+    if tsv_path.exists():
+        with open(tsv_path, newline="") as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            for existing in reader:
+                if existing.get("gse_url") == row["gse_url"]:
+                    print(
+                        f"WARNING: {row['gse_url']} already exists in {tsv_path.name}. "
+                        "Skipping. Remove the existing row first if you want to re-add it.",
+                        file=sys.stderr,
+                    )
+                    return False
+
+    write_header = not tsv_path.exists()
+    with open(tsv_path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=TSV_COLUMNS, delimiter="\t")
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Summary printer
+# ---------------------------------------------------------------------------
+
+def print_summary(gse: str, row: dict, classified: dict, series_info: dict, tsv_path: Path):
+    sep = "=" * 60
+    print(sep)
+    print(f"  {gse} — {series_info['title']}")
+    print(sep)
+    print(f"\nRow appended to: {tsv_path}\n")
+
+    print("Auto-filled fields:")
+    for field in ("article_pubmed_id", "organism", "tested_cell_line", "tissue",
+                  "gse_url", "control_samples", "condition_samples"):
+        print(f"  {field:<22} {row[field]}")
+
+    print("\nFields to fill in manually (open the TSV):")
+    print("  id                     → e.g. {gse}_{experiment_type}_{mirna_name_safe}")
+    print("  mirna_name             → e.g. hsa-miR-21-5p")
+    print("  experiment_type        → OE  (overexpression) or KO (knockout/knockdown/inhibition)")
+    print("  treatment              → short description of the experiment (currently: NA)")
+
+    uncertain = [(gsm, s) for gsm, s in classified.items() if s["group"] == "uncertain"]
+    if uncertain:
+        print(f"\nWARNING: {len(uncertain)} sample(s) could not be auto-classified:")
+        for gsm, s in uncertain:
+            print(f"  {gsm}  ctrl_score={s['ctrl_score']}  cond_score={s['cond_score']}  \"{s['title']}\"")
+        print("  → Please verify control_samples / condition_samples in the TSV.")
+
+    print("\nSample classification:")
+    for gsm, s in classified.items():
+        flag = "  ← uncertain" if s["group"] == "uncertain" else ""
+        print(f"  {gsm}  {s['group']:<10}  (ctrl={s['ctrl_score']}, cond={s['cond_score']})  \"{s['title']}\"{flag}")
+
+    print(f"\nSeries summary:\n  {series_info['summary']}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -397,8 +440,7 @@ def build_proposal(gse: str, soft_parsed: dict) -> dict:
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Fetch GEO series metadata and propose a row for "
-            "pipelines/geo/input_experiments.tsv. "
+            "Fetch GEO series metadata and append a row to input_experiments.tsv. "
             "Pass --mirna-name alone to look up a miRNA sequence from miRBase."
         )
     )
@@ -407,10 +449,14 @@ def main():
         help="GEO series URL or accession (e.g. GSE93717 or full GEO URL)",
     )
     parser.add_argument(
+        "--tsv", default=str(INPUT_TSV),
+        help=f"Path to input_experiments.tsv (default: {INPUT_TSV})",
+    )
+    parser.add_argument(
         "--mirna-name", required=False, default=None,
         help=(
             "miRNA name (e.g. hsa-miR-21-5p). When given without --gse-url, "
-            "looks up and returns the mature sequence from a local miRBase cache "
+            "looks up and prints the mature sequence from a local miRBase cache "
             f"(refreshed every {MIRBASE_CACHE_MAX_AGE_DAYS} days)."
         ),
     )
@@ -421,15 +467,17 @@ def main():
         try:
             seq = lookup_mirna_sequence(args.mirna_name)
         except RuntimeError as e:
-            print(json.dumps({"error": str(e)}))
+            print(f"ERROR: {e}", file=sys.stderr)
             return 1
         if seq is None:
-            print(json.dumps({
-                "error": f"'{args.mirna_name}' not found in miRBase mature.fa. "
-                         "Check the name or update the cache."
-            }))
+            print(
+                f"ERROR: '{args.mirna_name}' not found in miRBase mature.fa. "
+                "Check the name or update the cache.",
+                file=sys.stderr,
+            )
             return 1
-        print(json.dumps({"mirna_name": args.mirna_name, "mirna_sequence": seq}))
+        print(f"miRNA:    {args.mirna_name}")
+        print(f"Sequence: {seq}")
         return 0
 
     # --- GEO metadata fetch ---
@@ -439,22 +487,26 @@ def main():
     try:
         gse = extract_gse_accession(args.gse_url)
     except ValueError as e:
-        print(json.dumps({"error": str(e)}))
+        print(f"ERROR: {e}", file=sys.stderr)
         return 1
 
     try:
         soft_text = fetch_soft(gse)
     except RuntimeError as e:
-        print(json.dumps({"error": str(e)}))
+        print(f"ERROR: {e}", file=sys.stderr)
         return 1
 
     soft_parsed = parse_soft(soft_text)
     if not soft_parsed["series"]:
-        print(json.dumps({"error": f"No series data found for {gse}. Check the accession."}))
+        print(f"ERROR: No series data found for {gse}. Check the accession.", file=sys.stderr)
         return 1
 
-    proposal = build_proposal(gse, soft_parsed)
-    print(json.dumps(proposal, indent=2, ensure_ascii=False))
+    row, classified, series_info = build_row(gse, soft_parsed)
+
+    tsv_path = Path(args.tsv)
+    appended = append_to_tsv(row, tsv_path)
+    if appended:
+        print_summary(gse, row, classified, series_info, tsv_path)
     return 0
 
 
