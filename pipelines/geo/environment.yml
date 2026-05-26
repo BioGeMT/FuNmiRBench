@@ -11,5 +11,3 @@ dependencies:
   - requests
   - sra-tools
   - pigz
-  - pip:
-    - google-generativeai

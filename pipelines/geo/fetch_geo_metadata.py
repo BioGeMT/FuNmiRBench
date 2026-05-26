@@ -348,18 +348,7 @@ def call_gemini(
     Returns a dict with some/all of: mirna_name, experiment_type, treatment,
     tested_cell_line, tissue, organism. Values are strings or None.
     """
-    try:
-        import google.generativeai as genai  # noqa: PLC0415
-    except ImportError:
-        print(
-            "ERROR: google-generativeai is not installed. "
-            "Run: pip install google-generativeai",
-            file=sys.stderr,
-        )
-        return {}
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    # Uses the Gemini REST API directly — no extra package required.
 
     sample_list = "\n".join(f"  - {t}" for t in sample_titles[:20])
 
@@ -391,9 +380,16 @@ Sample titles:
 
 Return ONLY valid JSON — no markdown code blocks, no explanations."""
 
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.0-flash:generateContent?key={api_key}"
+    )
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
+        resp = requests.post(url, json=payload, timeout=60)
+        resp.raise_for_status()
+        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
         # Strip markdown code fences if the model added them
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
