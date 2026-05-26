@@ -41,8 +41,28 @@ so you can fill in the TSV incrementally.
 
 ### GEO mode — download FASTQ files from GEO/SRA
 
-Leave `raw_data_dir` and `count_matrix_path` empty, and provide **GSM accession IDs**
-as sample identifiers:
+Leave `raw_data_dir` and `count_matrix_path` empty. The pipeline auto-detects the
+accession type from the prefix and routes accordingly.
+
+**Option A — SRR accessions (recommended)**
+
+Provide SRR run accessions directly. The pipeline fetches the library layout (single/paired)
+from NCBI and downloads immediately — no GSM resolution step needed.
+
+```
+control_samples:    SRR8816234,SRR8816235,SRR8816236
+condition_samples:  SRR8816237,SRR8816238,SRR8816239
+raw_data_dir:       (empty)
+count_matrix_path:  (empty)
+```
+
+ERR and DRR accessions are also accepted.
+
+**Option B — GSM accessions**
+
+Provide GSM sample accessions. The pipeline resolves each GSM to its SRR run(s) via
+the NCBI API before downloading. Useful when you want to copy accessions directly from
+the GEO page, or when one sample has multiple runs that you prefer not to list individually.
 
 ```
 control_samples:    GSM6437108,GSM6437109,GSM6437110
@@ -51,8 +71,8 @@ raw_data_dir:       (empty)
 count_matrix_path:  (empty)
 ```
 
-The script resolves each GSM to its SRR run(s) via the NCBI API, then downloads
-FASTQ files. NCBI (`prefetch` + `fasterq-dump`) is tried first; ENA is used as fallback.
+Both options can be mixed within the same experiment. In all cases, NCBI
+(`prefetch` + `fasterq-dump`) is tried first; ENA is used as fallback.
 
 ### Local reads mode — use pre-existing FASTQ files
 

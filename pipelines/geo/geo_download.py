@@ -127,6 +127,40 @@ class SRRInfo:
 # GEO/SRA resolution
 # ---------------------------------------------------------------------------
 
+def _is_srr_accession(sample_id):
+    """SRR, ERR, and DRR are all valid SRA run accession prefixes."""
+    return sample_id.upper().startswith(("SRR", "ERR", "DRR"))
+
+
+def resolve_srr_info(srr):
+    """Fetch layout info for a known SRR/ERR/DRR accession directly."""
+    logger.info(f"Fetching info for {srr}...")
+
+    handle = Entrez.esearch(db="sra", term=srr)
+    record = Entrez.read(handle)
+    handle.close()
+
+    sra_ids = record.get("IdList", [])
+    if not sra_ids:
+        raise ValueError(f"No SRA record found for {srr}")
+
+    handle = Entrez.efetch(db="sra", id=sra_ids[0], rettype="runinfo", retmode="text")
+    csv_text = handle.read()
+    handle.close()
+
+    if isinstance(csv_text, bytes):
+        csv_text = csv_text.decode("utf-8")
+
+    reader = csv.DictReader(StringIO(csv_text))
+    for row in reader:
+        if row.get("Run", "") == srr:
+            layout = row.get("LibraryLayout", "SINGLE").upper()
+            logger.info(f"  {srr} -> {layout}")
+            return SRRInfo(srr=srr, gsm=srr, layout=layout)
+
+    raise ValueError(f"Run {srr} not found in SRA runinfo")
+
+
 def resolve_gsm_to_srr(gsm_id):
     logger.info(f"Resolving {gsm_id} to SRR...")
 
@@ -175,28 +209,30 @@ def resolve_gsm_to_srr(gsm_id):
     return results
 
 
-def resolve_gse_samples(gsm_ids, max_retries=3, retry_delay=2.0):
+def resolve_gse_samples(sample_ids, max_retries=3, retry_delay=2.0):
     all_results = []
-    for gsm_id in gsm_ids:
+    for sample_id in sample_ids:
         for attempt in range(1, max_retries + 1):
             try:
-                srr_infos = resolve_gsm_to_srr(gsm_id)
-                all_results.extend(srr_infos)
+                if _is_srr_accession(sample_id):
+                    all_results.append(resolve_srr_info(sample_id))
+                else:
+                    all_results.extend(resolve_gsm_to_srr(sample_id))
                 break
             except ValueError as e:
-                logger.warning(f"Failed to resolve {gsm_id}: {e}")
+                logger.warning(f"Failed to resolve {sample_id}: {e}")
                 break
             except Exception as e:
                 if attempt < max_retries:
                     logger.warning(
                         "Transient error resolving %s (attempt %d/%d): %s. Retrying in %.1fs.",
-                        gsm_id, attempt, max_retries, e, retry_delay,
+                        sample_id, attempt, max_retries, e, retry_delay,
                     )
                     time.sleep(retry_delay)
                 else:
                     logger.error(
                         "Failed to resolve %s after %d attempts due to network/API error: %s",
-                        gsm_id, max_retries, e,
+                        sample_id, max_retries, e,
                     )
     return all_results
 
