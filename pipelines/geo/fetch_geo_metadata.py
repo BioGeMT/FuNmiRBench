@@ -168,6 +168,17 @@ def extract_pubmed_url(series: dict) -> str:
     return "NA"
 
 
+_CELL_LINE_SUFFIXES = (" cells", " cell line", " cell")
+
+
+def _clean_cell_line(name: str) -> str:
+    """Strip generic trailing words from cell line names (e.g. 'HaCaT cells' → 'HaCaT')."""
+    for suffix in _CELL_LINE_SUFFIXES:
+        if name.lower().endswith(suffix):
+            return name[:-len(suffix)].strip()
+    return name
+
+
 def extract_sample_info(sample_data: dict) -> dict:
     """Flatten a sample's SOFT fields into a clean dict."""
     chars = {}
@@ -177,11 +188,12 @@ def extract_sample_info(sample_data: dict) -> dict:
             chars[k.strip().lower()] = v.strip()
 
     # Cell line: try characteristics first, then source
-    cell_line = (
+    raw_cell_line = (
         chars.get("cell line")
         or chars.get("cell type")
         or _first(sample_data.get("Sample_source_name_ch1"))
     )
+    cell_line = _clean_cell_line(raw_cell_line) if raw_cell_line else ""
     tissue = chars.get("tissue") or chars.get("tissue type") or ""
     organism = _first(sample_data.get("Sample_organism_ch1"))
     title = _first(sample_data.get("Sample_title"))
@@ -335,21 +347,21 @@ def build_row(gse: str, soft_parsed: dict) -> tuple[dict, dict, dict]:
     tissues = [s["tissue"] for s in classified.values() if s["tissue"]]
 
     def majority(lst):
-        return max(set(lst), key=lst.count) if lst else "NA"
+        return max(set(lst), key=lst.count) if lst else "TO BE FILLED"
 
     control_gsms = [gsm for gsm, s in classified.items() if s["group"] == "control"]
     condition_gsms = [gsm for gsm, s in classified.items() if s["group"] == "condition"]
 
     row = {
-        "id": "",
-        "mirna_name": "",
+        "id": "TO BE FILLED",
+        "mirna_name": "TO BE FILLED",
         "article_pubmed_id": pubmed_url,
         "organism": majority(organisms),
         "tested_cell_line": majority(cell_lines),
-        "treatment": "NA",
+        "treatment": "TO BE FILLED",
         "tissue": majority(tissues),
         "method": "RNA-seq",
-        "experiment_type": "",
+        "experiment_type": "TO BE FILLED",
         "gse_url": gse_url,
         "raw_data_dir": "",
         "control_samples": ",".join(control_gsms),
@@ -402,21 +414,35 @@ def append_to_tsv(row: dict, tsv_path: Path) -> bool:
 
 def print_summary(gse: str, row: dict, classified: dict, series_info: dict, tsv_path: Path):
     sep = "=" * 60
+    warn = "!" * 60
+    print(warn)
+    print("  IMPORTANT — PLEASE READ BEFORE PROCEEDING")
+    print()
+    print("  This script uses rule-based heuristics (keyword matching")
+    print("  and majority voting), NOT an LLM or AI model.")
+    print("  All auto-filled fields may contain errors.")
+    print("  Go through each field carefully and verify manually")
+    print("  before running geo_download.py.")
+    print(warn)
+    print()
     print(sep)
     print(f"  {gse} — {series_info['title']}")
     print(sep)
     print(f"\nRow appended to: {tsv_path}\n")
 
-    print("Auto-filled fields:")
+    print("Auto-filled fields (verify each one):")
     for field in ("article_pubmed_id", "organism", "tested_cell_line", "tissue",
                   "gse_url", "control_samples", "condition_samples"):
         print(f"  {field:<22} {row[field]}")
 
     print("\nFields to fill in manually (open the TSV):")
     print("  id                     → e.g. {gse}_{experiment_type}_{mirna_name_safe}")
-    print("  mirna_name             → e.g. hsa-miR-21-5p")
-    print("  experiment_type        → OE  (overexpression) or KO (knockout/knockdown/inhibition)")
-    print("  treatment              → short description of the experiment (currently: NA)")
+    print("  mirna_name             → exact miRBase mature name, case-sensitive")
+    print("                           (e.g. hsa-miR-21-3p, NOT hsa-mir-21-3p or miR-21-3p)")
+    print("                           wrong name or wrong arm (-3p/-5p) will break")
+    print("                           downstream analysis — verify at https://mirbase.org")
+    print("  experiment_type        → OE (overexpression) or KO (knockout/knockdown/inhibition)")
+    print("  treatment              → short description of the experiment")
 
     uncertain = [(gsm, s) for gsm, s in classified.items() if s["group"] == "uncertain"]
     if uncertain:
