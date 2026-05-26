@@ -99,6 +99,9 @@ fill in the relevant columns depending on the mode.
 Rows with empty `control_samples` or `condition_samples` are skipped automatically,
 so you can fill in the TSV incrementally.
 
+> The file `pipelines/geo/input_experiments.tsv` already contains a real filled-in row
+> as a reference. The examples below are illustrative — **replace them with your own data**.
+
 ### GEO mode — download FASTQ files from GEO/SRA
 
 Leave `raw_data_dir` and `count_matrix_path` empty. The pipeline auto-detects the
@@ -110,12 +113,22 @@ Provide SRR run accessions directly. The pipeline fetches the library layout (si
 from NCBI and downloads immediately — no GSM resolution step needed.
 
 ```
-control_samples:    SRR8816234,SRR8816235,SRR8816236
-condition_samples:  SRR8816237,SRR8816238,SRR8816239
-raw_data_dir:       (empty)
-count_matrix_path:  (empty)
+id:                  GSE129076_OE_miR_21_5p
+mirna_name:          hsa-miR-21-5p
+article_pubmed_id:   https://pubmed.ncbi.nlm.nih.gov/34685526
+organism:            Homo sapiens
+tested_cell_line:    A549
+treatment:           Overexpression of miR-21-5p
+tissue:              Lung
+method:              RNA-seq
+experiment_type:     OE
+gse_url:             https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE129076
+raw_data_dir:        (empty)
+control_samples:     SRR8816234,SRR8816235,SRR8816236
+condition_samples:   SRR8816237,SRR8816238,SRR8816239
+count_matrix_path:   (empty)
+gene_id_column:      (empty)
 ```
-
 
 **Option B — GSM accessions**
 
@@ -124,10 +137,21 @@ the NCBI API before downloading. Useful when you want to copy accessions directl
 the GEO page, or when one sample has multiple runs that you prefer not to list individually.
 
 ```
-control_samples:    GSM6437108,GSM6437109,GSM6437110
-condition_samples:  GSM6437113,GSM6437114,GSM6437115
-raw_data_dir:       (empty)
-count_matrix_path:  (empty)
+id:                  GSE129076_OE_miR_21_5p
+mirna_name:          hsa-miR-21-5p
+article_pubmed_id:   https://pubmed.ncbi.nlm.nih.gov/34685526
+organism:            Homo sapiens
+tested_cell_line:    A549
+treatment:           Overexpression of miR-21-5p
+tissue:              Lung
+method:              RNA-seq
+experiment_type:     OE
+gse_url:             https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE129076
+raw_data_dir:        (empty)
+control_samples:     GSM6437108,GSM6437109,GSM6437110
+condition_samples:   GSM6437113,GSM6437114,GSM6437115
+count_matrix_path:   (empty)
+gene_id_column:      (empty)
 ```
 
 Both options can be mixed within the same experiment. In all cases, NCBI
@@ -136,13 +160,24 @@ Both options can be mixed within the same experiment. In all cases, NCBI
 ### Local reads mode — use pre-existing FASTQ files
 
 Set `raw_data_dir` to the directory containing your FASTQ files and provide
-**sample base-names** (without extension) as identifiers:
+**sample base-names** (without extension) as identifiers.
 
 ```
-control_samples:    ctrl_rep1,ctrl_rep2,ctrl_rep3
-condition_samples:  treated_rep1,treated_rep2,treated_rep3
-raw_data_dir:       /path/to/your/fastq/files
-count_matrix_path:  (empty)
+id:                  GSE999999_KO_miR_155_5p
+mirna_name:          hsa-miR-155-5p
+article_pubmed_id:   NA
+organism:            Homo sapiens
+tested_cell_line:    HaCaT
+treatment:           Knockdown of miR-155-5p
+tissue:              Skin
+method:              RNA-seq
+experiment_type:     KO
+gse_url:             https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE999999
+raw_data_dir:        /path/to/your/fastq/files
+control_samples:     ctrl_rep1,ctrl_rep2,ctrl_rep3
+condition_samples:   treated_rep1,treated_rep2,treated_rep3
+count_matrix_path:   (empty)
+gene_id_column:      (empty)
 ```
 
 The script looks for:
@@ -152,14 +187,24 @@ The script looks for:
 ### Count matrix mode — use a pre-existing count matrix
 
 Set `count_matrix_path` to the matrix file and provide the **column names** from
-the matrix as sample identifiers:
+the matrix as sample identifiers.
 
 ```
-control_samples:    HSVSMC_IP_miRCTRL_1,HSVSMC_IP_miRCTRL_2,HSVSMC_IP_miRCTRL_3
-condition_samples:  HSVSMC_IP_MIR323_1,HSVSMC_IP_MIR323_2,HSVSMC_IP_MIR323_3
-count_matrix_path:  data/experiments/raw/GSE253003/GSE253003_Count.csv.gz
-gene_id_column:     ENSEMBL
-raw_data_dir:       (empty)
+id:                  GSE253003_OE_miR_323_3p
+mirna_name:          hsa-miR-323-3p
+article_pubmed_id:   https://pubmed.ncbi.nlm.nih.gov/12345678
+organism:            Homo sapiens
+tested_cell_line:    HSVSMC
+treatment:           Overexpression of miR-323-3p
+tissue:              Vascular
+method:              RNA-seq
+experiment_type:     OE
+gse_url:             https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE253003
+raw_data_dir:        (empty)
+control_samples:     HSVSMC_IP_miRCTRL_1,HSVSMC_IP_miRCTRL_2,HSVSMC_IP_miRCTRL_3
+condition_samples:   HSVSMC_IP_MIR323_1,HSVSMC_IP_MIR323_2,HSVSMC_IP_MIR323_3
+count_matrix_path:   data/experiments/raw/GSE253003/GSE253003_Count.csv.gz
+gene_id_column:      ENSEMBL
 ```
 
 The script only verifies that the matrix file exists and then generates the YAML config.
