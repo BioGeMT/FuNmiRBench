@@ -59,14 +59,6 @@ No billing required — the free tier is sufficient for this use case.
 ```bash
 conda activate funmirbench-geo
 
-# Set the key once per session (recommended)
-export GEMINI_API_KEY=AIzaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-
-python pipelines/geo/fetch_geo_metadata.py \
-    --gse-url GSE93717 \
-    --llm gemini
-
-# Or pass the key inline
 python pipelines/geo/fetch_geo_metadata.py \
     --gse-url GSE93717 \
     --llm gemini \
