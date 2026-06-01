@@ -2,6 +2,7 @@
 
 from funmirbench.evaluate_common import *
 from funmirbench.evaluate_plots import *
+from funmirbench.heatmap_plots import *
 from funmirbench.evaluate_reports import *
 
 
@@ -305,87 +306,85 @@ def evaluate_joined_dataframe(
                 abs_logfc_threshold=abs_logfc_threshold,
                 perturbation=perturbation,
             )
-        except ValueError as exc:
-            common_comparisons = []
-            _emit_log(logger, f"    Dataset: {dataset_id} | skipped common comparison plots: {exc}")
-        else:
             common_comparisons = [
                 {
                     "tool_id": tool_id,
-                    "gene_id": common_pr["gene_id"],
                     "y_true": common_pr["is_positive"],
                     "y_score": common_pr[score_col],
                     "coverage": coverage_by_tool.get(tool_id, float("nan")),
                 }
                 for score_col, tool_id in zip(plot_score_cols, plot_tool_ids)
             ]
-            _plot_predictor_pr_curves(
-                common_comparisons,
-                dataset_id=dataset_id,
-                out_path=comparison_pr_png,
-            )
-        _plot_predictor_pr_curves_own_scored(
-            plot_comparisons,
-            dataset_id=dataset_id,
-            out_path=comparison_pr_all_png,
-        )
-        if common_comparisons:
-            _plot_predictor_roc_curves(
-                common_comparisons,
-                dataset_id=dataset_id,
-                out_path=comparison_roc_png,
-            )
-        _plot_predictor_roc_curves_own_scored(
-            plot_comparisons,
-            dataset_id=dataset_id,
-            out_path=comparison_roc_all_png,
-        )
-        if common_comparisons:
-            _plot_predictor_gsea_curves(
-                common_comparisons,
-                dataset_id=dataset_id,
-                out_path=comparison_gsea_png,
-            )
-        if write_top_prediction_cdfs:
-            _plot_top_prediction_effect_cdfs(
-                joined,
-                score_cols=plot_score_cols,
-                tool_ids=plot_tool_ids,
-                dataset_id=dataset_id,
-                out_path=comparison_cdf_png,
-                perturbation=perturbation,
-            )
-        if common_comparisons:
+            _plot_predictor_pr_curves(common_comparisons, dataset_id=dataset_id, out_path=comparison_pr_png)
+            _plot_predictor_roc_curves(common_comparisons, dataset_id=dataset_id, out_path=comparison_roc_png)
+            _plot_predictor_gsea_curves(common_comparisons, dataset_id=dataset_id, out_path=comparison_gsea_png)
             dataset_plots["predictor_pr_curves"] = str(comparison_pr_png)
             dataset_plots["predictor_roc_curves"] = str(comparison_roc_png)
             dataset_plots["predictor_gsea_curves"] = str(comparison_gsea_png)
-        dataset_plots["predictor_pr_curves_all_scored"] = str(comparison_pr_all_png)
-        dataset_plots["predictor_roc_curves_all_scored"] = str(comparison_roc_all_png)
-        if write_top_prediction_cdfs:
-            dataset_plots["predictor_top100_effect_cdfs"] = str(comparison_cdf_png)
-        _emit_log(
-            logger,
-            f"    Dataset: {dataset_id} | wrote PR/ROC/GSEA comparison plots",
-        )
+        except ValueError as exc:
+            _emit_log(logger, f"    Dataset: {dataset_id} | skipped common comparison plots: {exc}")
 
-        corr_tsv = reports_dir / f"{dataset_id}__predictor_correlation.tsv"
-        corr_matrix = _build_predictor_correlation_matrix(
+        try:
+            own_scored_comparisons = []
+            for score_col, tool_id, comparison in zip(plot_score_cols, plot_tool_ids, plot_comparisons):
+                scored, _ = _prepare_scored_frame(
+                    joined,
+                    score_col=score_col,
+                    fdr_threshold=fdr_threshold,
+                    abs_logfc_threshold=abs_logfc_threshold,
+                    perturbation=perturbation,
+                )
+                own_scored_comparisons.append(
+                    {
+                        "tool_id": tool_id,
+                        "y_true": scored["is_positive"],
+                        "y_score": scored[score_col],
+                        "coverage": comparison["coverage"],
+                    }
+                )
+            _plot_predictor_pr_curves_own_scored(
+                own_scored_comparisons,
+                dataset_id=dataset_id,
+                out_path=comparison_pr_all_png,
+            )
+            _plot_predictor_roc_curves_own_scored(
+                own_scored_comparisons,
+                dataset_id=dataset_id,
+                out_path=comparison_roc_all_png,
+            )
+            dataset_plots["predictor_pr_curves_all_scored"] = str(comparison_pr_all_png)
+            dataset_plots["predictor_roc_curves_all_scored"] = str(comparison_roc_all_png)
+            if write_top_prediction_cdfs:
+                _plot_top_prediction_effect_cdfs(
+                    joined,
+                    score_cols=plot_score_cols,
+                    tool_ids=plot_tool_ids,
+                    dataset_id=dataset_id,
+                    out_path=comparison_cdf_png,
+                    top_n=TOP_PREDICTION_CDF_N,
+                    perturbation=perturbation,
+                )
+                dataset_plots["top_prediction_effect_cdfs"] = str(comparison_cdf_png)
+            _emit_log(logger, f"    Dataset: {dataset_id} | wrote PR/ROC/GSEA comparison plots")
+        except ValueError as exc:
+            _emit_log(logger, f"    Dataset: {dataset_id} | skipped own-scored comparison plots: {exc}")
+
+    if len(plot_local_rank_cols) >= 2:
+        corr_tsv = heatmap_plots_dir / "predictor_rank_correlation.tsv"
+        corr = _build_predictor_correlation_matrix(
             joined,
             rank_cols=plot_local_rank_cols,
             tool_ids=plot_tool_ids,
             top_fraction=predictor_top_fraction,
         )
-        corr_matrix.to_csv(corr_tsv, sep="\t")
+        corr.to_csv(corr_tsv, sep="\t")
         predictor_correlation_tsv = str(corr_tsv)
         _emit_log(logger, f"    Dataset: {dataset_id} | wrote predictor correlation table")
 
     _emit_log(logger, f"    Evaluation complete: {dataset_id}")
-
     return {
         "metric_rows": metric_rows,
         "skipped_tool_rows": skipped_tool_rows,
         "plots": dataset_plots,
         "predictor_correlation_tsv": predictor_correlation_tsv,
-        "tool_ids": tool_ids,
-        "score_cols": score_cols,
     }
