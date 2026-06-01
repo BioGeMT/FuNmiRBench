@@ -67,6 +67,16 @@ DEFAULT_GTF = str(
     / "Homo_sapiens.GRCh38.109.gtf.gz"
 )
 
+REQUIRED_COUNT_MATRIX_COLUMNS = [
+    "ENSEMBL",
+    "name",
+    "type",
+    "chr",
+    "start",
+    "end",
+    "str",
+]
+
 
 # ---------------------------------------------------------------------------
 # Utility helpers
@@ -651,8 +661,34 @@ def download_experiment(experiment, output_dir, threads):
 # Count matrix mode
 # ---------------------------------------------------------------------------
 
+def _read_count_matrix_header(path):
+    """Read only the count matrix header without loading the full matrix."""
+    try:
+        return list(pd.read_csv(path, nrows=0).columns)
+    except Exception as e:
+        raise ValueError(f"Could not read count matrix header from {path}: {e}") from e
+
+
+def _validate_count_matrix_header(path, experiment):
+    """Validate required annotation, gene ID, and sample columns."""
+    header = _read_count_matrix_header(path)
+    header_set = set(header)
+
+    required_columns = set(REQUIRED_COUNT_MATRIX_COLUMNS)
+    required_columns.add(experiment["gene_id_column"])
+    required_columns.update(experiment["control_samples"])
+    required_columns.update(experiment["condition_samples"])
+
+    missing = sorted(col for col in required_columns if col not in header_set)
+    if missing:
+        raise ValueError(
+            f"Count matrix for {experiment['id']} is missing required column(s): "
+            f"{missing}. Matrix path: {path}"
+        )
+
+
 def process_count_matrix_experiment(experiment):
-    """Count matrix mode: verify the matrix file exists."""
+    """Count matrix mode: verify the matrix file exists and has expected columns."""
     path = Path(experiment["count_matrix_path"])
     if not path.is_absolute():
         path = REPO_ROOT / path
@@ -660,7 +696,9 @@ def process_count_matrix_experiment(experiment):
         raise FileNotFoundError(
             f"count_matrix_path does not exist: {path}"
         )
-    logger.info("Count matrix found: %s", path)
+
+    _validate_count_matrix_header(path, experiment)
+    logger.info("Count matrix found and validated: %s", path)
 
 
 def generate_count_matrix_yaml_config(experiment, config_output_dir):
