@@ -41,7 +41,7 @@ predictors:
 
 evaluation:
   fdr_threshold: 0.05
-  abs_logfc_threshold: 1.0
+  effect_threshold: 1.0
   predictor_top_fraction: 0.10
   write_top_prediction_cdfs: true
   report_min_common_coverage: 0.10
