@@ -479,7 +479,11 @@ def write_publication_run_pdf_report(
                 ["Predictors evaluated", str(len(display_tool_ids))],
                 [
                     "GT positives",
-                    f"FDR < {float(fdr_threshold)}; effect > {float(abs_logfc_threshold)}; sign-aware (-logFC OE, +logFC KO/KD)",
+                    (
+                        f"effect > {float(abs_logfc_threshold)}; sign-aware (-logFC OE, +logFC KO/KD)"
+                        if fdr_threshold is None
+                        else f"FDR < {float(fdr_threshold)}; effect > {float(abs_logfc_threshold)}; sign-aware (-logFC OE, +logFC KO/KD)"
+                    ),
                 ],
                 ["Top fraction", f"{predictor_top_fraction:.0%} exact top-k per predictor"],
             ],
