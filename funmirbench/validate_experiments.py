@@ -115,12 +115,18 @@ def _expected_effect(logfc: pd.Series, perturbation: str) -> pd.Series:
     return logfc
 
 
+def _gt_rule_caption(fdr_threshold, effect_threshold: float) -> str:
+    if fdr_threshold is None:
+        return f"effect>{effect_threshold}"
+    return f"FDR<{fdr_threshold} and effect>{effect_threshold}"
+
+
 def _validate_de_table(
     *,
     dataset_id: str,
     perturbation: str,
     path: pathlib.Path,
-    fdr_threshold: float,
+    fdr_threshold: float | None,
     abs_logfc_threshold: float,
 ) -> list[ValidationIssue]:
     issues = []
@@ -206,50 +212,53 @@ def _validate_de_table(
             )
         )
 
-    fdr, valid_fdr = _finite_numeric(de["FDR"])
-    invalid_fdr_count = int((~valid_fdr).sum())
-    if invalid_fdr_count:
-        issues.append(
-            ValidationIssue(
-                dataset_id,
-                "numeric_fdr",
-                f"DE table has {invalid_fdr_count} non-numeric or non-finite FDR value(s).",
-                str(path),
+    if fdr_threshold is not None:
+        fdr, valid_fdr = _finite_numeric(de["FDR"])
+        invalid_fdr_count = int((~valid_fdr).sum())
+        if invalid_fdr_count:
+            issues.append(
+                ValidationIssue(
+                    dataset_id,
+                    "numeric_fdr",
+                    f"DE table has {invalid_fdr_count} non-numeric or non-finite FDR value(s).",
+                    str(path),
+                )
             )
-        )
 
-    valid_fdr_values = fdr[valid_fdr]
-    out_of_range_fdr_count = int(
-        ((valid_fdr_values <= 0.0) | (valid_fdr_values > 1.0)).sum()
-    )
-    if out_of_range_fdr_count:
-        issues.append(
-            ValidationIssue(
-                dataset_id,
-                "fdr_range",
-                f"DE table has {out_of_range_fdr_count} FDR value(s) outside (0, 1].",
-                str(path),
-            )
+        valid_fdr_values = fdr[valid_fdr]
+        out_of_range_fdr_count = int(
+            ((valid_fdr_values <= 0.0) | (valid_fdr_values > 1.0)).sum()
         )
+        if out_of_range_fdr_count:
+            issues.append(
+                ValidationIssue(
+                    dataset_id,
+                    "fdr_range",
+                    f"DE table has {out_of_range_fdr_count} FDR value(s) outside (0, 1].",
+                    str(path),
+                )
+            )
 
     if issues:
         return issues
 
+    usable = valid_logfc.copy()
     effect = _expected_effect(logfc.astype(float), perturbation)
-    positives = int((
-        (fdr.astype(float) < float(fdr_threshold))
-        & (effect > float(abs_logfc_threshold))
-    ).sum())
-    negatives = int(len(de) - positives)
+    if fdr_threshold is None:
+        positive_mask = usable & (effect > float(abs_logfc_threshold))
+    else:
+        fdr, valid_fdr = _finite_numeric(de["FDR"])
+        usable = usable & valid_fdr & (fdr > 0.0) & (fdr <= 1.0)
+        positive_mask = usable & (fdr < float(fdr_threshold)) & (effect > float(abs_logfc_threshold))
+    positives = int(positive_mask.sum())
+    negatives = int(usable.sum() - positives)
+    rule = _gt_rule_caption(fdr_threshold, abs_logfc_threshold)
     if positives == 0:
         issues.append(
             ValidationIssue(
                 dataset_id,
                 "ground_truth_classes",
-                (
-                    "DE table has no positive genes under "
-                    f"FDR<{fdr_threshold} and effect>{abs_logfc_threshold}."
-                ),
+                f"DE table has no positive genes under {rule}.",
                 str(path),
             )
         )
@@ -258,10 +267,7 @@ def _validate_de_table(
             ValidationIssue(
                 dataset_id,
                 "ground_truth_classes",
-                (
-                    "DE table has no negative genes under "
-                    f"FDR<{fdr_threshold} and effect>{abs_logfc_threshold}."
-                ),
+                f"DE table has no negative genes under {rule}.",
                 str(path),
             )
         )
@@ -338,7 +344,7 @@ def validate_experiments(
     *,
     root: pathlib.Path | None = None,
     filters: dict | None = None,
-    fdr_threshold: float = 0.05,
+    fdr_threshold: float | None = 0.05,
     abs_logfc_threshold: float = 1.0,
 ) -> ValidationSummary:
     experiments_tsv = pathlib.Path(experiments_tsv).expanduser().resolve()
@@ -457,6 +463,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--experiments-tsv", type=pathlib.Path, required=True)
     parser.add_argument("--root", type=pathlib.Path, default=None)
     parser.add_argument("--fdr-threshold", type=float, default=0.05)
+    parser.add_argument("--effect-threshold", type=float, default=None)
     parser.add_argument("--abs-logfc-threshold", type=float, default=1.0)
     parser.add_argument(
         "--log-level",
@@ -471,7 +478,11 @@ def main(argv: list[str] | None = None) -> int:
         args.experiments_tsv,
         root=args.root,
         fdr_threshold=args.fdr_threshold,
-        abs_logfc_threshold=args.abs_logfc_threshold,
+        abs_logfc_threshold=(
+            args.effect_threshold
+            if args.effect_threshold is not None
+            else args.abs_logfc_threshold
+        ),
     )
     log_validation_summary(summary)
     return 0 if summary.ok else 1
