@@ -293,7 +293,13 @@ def run_benchmark(config_path):
         (dataset_dir / "plots").mkdir(parents=True, exist_ok=True)
         (dataset_dir / "reports").mkdir(parents=True, exist_ok=True)
         logger.info(f"  Joining predictions for {meta.id}...")
-        joined, predictor_output_paths = build_joined(meta, tool_ids, predictions, root)
+        joined, predictor_output_paths = build_joined(
+            meta,
+            tool_ids,
+            predictions,
+            root,
+            logger=logger.info,
+        )
         joined_path = dataset_dir / "joined.tsv"
         joined.to_csv(joined_path, sep="\t", index=False)
         logger.info(f"  Wrote joined table: {joined_path}")
