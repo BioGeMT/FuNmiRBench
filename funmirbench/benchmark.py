@@ -63,6 +63,12 @@ def parse_args():
     return parser.parse_args()
 
 
+def _optional_float(value, default=None):
+    if value is None:
+        return default
+    return float(value)
+
+
 def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
     dataset_plots_dir = plots_dir / dataset_id
     if dataset_plots_dir.exists():
@@ -182,8 +188,11 @@ def run_benchmark(config_path):
     experiments_tsv = root / config["experiments_tsv"]
     experiment_filters = config.get("experiments")
     eval_cfg = config.get("evaluation", {})
-    fdr_threshold = float(eval_cfg.get("fdr_threshold", 0.05))
-    abs_logfc_threshold = float(eval_cfg.get("abs_logfc_threshold", 1.0))
+    raw_fdr_threshold = eval_cfg.get("fdr_threshold", 0.05)
+    fdr_threshold = None if raw_fdr_threshold is None else float(raw_fdr_threshold)
+    abs_logfc_threshold = float(
+        eval_cfg.get("effect_threshold", eval_cfg.get("abs_logfc_threshold", 1.0))
+    )
     predictor_top_fraction = float(eval_cfg.get("predictor_top_fraction", 0.10))
     write_top_prediction_cdfs = bool(eval_cfg.get("write_top_prediction_cdfs", True))
     report_min_common_coverage = float(
