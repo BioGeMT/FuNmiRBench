@@ -12,6 +12,11 @@ from matplotlib.colors import TwoSlopeNorm
 from funmirbench.evaluate_common import *
 
 
+__all__ = [
+    "_plot_algorithms_vs_genes_heatmap",
+    "_plot_top_positive_heatmap",
+]
+
 MAX_ALL_GENE_LABELS = 55
 MAX_TOP_POSITIVE_LABELS = 180
 
@@ -76,6 +81,8 @@ def _plot_algorithms_vs_genes_heatmap(
         abs_logfc_threshold=abs_logfc_threshold,
         perturbation=perturbation,
     )
+    if work.empty:
+        return
     work = _sort_heatmap_rows_by_logfc(work)
 
     rank_frame = pd.DataFrame(
