@@ -1,4 +1,4 @@
-"""Helpers for caching benchmark experiment DE tables from Zenodo."""
+"""Helpers for caching benchmark experiment DE tables from local files or Zenodo."""
 
 from __future__ import annotations
 
@@ -95,6 +95,22 @@ def resolve_cached_experiment_path(
     return (repo or repo_root()).resolve() / path
 
 
+def _verify_checksum_if_available(dest: pathlib.Path, filename: str, registry: dict[str, dict]) -> None:
+    meta = registry.get(filename)
+    if not meta:
+        return
+    checksum_value = str(meta.get("checksum", "") or "")
+    if not checksum_value:
+        return
+    algorithm, expected_digest = parse_checksum(checksum_value)
+    if algorithm != "md5":
+        raise ValueError(f"Unsupported checksum algorithm: {algorithm}")
+    if compute_md5(dest) != expected_digest:
+        raise ValueError(
+            f"Existing file {dest} failed checksum verification for {filename}."
+        )
+
+
 def ensure_zenodo_experiment_cached(
     de_table_path: str | pathlib.Path,
     *,
@@ -104,28 +120,33 @@ def ensure_zenodo_experiment_cached(
     timeout: int = 120,
     force: bool = False,
 ) -> pathlib.Path:
+    """Return a usable DE table path, using local files first and Zenodo as fallback.
+
+    If ``de_table_path`` already exists locally, it is accepted as-is. When the
+    local filename also exists in the Zenodo registry, its checksum is verified.
+    If the local file is missing, the filename must be present in the Zenodo
+    record and is downloaded to ``de_table_path``.
+    """
     dest = resolve_cached_experiment_path(de_table_path, repo=repo)
     filename = dest.name
+
+    if dest.exists() and not force:
+        if registry is not None:
+            _verify_checksum_if_available(dest, filename, registry)
+        return dest
+
     registry = registry or fetch_zenodo_file_registry(token=token, timeout=timeout)
+    if dest.exists() and not force:
+        _verify_checksum_if_available(dest, filename, registry)
+        return dest
 
     if filename not in registry:
         raise KeyError(
-            f"{filename!r} is not present in Zenodo record {ZENODO_RECORD}."
+            f"{filename!r} is not present in Zenodo record {ZENODO_RECORD} and no local file exists at {dest}."
         )
 
     meta = registry[filename]
     checksum_value = str(meta.get("checksum", "") or "")
-
-    if dest.exists() and not force:
-        if checksum_value:
-            algorithm, expected_digest = parse_checksum(checksum_value)
-            if algorithm != "md5":
-                raise ValueError(f"Unsupported checksum algorithm: {algorithm}")
-            if compute_md5(dest) != expected_digest:
-                raise ValueError(
-                    f"Existing file {dest} failed checksum verification for {filename}."
-                )
-        return dest
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     response = requests.get(str(meta["url"]), stream=True, timeout=timeout)
@@ -192,7 +213,7 @@ def sync_zenodo_experiments(
     force: bool = False,
 ) -> list[pathlib.Path]:
     repo = (repo or repo_root()).resolve()
-    registry = registry or fetch_zenodo_file_registry(token=token, timeout=timeout)
+    registry_cache = registry
 
     saved = []
     seen = set()
@@ -202,12 +223,21 @@ def sync_zenodo_experiments(
         if key in seen:
             continue
         seen.add(key)
+
+        dest = resolve_cached_experiment_path(rel_path, repo=repo)
+        if dest.exists() and not force:
+            print(f"local {rel_path.name}")
+            saved.append(dest)
+            continue
+
+        if registry_cache is None:
+            registry_cache = fetch_zenodo_file_registry(token=token, timeout=timeout)
         print(f"sync {rel_path.name}")
         saved.append(
             ensure_zenodo_experiment_cached(
                 rel_path,
                 repo=repo,
-                registry=registry,
+                registry=registry_cache,
                 timeout=timeout,
                 force=force,
             )
@@ -218,7 +248,7 @@ def sync_zenodo_experiments(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Sync all benchmark experiment DE tables from Zenodo."
+        description="Sync benchmark experiment DE tables from local files or Zenodo."
     )
     parser.add_argument("--repo", type=pathlib.Path, default=None)
     parser.add_argument("--token", default=None)
@@ -236,6 +266,6 @@ def main() -> None:
         force=args.force,
     )
     print(
-        "Synced "
-        f"{len(saved)} experiment tables into data/experiments/processed/{ZENODO_RECORD}/"
+        "Prepared "
+        f"{len(saved)} experiment tables under data/experiments/processed/"
     )
