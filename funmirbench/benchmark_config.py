@@ -18,15 +18,17 @@ THRESHOLD_SENSITIVE_DEMO_TOOLS = {"cheating", "perfect"}
 
 
 def build_run_dir_name(*, experiments, tool_ids, eval_cfg, tags=None, run_date=None):
-    """Return the date-based run directory name.
+    """Return the timestamp-based run directory name.
 
     Detailed dataset/predictor/threshold metadata is recorded in README.md and
-    summary.json. Keeping the directory name date-only makes result paths short
+    summary.json. Keeping the directory name compact makes result paths short
     and readable; collisions are handled by the caller with ``__rN`` suffixes.
     """
     del experiments, tool_ids, eval_cfg, tags
-    run_date = run_date or dt.date.today()
-    return run_date.strftime("%Y%m%d")
+    run_timestamp = run_date or dt.datetime.now()
+    if isinstance(run_timestamp, dt.datetime):
+        return run_timestamp.strftime("%Y%m%d_%H%M%S")
+    return run_timestamp.strftime("%Y%m%d")
 
 
 def filter_df(df, filters):
