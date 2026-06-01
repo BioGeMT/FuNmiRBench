@@ -212,33 +212,6 @@ def _validate_de_table(
             )
         )
 
-    if fdr_threshold is not None:
-        fdr, valid_fdr = _finite_numeric(de["FDR"])
-        invalid_fdr_count = int((~valid_fdr).sum())
-        if invalid_fdr_count:
-            issues.append(
-                ValidationIssue(
-                    dataset_id,
-                    "numeric_fdr",
-                    f"DE table has {invalid_fdr_count} non-numeric or non-finite FDR value(s).",
-                    str(path),
-                )
-            )
-
-        valid_fdr_values = fdr[valid_fdr]
-        out_of_range_fdr_count = int(
-            ((valid_fdr_values <= 0.0) | (valid_fdr_values > 1.0)).sum()
-        )
-        if out_of_range_fdr_count:
-            issues.append(
-                ValidationIssue(
-                    dataset_id,
-                    "fdr_range",
-                    f"DE table has {out_of_range_fdr_count} FDR value(s) outside (0, 1].",
-                    str(path),
-                )
-            )
-
     if issues:
         return issues
 
@@ -258,7 +231,7 @@ def _validate_de_table(
             ValidationIssue(
                 dataset_id,
                 "ground_truth_classes",
-                f"DE table has no positive genes under {rule}.",
+                f"DE table has no positive genes under {rule} after dropping unusable FDR/logFC rows.",
                 str(path),
             )
         )
@@ -267,7 +240,7 @@ def _validate_de_table(
             ValidationIssue(
                 dataset_id,
                 "ground_truth_classes",
-                f"DE table has no negative genes under {rule}.",
+                f"DE table has no negative genes under {rule} after dropping unusable FDR/logFC rows.",
                 str(path),
             )
         )
