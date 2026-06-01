@@ -40,7 +40,7 @@ predictors:
   # predictor_output_path: [data/predictions/random/random_standardized.tsv]
 
 evaluation:
-  fdr_threshold: 0.05
+  fdr_threshold: null
   effect_threshold: 1.0
   predictor_top_fraction: 0.10
   write_top_prediction_cdfs: true
