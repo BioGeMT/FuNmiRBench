@@ -77,28 +77,40 @@ def _format_threshold_value(value):
 
 
 def describe_gt_rule(fdr_threshold, abs_logfc_threshold, *, markdown=False):
-    fdr_text = f"FDR < {_format_threshold_value(fdr_threshold)}"
     effect_text = f"perturbation-aware effect > {_format_threshold_value(abs_logfc_threshold)}"
+    suffix = "(`-logFC` for OE, `+logFC` for KO/KD)" if markdown else "(-logFC for OE, +logFC for KO/KD)"
+    if fdr_threshold is None:
+        if markdown:
+            return f"{effect_text.replace('>', '`> ', 1) + '`'} {suffix}"
+        return f"{effect_text} {suffix}"
+    fdr_text = f"FDR < {_format_threshold_value(fdr_threshold)}"
     if markdown:
         return (
             f"`{fdr_text}` and {effect_text.replace('>', '`> ', 1) + '`'} "
-            "(`-logFC` for OE, `+logFC` for KO/KD)"
+            f"{suffix}"
         )
-    return f"{fdr_text} and {effect_text} (-logFC for OE, +logFC for KO/KD)"
+    return f"{fdr_text} and {effect_text} {suffix}"
 
 
 def _positive_mask(df, *, fdr_threshold, abs_logfc_threshold):
-    return (df["expected_effect"] > float(abs_logfc_threshold)) & (df["FDR"] < float(fdr_threshold))
+    effect_mask = df["expected_effect"] > float(abs_logfc_threshold)
+    if fdr_threshold is None:
+        return effect_mask
+    return effect_mask & (df["FDR"] < float(fdr_threshold))
 
 
 def _selection_caption(fdr_threshold):
-    del fdr_threshold
+    if fdr_threshold is None:
+        return "selected by expected effect"
     return "selected by FDR and expected effect"
 
 
 def _sort_heatmap_rows_by_logfc(work):
-    sort_cols = ["expected_effect", "FDR"]
-    ascending = [False, True]
+    sort_cols = ["expected_effect"]
+    ascending = [False]
+    if "FDR" in work.columns:
+        sort_cols.append("FDR")
+        ascending.append(True)
     if "gene_id" in work.columns:
         sort_cols.append("gene_id")
         ascending.append(True)
@@ -225,7 +237,7 @@ def _ecdf(values):
 
 
 def _safe_neglog10(series):
-    clipped = series.astype(float).clip(lower=1e-300)
+    clipped = pd.to_numeric(series, errors="coerce").clip(lower=1e-300)
     return -clipped.map(math.log10)
 
 
@@ -268,10 +280,14 @@ def _expected_effect_from_logfc(logfc, perturbations):
 
 def _annotate_ground_truth(df, *, perturbation=None):
     out = df.copy()
-    out["logFC"] = out["logFC"].astype(float)
-    out["FDR"] = out["FDR"].astype(float)
+    out["logFC"] = pd.to_numeric(out["logFC"], errors="coerce")
+    if "FDR" in out.columns:
+        out["FDR"] = pd.to_numeric(out["FDR"], errors="coerce")
+        out["neglog10_FDR"] = _safe_neglog10(out["FDR"])
+    else:
+        out["FDR"] = np.nan
+        out["neglog10_FDR"] = np.nan
     out["abs_logFC"] = out["logFC"].abs()
-    out["neglog10_FDR"] = _safe_neglog10(out["FDR"])
     out["resolved_perturbation"] = _resolve_perturbation_series(out, perturbation=perturbation)
     out["expected_effect"] = _expected_effect_from_logfc(
         out["logFC"],
@@ -361,8 +377,13 @@ def _prepare_scored_frame(
             keep_cols.append(optional)
 
     keep = joined[keep_cols].copy()
-    keep = keep[keep["logFC"].notna() & keep["FDR"].notna()].copy()
-    keep = keep[keep["FDR"].astype(float) > 0].copy()
+    keep = keep[keep["logFC"].notna()].copy()
+    keep["logFC"] = pd.to_numeric(keep["logFC"], errors="coerce")
+    keep = keep[keep["logFC"].notna()].copy()
+    if fdr_threshold is not None:
+        keep["FDR"] = pd.to_numeric(keep["FDR"], errors="coerce")
+        keep = keep[keep["FDR"].notna()].copy()
+        keep = keep[(keep["FDR"] > 0) & (keep["FDR"] <= 1)].copy()
     if keep.empty:
         raise ValueError(f"No usable rows remain for {score_col}.")
 
