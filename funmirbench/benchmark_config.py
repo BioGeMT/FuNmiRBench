@@ -97,10 +97,15 @@ def _predictor_metadata_sidecar_path(predictor_output_path):
 
 
 def _thresholds_match(left, right, *, atol=1e-12):
+    if left is None or right is None:
+        return left is None and right is None
     return abs(float(left) - float(right)) <= atol
 
 
 def validate_threshold_sensitive_predictors(predictions, *, root, fdr_threshold, abs_logfc_threshold):
+    if fdr_threshold is None:
+        return
+
     for tool_id, tool_meta in predictions.items():
         if tool_id not in THRESHOLD_SENSITIVE_DEMO_TOOLS:
             continue
