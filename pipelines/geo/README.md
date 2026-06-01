@@ -20,14 +20,14 @@ This pipeline is the first stage of the FuNmiRBench experiment processing workfl
 
 ---
 
-## Step 0 (Optional) — Auto-fill the TSV from GEO
+## Step 0 (Optional) - Auto-fill the TSV from GEO
 
 `fetch_geo_metadata.py` fetches metadata for a GEO series from the NCBI SOFT API
 and appends a pre-filled row to `input_experiments.tsv`. It can optionally use the
 **Gemini Flash LLM** to fill in fields that require biological interpretation
 (miRNA name, experiment type, treatment description).
 
-### Option A — Rule-based only
+### Option A - Rule-based only
 
 Uses keyword matching and majority voting across sample metadata. No API key needed.
 
@@ -37,7 +37,7 @@ conda activate funmirbench-geo
 python pipelines/geo/fetch_geo_metadata.py --gse-url GSE93717
 ```
 
-### Option B — With Gemini Flash LLM (recommended)
+### Option B - With Gemini Flash LLM (recommended)
 
 Adds LLM-assisted extraction of `mirna_name`, `experiment_type`, `treatment`,
 `tested_cell_line`, `tissue`, and `organism`. Also validates the suggested miRNA
@@ -53,31 +53,24 @@ No billing required — the free tier is sufficient for this use case.
 
 #### Run with the LLM
 
+Set the Gemini API key as an environment variable first. This is preferred over
+passing the key directly on the command line, because command-line arguments can
+be saved in shell history or exposed in process listings.
+
 ```bash
+export GEMINI_API_KEY="AIzaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
 conda activate funmirbench-geo
 
 python pipelines/geo/fetch_geo_metadata.py \
     --gse-url GSE93717 \
-    --llm gemini \
-    --gemini-key AIzaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    --llm gemini
 ```
 
-The script prints a summary of every field with a source tag (`[rule-based]`, `[LLM]`,
-`[LLM+rule]`) and a miRBase validity indicator next to the miRNA name.
-**Always verify the generated row** — auto-filled fields may contain errors.
+You can still pass `--gemini-key` explicitly if needed, but avoid doing so on
+shared systems.
 
-Key options:
-
-| Flag | Default | Description |
-|---|---|---|
-| `--gse-url` | *(required)* | GEO series URL or accession (e.g. `GSE93717`) |
-| `--llm` | *(off)* | LLM backend to use (`gemini`) |
-| `--gemini-key` | `$GEMINI_API_KEY` | Gemini API key |
-| `--tsv` | `input_experiments.tsv` | Path to the TSV file to append to |
-
----
-
-## Step 1 — Fill in the input TSV
+## Step 1 - Fill in the input TSV
 
 Edit `pipelines/geo/input_experiments.tsv`. For each experiment you want to process,
 fill in the relevant columns depending on the mode.
@@ -99,7 +92,7 @@ so you can fill in the TSV incrementally.
 > The file `pipelines/geo/input_experiments.tsv` already contains a real filled-in row
 > as a reference. The examples below are illustrative — **replace them with your own data**.
 
-### GEO mode — download FASTQ files from GEO/SRA
+### GEO mode - download FASTQ files from GEO/SRA
 
 Leave `raw_data_dir` and `count_matrix_path` empty. The pipeline auto-detects the
 accession type from the prefix and routes accordingly.
@@ -178,7 +171,7 @@ The script looks for:
 - Single-end: `{raw_data_dir}/{name}.fastq.gz`
 - Paired-end (auto-detected): `{raw_data_dir}/{name}_1.fastq.gz` + `{raw_data_dir}/{name}_2.fastq.gz`
 
-### Count matrix mode — use a pre-existing count matrix
+### Count matrix mode - use a pre-existing count matrix
 
 > The matrix must be a CSV with gene annotation columns (`ENSEMBL`, `name`, `type`, `chr`, `start`, `end`, `str`) followed by per-sample count columns. See [example_count_matrix.csv](example_count_matrix.csv) for the expected format.
 
@@ -208,7 +201,7 @@ No downloading takes place.
 
 ---
 
-## Step 2 — Set up the environment
+## Step 2 - Set up the environment
 
 ```bash
 conda env create -f pipelines/geo/environment.yml
@@ -217,7 +210,7 @@ conda activate funmirbench-geo
 
 ---
 
-## Step 3 — Run the pipeline
+## Step 3 - Run the pipeline
 
 Run from the **repo root**:
 
@@ -240,7 +233,7 @@ Key options:
 
 ---
 
-## Step 4 — Review the generated YAML config
+## Step 4 - Review the generated YAML config
 
 > **Before running the RNA-seq pipeline, always open and review the generated YAML.**
 
@@ -265,7 +258,7 @@ pipelines/experiments/configs/{dataset_id}.yaml
 
 ---
 
-## Step 5 — Run the RNA-seq pipeline
+## Step 5 - Run the RNA-seq pipeline
 
 Once the YAML config is reviewed and ready, refer to the [main project README](../../README.md)
 for instructions on running the RNA-seq pipeline (`funmirbench/experiments_pipeline.py`).
