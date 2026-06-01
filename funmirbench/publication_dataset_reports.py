@@ -40,6 +40,13 @@ def _short_path(path):
     return path.name or str(path)
 
 
+def _gt_rule_text(fdr_threshold, effect_threshold):
+    effect_text = f"effect > {float(effect_threshold)}"
+    if fdr_threshold is None:
+        return effect_text
+    return f"FDR < {float(fdr_threshold)}; {effect_text}"
+
+
 def _new_page():
     fig = plt.figure(figsize=REPORT_PAGE_SIZE)
     ax = fig.add_axes([0, 0, 1, 1])
@@ -293,6 +300,7 @@ def write_publication_predictor_reports(
     if not report_rows:
         report_rows = list(metric_rows)
     rows_to_write = [("evaluated", row) for row in report_rows] + [("skipped", row) for row in skipped_rows]
+    gt_rule = _gt_rule_text(fdr_threshold, abs_logfc_threshold)
     for row_status, row in rows_to_write:
         tool_id = str(row.get("tool_id"))
         label = str(tool_labels.get(tool_id, tool_id))
@@ -347,7 +355,7 @@ def write_publication_predictor_reports(
                 _wide_table(
                     ax,
                     [
-                        ["GT positives", f"FDR < {float(fdr_threshold)}; effect > {float(abs_logfc_threshold)}"],
+                        ["GT positives", gt_rule],
                         ["Effect sign", "-logFC for OE; +logFC for KO/KD"],
                         ["Metric scope", "Usable ground truth plus positive and background scored genes"],
                     ],
@@ -405,7 +413,7 @@ def write_publication_predictor_reports(
             _wide_table(
                 ax,
                 [
-                    ["GT positives", f"FDR < {float(fdr_threshold)}; effect > {float(abs_logfc_threshold)}"],
+                    ["GT positives", gt_rule],
                     ["Effect sign", "-logFC for OE; +logFC for KO/KD"],
                     ["Score direction", "Higher aligned scores mean stronger predicted targeting"],
                     ["Metric scope", "Usable ground truth and an available score"],
