@@ -6,14 +6,14 @@ from utils import (
     build_output_table,
     collapse_to_best_score_per_pair,
     configure_logging,
-    create_ensembl_to_gene_name_mapping,
+    create_ensembl_to_gene_name_mapping_from_gtf,
     create_mirna_name_to_mimat_mapping,
     download_file,
     load_miraw_predictions,
     map_ensembl_to_gene_name,
     map_mirna_names_to_mimat,
     repo_root,
-    resolve_path_relative_to_root, 
+    resolve_path_relative_to_root,
 )
 
 logger = logging.getLogger("miraw_pipeline")
@@ -39,31 +39,31 @@ def main() -> None:
     parser.add_argument(
         "--predictions-file",
         type=Path,
-        default=pipeline_dir / "data" / "best_per_pair.txt.gz",
-        help="Path to the local preprocessed miRAW predictions file (.txt or .txt.gz). Default: pipelines/standardized_predictors/miraw/data/best_per_pair.txt.gz",
+        default=pipeline_dir / "data" / "best_per_pair.tsv.gz",
+        help="Path to the local preprocessed miRAW predictions file (.tsv, .tsv.gz, .txt, or .txt.gz). Default: pipelines/standardized_predictors/miraw/data/best_per_pair.tsv.gz",
     )
 
     parser.add_argument(
         "--resources-dir",
         type=Path,
         default=pipeline_dir / "data" / "resources",
-        help="Directory where miRBase/BioMart resources will be cached",
+        help="Directory where miRBase/Ensembl resources will be cached",
     )
 
     parser.add_argument(
-    "--output",
-    type=Path,
-    default=root / "data" / "predictions" / "miraw" / "miraw_standardized.tsv",
-    help="Output TSV path",
+        "--output",
+        type=Path,
+        default=root / "data" / "predictions" / "miraw" / "miraw_standardized.tsv",
+        help="Output TSV path",
     )
 
     parser.add_argument(
-    "--log-file",
-    type=Path,
-    default=pipeline_dir / "miraw_pipeline.log",
-    help="Log file path",
+        "--log-file",
+        type=Path,
+        default=pipeline_dir / "miraw_pipeline.log",
+        help="Log file path",
     )
-    
+
     parser.add_argument(
         "--log-level",
         type=str,
@@ -84,7 +84,7 @@ def main() -> None:
     logger.info("Starting miRAW standardization pipeline")
     total_steps = 8
 
-    log_step(1, total_steps, "Resolve external miRBase/BioMart resources")
+    log_step(1, total_steps, "Resolve external miRBase/Ensembl resources")
     mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"
     mirbase_path = download_file(
         mirbase_url,
@@ -92,24 +92,15 @@ def main() -> None:
         resource_label="miRBase mature.fa resource",
     )
 
-    biomart_query = """<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE Query>
-<Query virtualSchemaName="default" formatter="TSV" header="1" uniqueRows="1" datasetConfigVersion="0.6">
-    <Dataset name="hsapiens_gene_ensembl" interface="default">
-        <Attribute name="ensembl_gene_id" />
-        <Attribute name="external_gene_name" />
-    </Dataset>
-</Query>"""
-    biomart_url = "https://Sep2025.archive.ensembl.org/biomart/martservice"
-    biomart_path = download_file(
-        biomart_url,
-        args.resources_dir / "biomart" / "hsapiens_ensembl_to_gene_name.tsv",
-        params={"query": biomart_query},
+    ensembl_gtf_url = "https://ftp.ensembl.org/pub/release-115/gtf/homo_sapiens/Homo_sapiens.GRCh38.115.gtf.gz"
+    ensembl_gtf_path = download_file(
+        ensembl_gtf_url,
+        args.resources_dir / "ensembl" / "Homo_sapiens.GRCh38.115.gtf.gz",
         timeout=360,
-        resource_label="BioMart Ensembl-to-gene-name mapping table",
+        resource_label="Ensembl v115 GTF resource",
     )
 
-    log_step(2, total_steps, "Load raw miRAW predictions")
+    log_step(2, total_steps, "Load preprocessed miRAW predictions")
     pred_df = load_miraw_predictions(args.predictions_file)
 
     log_step(3, total_steps, "Collapse to the best Prediction score per Ensembl_ID-miRNA pair")
@@ -123,12 +114,8 @@ def main() -> None:
     log_step(4, total_steps, "Create miRNA name-to-MIMAT mapping from miRBase mature.fa")
     mirna_name_to_mimat_map = create_mirna_name_to_mimat_mapping(mirbase_path)
 
-    log_step(5, total_steps, "Create Ensembl-to-gene-name mapping from BioMart")
-    ensembl_to_gene_name_map = create_ensembl_to_gene_name_mapping(
-        biomart_path,
-        biomart_ensembl_id_column="Gene stable ID",
-        biomart_gene_name_column="Gene name",
-    )
+    log_step(5, total_steps, "Create Ensembl gene ID-to-gene-name mapping from Ensembl v115 GTF")
+    ensembl_to_gene_name_map = create_ensembl_to_gene_name_mapping_from_gtf(ensembl_gtf_path)
 
     log_step(6, total_steps, "Map miRNA names to MIMAT IDs")
     pred_df = map_mirna_names_to_mimat(

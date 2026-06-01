@@ -1,9 +1,8 @@
 import gzip
 import ast
 import logging
-import re
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Optional
 
 import pandas as pd
 import requests
@@ -19,7 +18,7 @@ def resolve_path_relative_to_root(path: Path) -> Path:
         return path.resolve().relative_to(repo_root())
     except ValueError:
         return path
-    
+
 
 def configure_logging(log_path: Path, log_level: str) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,37 +103,55 @@ def create_mirna_name_to_mimat_mapping(mature_fa_path: Path) -> dict[str, str]:
     return mapping
 
 
-def create_ensembl_to_gene_name_mapping(
-    biomart_path: Path,
-    biomart_ensembl_id_column: str,
-    biomart_gene_name_column: str,
-) -> dict[str, str]:
-    biomart = pd.read_csv(biomart_path, sep="\t", dtype=str)
-    required_columns = {biomart_ensembl_id_column, biomart_gene_name_column}
-    missing = required_columns - set(biomart.columns)
-    if missing:
-        raise ValueError(f"{biomart_path} is missing columns: {missing}")
+def _strip_ensembl_version(value: object) -> str:
+    return str(value).strip().split(".", 1)[0]
 
-    biomart = biomart[[biomart_ensembl_id_column, biomart_gene_name_column]].copy()
-    biomart = biomart.dropna()
-    biomart[biomart_ensembl_id_column] = biomart[biomart_ensembl_id_column].astype(str).str.strip()
-    biomart[biomart_gene_name_column] = biomart[biomart_gene_name_column].astype(str).str.strip()
-    biomart = biomart[(biomart[biomart_ensembl_id_column] != "") & (biomart[biomart_gene_name_column] != "")]
-    biomart = biomart.drop_duplicates()
 
-    counts = biomart.groupby(biomart_ensembl_id_column)[biomart_gene_name_column].nunique()
-    conflicting_ensembl_ids = set(counts[counts > 1].index)
-    if conflicting_ensembl_ids:
-        before = len(biomart)
-        biomart = biomart.loc[~biomart[biomart_ensembl_id_column].isin(conflicting_ensembl_ids)].copy()
-        _log_row_count_change(
-            "Drop Ensembl IDs with conflicting BioMart gene-name mappings",
-            before,
-            len(biomart),
-        )
+def _parse_gtf_attributes(raw_attrs: str) -> dict[str, str]:
+    attrs = {}
+    for part in [item.strip() for item in raw_attrs.strip().split(";") if item.strip()]:
+        if " " not in part:
+            continue
+        key, value = part.split(" ", 1)
+        attrs[key] = value.strip().strip('"')
+    return attrs
 
-    mapping = dict(zip(biomart[biomart_ensembl_id_column], biomart[biomart_gene_name_column]))
-    logger.info("Loaded %d Ensembl->gene-name mappings", len(mapping))
+
+def create_ensembl_to_gene_name_mapping_from_gtf(gtf_gz_path: Path) -> dict[str, str]:
+    if not gtf_gz_path.exists():
+        raise FileNotFoundError(f"Missing Ensembl GTF file: {gtf_gz_path}")
+
+    mapping: dict[str, str] = {}
+    n_gene_rows = 0
+    n_conflicting = 0
+    with gzip.open(gtf_gz_path, "rt", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if not line or line.startswith("#"):
+                continue
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) < 9 or fields[2] != "gene":
+                continue
+            n_gene_rows += 1
+            attrs = _parse_gtf_attributes(fields[8])
+            gene_id = attrs.get("gene_id")
+            gene_name = attrs.get("gene_name")
+            if not gene_id or not gene_name:
+                continue
+            gene_id = _strip_ensembl_version(gene_id)
+            gene_name = str(gene_name).strip()
+            if not gene_id or not gene_name:
+                continue
+            if gene_id in mapping and mapping[gene_id] != gene_name:
+                n_conflicting += 1
+                continue
+            mapping[gene_id] = gene_name
+
+    logger.info(
+        "Loaded %d Ensembl v115 gene-name mappings from %d GTF gene rows; conflicts=%d",
+        len(mapping),
+        n_gene_rows,
+        n_conflicting,
+    )
     return mapping
 
 
@@ -196,7 +213,7 @@ def _parse_miraw_line(line: str, line_no: int, predictions_path: Path) -> Option
         )
         return None
 
-    ensembl_id = raw_gene.split("__", 1)[0].strip()
+    ensembl_id = _strip_ensembl_version(raw_gene.split("__", 1)[0])
 
     return {
         "Raw_Gene_Field": raw_gene,
@@ -206,9 +223,63 @@ def _parse_miraw_line(line: str, line_no: int, predictions_path: Path) -> Option
         "Score": score_raw,
     }
 
+
+def _load_preprocessed_miraw_tsv(predictions_path: Path) -> pd.DataFrame:
+    df = pd.read_csv(
+        predictions_path,
+        sep="\t",
+        dtype={
+            "Ensembl_ID": "string",
+            "Raw_Gene_Name": "string",
+            "miRNA_Name": "string",
+        },
+        keep_default_na=False,
+    )
+    required_columns = {"Ensembl_ID", "Raw_Gene_Name", "miRNA_Name", "Score"}
+    missing_columns = required_columns - set(df.columns)
+    if missing_columns:
+        raise ValueError(
+            f"{predictions_path}: missing required preprocessed miRAW columns: "
+            f"{sorted(missing_columns)}"
+        )
+
+    df = df.loc[:, ["Ensembl_ID", "Raw_Gene_Name", "miRNA_Name", "Score"]].copy()
+    logger.info("Loaded %d preprocessed miRAW TSV rows from %s", len(df), predictions_path)
+    return _clean_loaded_miraw_predictions(df, duplicate_subset=["Ensembl_ID", "miRNA_Name", "Score"])
+
+
+def _clean_loaded_miraw_predictions(
+    df: pd.DataFrame,
+    duplicate_subset: list[str],
+) -> pd.DataFrame:
+    before = len(df)
+    df = df.dropna(subset=["Ensembl_ID", "miRNA_Name", "Score"]).copy()
+    df["Ensembl_ID"] = df["Ensembl_ID"].map(_strip_ensembl_version)
+    df["Raw_Gene_Name"] = df["Raw_Gene_Name"].fillna("").astype(str).str.strip()
+    df["miRNA_Name"] = df["miRNA_Name"].astype(str).str.strip()
+    df["Score"] = pd.to_numeric(df["Score"], errors="coerce")
+    df = df.dropna(subset=["Score"])
+    df = df[(df["Ensembl_ID"] != "") & (df["miRNA_Name"] != "")].copy()
+    _log_row_count_change("Drop invalid parsed miRAW rows", before, len(df))
+
+    before = len(df)
+    df = df.drop_duplicates(subset=duplicate_subset).copy()
+    _log_row_count_change("Drop exact duplicate parsed miRAW rows", before, len(df))
+    return df
+
+
+def _is_preprocessed_miraw_tsv(predictions_path: Path) -> bool:
+    with _open_text_auto(predictions_path) as handle:
+        first_line = handle.readline().rstrip("\n")
+    return first_line.split("\t")[:4] == ["Ensembl_ID", "Raw_Gene_Name", "miRNA_Name", "Score"]
+
+
 def load_miraw_predictions(predictions_path: Path) -> pd.DataFrame:
     if not predictions_path.exists():
         raise FileNotFoundError(f"Missing prediction file: {predictions_path}")
+
+    if _is_preprocessed_miraw_tsv(predictions_path):
+        return _load_preprocessed_miraw_tsv(predictions_path)
 
     rows: list[dict[str, object]] = []
     bad_lines = 0
@@ -232,19 +303,10 @@ def load_miraw_predictions(predictions_path: Path) -> pd.DataFrame:
     if bad_lines:
         logger.warning("Skipped %d unparsable input lines", bad_lines)
 
-    before = len(df)
-    df = df.dropna(subset=["Ensembl_ID", "miRNA_Name", "Score"]).copy()
-    df["Ensembl_ID"] = df["Ensembl_ID"].astype(str).str.strip()
-    df["miRNA_Name"] = df["miRNA_Name"].astype(str).str.strip()
-    df["Score"] = pd.to_numeric(df["Score"], errors="coerce")
-    df = df.dropna(subset=["Score"])
-    df = df[(df["Ensembl_ID"] != "") & (df["miRNA_Name"] != "")].copy()
-    _log_row_count_change("Drop invalid parsed miRAW rows", before, len(df))
-
-    before = len(df)
-    df = df.drop_duplicates(subset=["Ensembl_ID", "miRNA_Name", "Score", "Raw_Gene_Field"]).copy()
-    _log_row_count_change("Drop exact duplicate parsed miRAW rows", before, len(df))
-    return df
+    return _clean_loaded_miraw_predictions(
+        df,
+        duplicate_subset=["Ensembl_ID", "miRNA_Name", "Score", "Raw_Gene_Field"],
+    )
 
 
 def collapse_to_best_score_per_pair(
@@ -294,16 +356,31 @@ def map_ensembl_to_gene_name(
     raw_gene_name_column: str,
 ) -> pd.DataFrame:
     out = df.copy()
-    out[gene_name_column] = out[ensembl_id_column].map(ensembl_to_gene_name_map)
+    out[gene_name_column] = out[ensembl_id_column].map(ensembl_to_gene_name_map).astype("string")
 
     # Fallback to the raw suffix when it looks like an actual gene symbol.
-    needs_fallback = out[gene_name_column].isna() & out[raw_gene_name_column].notna()
-    out.loc[needs_fallback, gene_name_column] = out.loc[needs_fallback, raw_gene_name_column]
+    raw_gene_name = out[raw_gene_name_column].fillna("").astype("string").str.strip()
+    needs_fallback = out[gene_name_column].isna() & (raw_gene_name != "")
+    out.loc[needs_fallback, gene_name_column] = out.loc[needs_fallback, raw_gene_name_column].astype("string")
+
+    missing_or_empty_after_fallback = out[gene_name_column].isna() | (
+        out[gene_name_column].astype("string").str.strip() == ""
+    )
+    missing_after_fallback = int(missing_or_empty_after_fallback.sum())
+    if missing_after_fallback:
+        logger.info(
+            "Gene names missing after Ensembl v115/raw suffix annotation: %d rows; "
+            "using Ensembl_ID as Gene_Name placeholder",
+            missing_after_fallback,
+        )
+        out.loc[missing_or_empty_after_fallback, gene_name_column] = out.loc[
+            missing_or_empty_after_fallback, ensembl_id_column
+        ].astype("string")
 
     before = len(out)
-    out = out.dropna(subset=[gene_name_column]).copy()
+    out = out[out[gene_name_column].astype(str).str.strip() != ""].copy()
     _log_row_count_change(
-        "Drop miRAW rows whose Ensembl IDs cannot be mapped to gene names",
+        "Drop miRAW rows whose gene names remain empty after annotation",
         before,
         len(out),
     )
@@ -320,7 +397,16 @@ def build_output_table(
     out = df.loc[:, final_columns].copy()
 
     before = len(out)
-    out = out.dropna(subset=final_columns).copy()
+    out = out.dropna(subset=[ensembl_id_column, mimat_column, score_column]).copy()
+    for column in final_columns:
+        if column != score_column:
+            out[column] = out[column].astype(str).str.strip()
+    out = out[
+        (out[ensembl_id_column] != "")
+        & (out[mimat_column] != "")
+        & (out["miRNA_Name"] != "")
+        & (out["Gene_Name"] != "")
+    ].copy()
     _log_row_count_change("Drop invalid final miRAW rows", before, len(out))
 
     before = len(out)
