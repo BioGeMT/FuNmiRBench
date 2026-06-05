@@ -1,13 +1,14 @@
-2026-05-25 16:16:55 | INFO | pipeline | Starting miRBind2 pipeline
-2026-05-25 16:16:55 | INFO | pipeline | Step 1/5: Load raw miRBind2 predictions
-2026-05-25 16:16:59 | INFO | utils | Drop invalid raw miRBind2 prediction rows: 340020 -> 340020 rows
-2026-05-25 16:16:59 | INFO | utils | Drop exact duplicate raw miRBind2 prediction rows: 340020 -> 340020 rows
-2026-05-25 16:16:59 | INFO | pipeline | Step 2/5: Create miRNA name-to-MIMAT mapping from miRBase mature.fa
-2026-05-25 16:16:59 | INFO | utils | Loaded 2656 human miRNA name-to-MIMAT mappings from miRBase 22.1
-2026-05-25 16:16:59 | INFO | pipeline | Step 3/5: Annotate raw miRNA names to MIMAT IDs
-2026-05-25 16:16:59 | INFO | utils | Drop prediction rows with miRNA names that cannot map to MIMAT IDs: 340020 -> 340020 rows
-2026-05-25 16:16:59 | INFO | pipeline | Step 4/5: Drop transcript and sequence columns, then build standardized schema
-2026-05-25 16:17:00 | INFO | utils | Drop standardized rows with invalid canonical values or scores: 340020 -> 340020 rows
-2026-05-25 16:17:00 | INFO | pipeline | Step 5/5: Write standardized output table
-2026-05-25 16:17:01 | INFO | pipeline | Output written to: data\predictions\mirbind2\mirbind2_standardized.tsv
-2026-05-25 16:17:01 | INFO | pipeline | Rows written: 340020
+2026-06-05 10:55:20 | INFO | pipeline | Starting miRBind2 pipeline
+2026-06-05 10:55:20 | INFO | pipeline | Step 1/5: Load raw miRBind2 predictions
+2026-06-05 10:55:25 | INFO | utils | Drop invalid raw miRBind2 prediction rows: 340020 -> 340020 rows
+2026-06-05 10:55:25 | INFO | utils | Drop exact duplicate raw miRBind2 prediction rows: 340020 -> 340020 rows
+2026-06-05 10:55:25 | INFO | pipeline | Step 2/5: Create miRNA name-to-MIMAT mapping from miRBase mature.fa
+2026-06-05 10:55:25 | INFO | utils | Loaded 2656 human miRNA name-to-MIMAT mappings from miRBase 22.1
+2026-06-05 10:55:25 | INFO | pipeline | Step 3/5: Annotate raw miRNA names to MIMAT IDs
+2026-06-05 10:55:25 | INFO | utils | Drop prediction rows with miRNA names that cannot map to MIMAT IDs: 340020 -> 340020 rows
+2026-06-05 10:55:25 | INFO | pipeline | Step 4/5: Drop transcript and sequence columns, then build standardized schema
+2026-06-05 10:55:26 | INFO | utils | Drop standardized rows with invalid canonical values or scores: 340020 -> 340020 rows
+2026-06-05 10:55:26 | INFO | utils | Drop duplicate standardized Ensembl_ID-miRNA_ID pairs after MIMAT mapping: 340020 -> 340020 rows
+2026-06-05 10:55:26 | INFO | pipeline | Step 5/5: Write standardized output table
+2026-06-05 10:55:28 | INFO | pipeline | Output written to: data/predictions/mirbind2/mirbind2_standardized.tsv
+2026-06-05 10:55:28 | INFO | pipeline | Rows written: 340020
