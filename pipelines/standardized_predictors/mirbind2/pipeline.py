@@ -78,7 +78,7 @@ def main() -> None:
     raw_mirna_name_column = "miRNA_Name"
     raw_score_column = "miRBind2_3UTR_prediction"
     raw_columns = [
-        "noTranscript_ID",
+        "Transcript_ID",
         raw_ensembl_column,
         raw_gene_name_column,
         raw_mirna_name_column,
