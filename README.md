@@ -279,7 +279,7 @@ predictors:
 
 evaluation:
   fdr_threshold: 0.05
-  abs_logfc_threshold: 1.0
+  effect_threshold: 1.0
   predictor_top_fraction: 0.10
 
 tags: [demo]

@@ -110,6 +110,68 @@ def _cross_dataset_markdown_table(summary_df):
     return lines
 
 
+def _combination_summary_report_df(summary_path, *, max_rows=12):
+    if not summary_path:
+        return pd.DataFrame()
+    summary_path = pathlib.Path(summary_path)
+    if not summary_path.is_file():
+        return pd.DataFrame()
+    summary_df = pd.read_csv(summary_path, sep="\t")
+    if summary_df.empty:
+        return pd.DataFrame()
+    work = summary_df.replace([float("inf"), float("-inf")], pd.NA).dropna(
+        subset=["combination_id", "combination_size", "positive_coverage_mean", "aps_mean"]
+    )
+    if work.empty:
+        return pd.DataFrame()
+    work = work.sort_values(
+        ["aps_mean", "positive_coverage_mean", "coverage_mean"],
+        ascending=[False, False, False],
+    ).head(max_rows)
+    display_df = work[
+        [
+            "combination_id",
+            "combination_size",
+            "coverage_mean",
+            "positive_coverage_mean",
+            "aps_mean",
+            "pr_auc_mean",
+            "auroc_mean",
+        ]
+    ].copy()
+    display_df.columns = [
+        "Predictor or combination",
+        "Size",
+        "Mean coverage",
+        "Mean positive coverage",
+        "Mean APS",
+        "Mean PR-AUC",
+        "Mean AUROC",
+    ]
+    display_df["Predictor or combination"] = display_df["Predictor or combination"].map(
+        lambda value: str(value).replace("+", " + ")
+    )
+    for column in ["Mean coverage", "Mean positive coverage"]:
+        display_df[column] = display_df[column].map(lambda value: _format_summary_value(value, percent=True))
+    for column in ["Mean APS", "Mean PR-AUC", "Mean AUROC"]:
+        display_df[column] = display_df[column].map(lambda value: _format_summary_value(value))
+    return display_df
+
+
+def _combination_markdown_table(display_df):
+    lines = [
+        "| Predictor or combination | Size | Mean coverage | Mean positive coverage | Mean APS | Mean PR-AUC | Mean AUROC |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in display_df.itertuples(index=False):
+        lines.append(
+            "| "
+            + " | ".join(str(value) for value in row)
+            + " |"
+        )
+    return lines
+
+
 def _best_non_oracle(summary_df, *, min_coverage=MIN_HEADLINE_COVERAGE):
     if summary_df is None or summary_df.empty:
         return None
@@ -246,6 +308,20 @@ def write_run_readme(
         lines.extend([f"- {line}" for line in _coverage_analysis_lines(summary_df)])
     else:
         lines.append("Cross-dataset summary table is unavailable for this run.")
+    combination_table = _combination_summary_report_df(
+        combined_outputs.get("tables", {}).get("predictor_combination_summary")
+    )
+    if not combination_table.empty:
+        lines.extend(
+            [
+                "",
+                "## Predictor-Combination Summary",
+                "Top single predictors and rank-mean combinations by mean APS. "
+                "The complete table is saved at `tables/combined/predictor_combination_summary.tsv`.",
+                "",
+            ]
+        )
+        lines.extend(_combination_markdown_table(combination_table))
     lines.extend(
         [
             "",
@@ -619,13 +695,60 @@ def write_run_pdf_report(
                 "positive_background_global_rank_distributions.png: whether positives rank above background on the predictor-global rank scale",
                 "positive_background_global_rank_counts.png: binned predictor-global counts for positives and background genes on a log scale",
                 "positive_recovery_fraction_by_prediction_count.png: GT-positive recovery fraction with endpoint labels",
-                "predictor_combination_expanded_frontier.png: coverage/APS frontier for predictors and combinations; annotations are limited to Pareto points",
+                "predictor_combination_expanded_frontier.png: essential coverage/APS candidates for the best singles and combinations",
             ],
             x=0.06,
             y=0.45,
             width=0.88,
         )
         save_page(fig)
+
+        combination_table = _combination_summary_report_df(
+            combined_outputs.get("tables", {}).get("predictor_combination_summary")
+        )
+        if not combination_table.empty:
+            fig, ax = new_page()
+            add_header(
+                ax,
+                "Predictor-Combination Summary",
+                "Top single predictors and rank-mean combinations by mean APS.",
+            )
+            table = ax.table(
+                cellText=combination_table.values.tolist(),
+                colLabels=combination_table.columns.tolist(),
+                cellLoc="center",
+                colLoc="center",
+                bbox=[0.04, 0.24, 0.92, 0.56],
+            )
+            table.auto_set_font_size(False)
+            table.set_fontsize(7.6)
+            table.scale(1.0, 1.22)
+            for (row, col), cell in table.get_celld().items():
+                if row == 0:
+                    cell.set_facecolor("#E9F1FB")
+                    cell.set_edgecolor("#D8E2EF")
+                    cell.set_text_props(weight="bold", color="#17324D")
+                else:
+                    cell.set_edgecolor("#E1E8F0")
+                    cell.set_facecolor("#FFFFFF" if row % 2 else "#F9FBFD")
+                    if col == 0:
+                        cell.set_text_props(ha="left")
+            footer = (
+                "This page prints the leading rows from tables/combined/predictor_combination_summary.tsv. "
+                "The TSV contains the complete set of evaluated combinations."
+            )
+            for i, line in enumerate(textwrap.wrap(footer, width=112)):
+                ax.text(
+                    0.06,
+                    0.17 - i * 0.024,
+                    line,
+                    fontsize=8.8,
+                    color="#22303C",
+                    va="top",
+                    ha="left",
+                    family="DejaVu Sans",
+                )
+            save_page(fig)
 
         plot_items = []
         plot_descriptions = {}
@@ -660,8 +783,8 @@ def write_run_pdf_report(
                 "Cumulative curves showing the mean fraction of GT-positive genes recovered; endpoint labels show recovery at 300 predictions per dataset.",
             ),
             "predictor_combination_expanded_frontier": (
-                "Predictor-combination expanded performance frontier",
-                "Coverage-versus-APS comparison of predictors and combinations; only Pareto-frontier points are annotated.",
+                "Predictor-combination essential candidates",
+                "Coverage-versus-APS comparison of the best single predictors and best combinations; the full summary is printed in the preceding table and saved as TSV.",
             ),
         })
         for key, (title, caption) in plot_descriptions.items():
