@@ -90,6 +90,33 @@ def _drop_unmapped_rows(
     return out
 
 
+def _check_and_deduplicate_final_pairs(
+    df: pd.DataFrame,
+    ensembl_column: str,
+    mimat_column: str,
+    score_column: str,
+) -> pd.DataFrame:
+    grouped = df.groupby([ensembl_column, mimat_column])[score_column].nunique()
+    conflicts = grouped[grouped > 1]
+    if not conflicts.empty:
+        sample_pairs = ", ".join(
+            f"{ensembl_id}/{mimat_id}" for ensembl_id, mimat_id in conflicts.index[:5]
+        )
+        raise ValueError(
+            "Conflicting scores found for standardized Ensembl_ID/miRNA_ID pairs "
+            f"after MIMAT mapping: {sample_pairs}"
+        )
+
+    before = len(df)
+    out = df.drop_duplicates(subset=[ensembl_column, mimat_column]).copy()
+    _log_row_count_change(
+        "Drop duplicate standardized Ensembl_ID-miRNA_ID pairs after MIMAT mapping",
+        before,
+        len(out),
+    )
+    return out
+
+
 def load_predictions(
     path: Path,
     *,
@@ -205,4 +232,9 @@ def build_output_table(
         [ensembl_column, mimat_column, mirna_name_column, score_column],
         "Drop standardized rows with invalid canonical values or scores",
     )
-    return out
+    return _check_and_deduplicate_final_pairs(
+        out,
+        ensembl_column,
+        mimat_column,
+        score_column,
+    )
