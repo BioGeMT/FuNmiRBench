@@ -44,7 +44,6 @@ DEFAULT_PREDICTOR_TOP_FRACTION = 0.10
 SINGLE_PREDICTOR_COLOR = "#111827"
 ORIGINAL_SINGLE_PREDICTOR_COLOR = "#1F77B4"
 ORIGINAL_COMBINATION_COLOR = "#FF7F0E"
-COMBINATION_CMAP = "plasma"
 
 
 def _score_col(tool_id: str) -> str:
@@ -378,25 +377,35 @@ def _has_control_predictor(tool_ids):
     )
 
 
-def _combination_size_color(size, *, min_size, max_size):
-    cmap = plt.get_cmap(COMBINATION_CMAP)
-    if max_size <= min_size:
-        return cmap(0.72)
-    fraction = (int(size) - min_size) / float(max_size - min_size)
-    return cmap(0.18 + 0.70 * fraction)
-
-
-def _expanded_frontier_label_position(combination_id):
-    positions = {
-        "tec-mitarget": (0.035, 0.185),
-        "targetscan": (0.286, 0.154),
-        "targetscan+tec-mitarget": (0.105, 0.116),
-        "mirdb_mirtarget": (0.308, 0.132),
-        "mirdb_mirtarget+tec-mitarget": (0.245, 0.091),
-        "targetscan+mirdb_mirtarget": (0.410, 0.130),
-        "targetscan+mirdb_mirtarget+tec-mitarget": (0.408, 0.082),
-    }
-    return positions.get(str(combination_id))
+def _essential_candidate_rows(work):
+    if work.empty:
+        return work
+    label_by_index = {}
+    groups = [
+        ("Best single APS", work[work["combination_size"] == 1], "aps_mean"),
+        (
+            "Best single coverage",
+            work[work["combination_size"] == 1],
+            "positive_coverage_mean",
+        ),
+        ("Best combo APS", work[work["combination_size"] > 1], "aps_mean"),
+        (
+            "Best combo coverage",
+            work[work["combination_size"] > 1],
+            "positive_coverage_mean",
+        ),
+    ]
+    for label, subset, metric in groups:
+        if subset.empty:
+            continue
+        idx = subset[metric].astype(float).idxmax()
+        label_by_index[idx] = f"{label}; {label_by_index[idx]}" if idx in label_by_index else label
+    essential = work.loc[list(label_by_index)].copy()
+    essential["plot_label"] = essential.index.map(label_by_index)
+    return essential.sort_values(
+        ["combination_size", "aps_mean", "positive_coverage_mean"],
+        ascending=[True, False, False],
+    )
 
 
 def write_predictor_combination_frontier_plot(
@@ -473,7 +482,7 @@ def write_predictor_combination_expanded_frontier_plot(
     summary_df,
     out_path,
     *,
-    title="Predictor-combination expanded performance frontier",
+    title="Predictor-combination essential candidates",
 ):
     fig, ax = plt.subplots(figsize=(8.2, 5.8))
     _style_axes(ax, grid_axis="both")
@@ -498,60 +507,44 @@ def write_predictor_combination_expanded_frontier_plot(
         _save_figure(fig, out_path)
         return out_path
 
-    work["is_frontier"] = _pareto_frontier_mask(work)
-    max_combination_size = int(work["combination_size"].max())
-    min_combination_size = (
-        int(max(2, work.loc[work["combination_size"] > 1, "combination_size"].min()))
-        if (work["combination_size"] > 1).any()
-        else 2
-    )
-    for size in sorted(work["combination_size"].unique()):
-        subset = work[work["combination_size"] == size]
-        is_single = int(size) == 1
-        color = (
-            SINGLE_PREDICTOR_COLOR
-            if is_single
-            else _combination_size_color(
-                size,
-                min_size=min_combination_size,
-                max_size=max_combination_size,
-            )
-        )
+    essential = _essential_candidate_rows(work)
+    singles = essential[essential["combination_size"] == 1]
+    combinations = essential[essential["combination_size"] > 1]
+    if not singles.empty:
         ax.scatter(
-            subset["positive_coverage_mean"],
-            subset["aps_mean"],
-            s=np.where(subset["is_frontier"], 92, 48),
-            marker="o" if is_single else "s",
-            color=color,
-            alpha=np.where(subset["is_frontier"], 0.95, 0.55),
-            edgecolor="black",
-            linewidth=0.65,
-            zorder=3,
+            singles["positive_coverage_mean"],
+            singles["aps_mean"],
+            s=88,
+            marker="o",
+            color=SINGLE_PREDICTOR_COLOR,
+            alpha=0.96,
+            edgecolor="white",
+            linewidth=0.85,
+            label="best single predictor",
+            zorder=4,
         )
-
-    frontier = work[work["is_frontier"]].sort_values("positive_coverage_mean")
-    if len(frontier) > 1:
-        ax.plot(
-            frontier["positive_coverage_mean"],
-            frontier["aps_mean"],
-            color=NEUTRAL_COLOR,
-            linewidth=1.4,
-            linestyle="--",
-            label="Pareto frontier",
+    if not combinations.empty:
+        ax.scatter(
+            combinations["positive_coverage_mean"],
+            combinations["aps_mean"],
+            s=96,
+            marker="s",
+            color=ORIGINAL_COMBINATION_COLOR,
+            alpha=0.94,
+            edgecolor="white",
+            linewidth=0.85,
+            label="best combination",
             zorder=4,
         )
 
-    fallback_offsets = [(10, 10), (10, 24), (10, -20), (-92, 24), (-110, -24)]
-    for fallback_offset, (_, row) in zip(fallback_offsets * 3, frontier.iterrows()):
-        label_position = _expanded_frontier_label_position(row["combination_id"])
-        textcoords = "data" if label_position else "offset points"
-        xytext = label_position or fallback_offset
+    fallback_offsets = [(10, 10), (10, -24), (-118, 14), (-118, -26)]
+    for fallback_offset, (_, row) in zip(fallback_offsets, essential.iterrows()):
         ax.annotate(
-            _combination_label(row["combination_id"]),
+            f"{row['plot_label']}\n{_combination_label(row['combination_id'])}",
             (row["positive_coverage_mean"], row["aps_mean"]),
-            xytext=xytext,
-            textcoords=textcoords,
-            fontsize=10.5,
+            xytext=fallback_offset,
+            textcoords="offset points",
+            fontsize=9.4,
             color="#22303C",
             arrowprops={
                 "arrowstyle": "-",
@@ -569,12 +562,13 @@ def write_predictor_combination_expanded_frontier_plot(
         )
     ax.set_xlabel("Mean positive coverage", fontsize=PLOT_AXIS_LABEL_SIZE)
     ax.set_ylabel("Mean APS", fontsize=PLOT_AXIS_LABEL_SIZE)
-    ax.set_xlim(0, min(1.02, max(0.15, float(work["positive_coverage_mean"].max()) * 1.18)))
-    ax.set_ylim(0, min(1.02, max(0.2, float(work["aps_mean"].max()) * 1.22)))
+    axis_work = essential if not essential.empty else work
+    ax.set_xlim(0, min(1.02, max(0.15, float(axis_work["positive_coverage_mean"].max()) * 1.22)))
+    ax.set_ylim(0, min(1.02, max(0.2, float(axis_work["aps_mean"].max()) * 1.26)))
     _add_figure_heading(
         fig,
         title=title,
-        subtitle="Predictors and rank-mean combinations are shown; only Pareto-frontier points are annotated.",
+        subtitle="Only the best single predictors and best combinations are shown; the full summary is in the TSV table.",
     )
     legend_handles = [
         Line2D(
@@ -583,47 +577,26 @@ def write_predictor_combination_expanded_frontier_plot(
             marker="o",
             color="none",
             markerfacecolor=SINGLE_PREDICTOR_COLOR,
-            markeredgecolor="black",
-            markersize=9,
+            markeredgecolor="white",
+            markersize=8,
             label="single predictor",
-        )
-    ]
-    for size in range(min_combination_size, max_combination_size + 1):
-        if not bool((work["combination_size"] == size).any()):
-            continue
-        legend_handles.append(
-            Line2D(
-                [0],
-                [0],
-                marker="s",
-                color="none",
-                markerfacecolor=_combination_size_color(
-                    size,
-                    min_size=min_combination_size,
-                    max_size=max_combination_size,
-                ),
-                markeredgecolor="black",
-                markersize=9,
-                label=f"{size}-predictor combination",
-            )
-        )
-    legend_handles.append(
+        ),
         Line2D(
             [0],
             [0],
-            color=NEUTRAL_COLOR,
-            linestyle="--",
-            linewidth=1.9,
-            label="Pareto frontier",
-        )
-    )
+            marker="s",
+            color="none",
+            markerfacecolor=ORIGINAL_COMBINATION_COLOR,
+            markeredgecolor="white",
+            markersize=8,
+            label="combination",
+        ),
+    ]
     ax.legend(
         handles=legend_handles,
         frameon=False,
         fontsize=PLOT_LEGEND_SIZE,
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        borderaxespad=0.0,
+        loc="lower right",
     )
     _save_figure(fig, out_path)
     return out_path
