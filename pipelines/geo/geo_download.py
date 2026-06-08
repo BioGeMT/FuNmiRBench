@@ -57,14 +57,14 @@ REQUIRED_TSV_COLUMNS = [
 FASTQ_OUTPUT_DIR = REPO_ROOT / "data/experiments/raw"
 CONFIG_OUTPUT_DIR = REPO_ROOT / "pipelines/experiments/configs"
 
-# Default genome reference paths (Ensembl v109, downloaded by funmirbench-experiments-download-examples)
+# Default genome reference paths (Ensembl v115, downloaded by funmirbench-experiments-download-examples)
 DEFAULT_GENOME_FASTA = str(
-    REPO_ROOT / "data/experiments/raw/refs/ensembl_v109"
+    REPO_ROOT / "data/experiments/raw/refs/ensembl_v115"
     / "Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
 )
 DEFAULT_GTF = str(
-    REPO_ROOT / "data/experiments/raw/refs/ensembl_v109"
-    / "Homo_sapiens.GRCh38.109.gtf.gz"
+    REPO_ROOT / "data/experiments/raw/refs/ensembl_v115"
+    / "Homo_sapiens.GRCh38.115.gtf.gz"
 )
 
 REQUIRED_COUNT_MATRIX_COLUMNS = [
