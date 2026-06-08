@@ -224,6 +224,12 @@ def run_benchmark(config_path):
         root,
         experiment_filters,
     )
+    if validation_summary.excluded_dataset_ids:
+        experiments = [
+            experiment
+            for experiment in experiments
+            if experiment.id not in validation_summary.excluded_dataset_ids
+        ]
     if not experiments:
         raise ValueError("Experiment selection resolved to no datasets.")
 

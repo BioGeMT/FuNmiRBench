@@ -262,7 +262,7 @@ def test_example_end_to_end(tmp_path):
     assert len(summary_paths) == 1
     out_dir = summary_paths[0].parent
 
-    assert out_dir.name == dt.date.today().strftime("%Y%m%d")
+    assert re.fullmatch(rf"{dt.date.today():%Y%m%d}_\d{{6}}", out_dir.name)
     assert (out_dir / "summary.json").is_file()
     assert (out_dir / "README.md").is_file()
     assert (out_dir / "REPORT.pdf").is_file()

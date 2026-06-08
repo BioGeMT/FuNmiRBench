@@ -212,20 +212,22 @@ def test_validate_experiments_rejects_non_numeric_values(tmp_path, monkeypatch):
     assert {"numeric_logfc", "numeric_fdr"} <= _issue_checks(summary)
 
 
-def test_validate_experiments_rejects_fdr_outside_open_closed_unit_interval(tmp_path, monkeypatch):
+def test_validate_experiments_drops_fdr_outside_open_closed_unit_interval(tmp_path, monkeypatch):
     experiments_tsv = _write_registry(tmp_path, [_registry_row()])
     _write_de_table(
         tmp_path,
         "gene_id\tlogFC\tFDR\n"
         "ENSG00000000001\t-2.0\t0\n"
-        "ENSG00000000002\t0.2\t1.20\n",
+        "ENSG00000000002\t0.2\t1.20\n"
+        "ENSG00000000003\t0.3\t0.50\n",
     )
     monkeypatch.chdir(tmp_path)
 
     summary = validate_experiments(experiments_tsv)
 
-    assert not summary.ok
-    assert "fdr_range" in _issue_checks(summary)
+    assert summary.ok
+    assert summary.benchmark_ready == 0
+    assert "no positive genes" in summary.notices[0].message
 
 
 def test_validate_experiments_rejects_invalid_perturbation(tmp_path, monkeypatch):
@@ -239,7 +241,7 @@ def test_validate_experiments_rejects_invalid_perturbation(tmp_path, monkeypatch
     assert "experiment_type" in _issue_checks(summary)
 
 
-def test_validate_experiments_requires_positive_and_negative_gt_classes(tmp_path, monkeypatch):
+def test_validate_experiments_warns_for_zero_positive_and_rejects_zero_negative_gt_classes(tmp_path, monkeypatch):
     zero_positive_root = tmp_path / "zero_positive"
     zero_positive_tsv = _write_registry(zero_positive_root, [_registry_row()])
     _write_de_table(
@@ -251,8 +253,10 @@ def test_validate_experiments_requires_positive_and_negative_gt_classes(tmp_path
     monkeypatch.chdir(zero_positive_root)
 
     zero_positive = validate_experiments(zero_positive_tsv)
-    assert not zero_positive.ok
-    assert "no positive genes" in zero_positive.issues[0].message
+    assert zero_positive.ok
+    assert zero_positive.benchmark_ready == 0
+    assert "T001" in zero_positive.excluded_dataset_ids
+    assert "no positive genes" in zero_positive.notices[0].message
 
     zero_negative_root = tmp_path / "zero_negative"
     zero_negative_tsv = _write_registry(zero_negative_root, [_registry_row()])
