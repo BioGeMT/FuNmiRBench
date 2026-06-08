@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import itertools
 import pathlib
+import textwrap
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -418,6 +419,17 @@ def _combination_label(combination_id):
     return " + ".join(_short_tool_label(part) for part in str(combination_id).split("+"))
 
 
+def _wrapped_combination_label(combination_id, *, width=28):
+    return "\n".join(
+        textwrap.wrap(
+            _combination_label(combination_id),
+            width=width,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+    )
+
+
 def _has_control_predictor(tool_ids):
     return any(
         tool_id in EXCLUDED_COMBINATION_TOOL_IDS
@@ -600,34 +612,93 @@ def write_predictor_combination_expanded_frontier_plot(
             zorder=4,
         )
 
-    fallback_offsets = [(10, 10), (10, -24), (-118, 14), (-118, -26)]
-    for fallback_offset, (_, row) in zip(fallback_offsets, essential.iterrows()):
+    label_layouts = {
+        "Best single APS": {
+            "xytext": (30, 50),
+            "ha": "left",
+            "va": "bottom",
+            "text_color": "white",
+            "box_face": SINGLE_PREDICTOR_COLOR,
+            "box_edge": SINGLE_PREDICTOR_COLOR,
+            "line_color": SINGLE_PREDICTOR_COLOR,
+        },
+        "Best single coverage": {
+            "xytext": (-30, 50),
+            "ha": "right",
+            "va": "bottom",
+            "text_color": "white",
+            "box_face": SINGLE_PREDICTOR_COLOR,
+            "box_edge": SINGLE_PREDICTOR_COLOR,
+            "line_color": SINGLE_PREDICTOR_COLOR,
+        },
+        "Best combo APS": {
+            "xytext": (30, -50),
+            "ha": "left",
+            "va": "top",
+            "text_color": "#7C2D12",
+            "box_face": "#FFF7ED",
+            "box_edge": ORIGINAL_COMBINATION_COLOR,
+            "line_color": ORIGINAL_COMBINATION_COLOR,
+        },
+        "Best combo coverage": {
+            "xytext": (-30, -50),
+            "ha": "right",
+            "va": "top",
+            "text_color": "#7C2D12",
+            "box_face": "#FFF7ED",
+            "box_edge": ORIGINAL_COMBINATION_COLOR,
+            "line_color": ORIGINAL_COMBINATION_COLOR,
+        },
+    }
+    for _, row in essential.iterrows():
+        plot_label = str(row["plot_label"])
+        layout = next(
+            (
+                label_layout
+                for label, label_layout in label_layouts.items()
+                if label in plot_label
+            ),
+            {
+                "xytext": (28, 28),
+                "ha": "left",
+                "va": "bottom",
+                "text_color": "#22303C",
+                "box_face": "white",
+                "box_edge": "none",
+                "line_color": NEUTRAL_COLOR,
+            },
+        )
         ax.annotate(
-            f"{row['plot_label']}\n{_combination_label(row['combination_id'])}",
+            f"{plot_label}\n{_wrapped_combination_label(row['combination_id'])}",
             (row["positive_coverage_mean"], row["aps_mean"]),
-            xytext=fallback_offset,
+            xytext=layout["xytext"],
             textcoords="offset points",
             fontsize=9.4,
-            color="#22303C",
+            color=layout["text_color"],
+            ha=layout["ha"],
+            va=layout["va"],
+            annotation_clip=False,
             arrowprops={
                 "arrowstyle": "-",
-                "color": NEUTRAL_COLOR,
-                "linewidth": 1.0,
-                "shrinkA": 3,
-                "shrinkB": 4,
+                "color": layout["line_color"],
+                "linewidth": 1.05,
+                "shrinkA": 4,
+                "shrinkB": 5,
+                "connectionstyle": "arc3,rad=0.0",
             },
             bbox={
-                "boxstyle": "round,pad=0.12",
-                "facecolor": "white",
-                "edgecolor": "none",
-                "alpha": 0.82,
+                "boxstyle": "round,pad=0.18",
+                "facecolor": layout["box_face"],
+                "edgecolor": layout["box_edge"],
+                "linewidth": 0.8,
+                "alpha": 0.94,
             },
         )
     ax.set_xlabel("Mean positive coverage", fontsize=PLOT_AXIS_LABEL_SIZE)
     ax.set_ylabel("Mean APS", fontsize=PLOT_AXIS_LABEL_SIZE)
     axis_work = essential if not essential.empty else work
-    ax.set_xlim(0, min(1.02, max(0.15, float(axis_work["positive_coverage_mean"].max()) * 1.22)))
-    ax.set_ylim(0, min(1.02, max(0.2, float(axis_work["aps_mean"].max()) * 1.26)))
+    ax.set_xlim(0, min(1.02, max(0.15, float(axis_work["positive_coverage_mean"].max()) * 1.26)))
+    ax.set_ylim(0, min(1.02, max(0.2, float(axis_work["aps_mean"].max()) * 1.24)))
     _add_figure_heading(
         fig,
         title=title,
@@ -659,7 +730,10 @@ def write_predictor_combination_expanded_frontier_plot(
         handles=legend_handles,
         frameon=False,
         fontsize=PLOT_LEGEND_SIZE,
-        loc="lower right",
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.12),
+        ncol=2,
+        borderaxespad=0.0,
     )
     _save_figure(fig, out_path)
     return out_path
