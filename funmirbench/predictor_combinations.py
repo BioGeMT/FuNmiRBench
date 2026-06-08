@@ -44,6 +44,53 @@ DEFAULT_PREDICTOR_TOP_FRACTION = 0.10
 SINGLE_PREDICTOR_COLOR = "#111827"
 ORIGINAL_SINGLE_PREDICTOR_COLOR = "#1F77B4"
 ORIGINAL_COMBINATION_COLOR = "#FF7F0E"
+COMBINATION_SUMMARY_COLUMNS = [
+    "combination_id",
+    "tool_ids",
+    "combination_size",
+    "contains_control_predictor",
+    "ensemble_rule",
+    "intersection_rule",
+    "dataset_count",
+    "coverage_mean",
+    "coverage_median",
+    "coverage_count",
+    "positive_coverage_mean",
+    "positive_coverage_median",
+    "positive_coverage_count",
+    "aps_mean",
+    "aps_median",
+    "aps_count",
+    "pr_auc_mean",
+    "pr_auc_median",
+    "pr_auc_count",
+    "auroc_mean",
+    "auroc_median",
+    "auroc_count",
+    "precision_at_top_100_mean",
+    "precision_at_top_100_median",
+    "precision_at_top_100_count",
+    "intersection_selected_mean",
+    "intersection_selected_median",
+    "intersection_selected_count",
+    "intersection_positives_mean",
+    "intersection_positives_median",
+    "intersection_positives_count",
+    "intersection_background_mean",
+    "intersection_background_median",
+    "intersection_background_count",
+    "intersection_precision_mean",
+    "intersection_precision_median",
+    "intersection_precision_count",
+    "intersection_recovery_mean",
+    "intersection_recovery_median",
+    "intersection_recovery_count",
+    "intersection_coverage_mean",
+    "intersection_coverage_median",
+    "intersection_coverage_count",
+    "delta_aps_vs_best_single",
+    "beats_best_single_aps",
+]
 
 
 def _score_col(tool_id: str) -> str:
@@ -322,7 +369,7 @@ def compute_predictor_combination_summary(
             }
         )
     if not rows:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=COMBINATION_SUMMARY_COLUMNS)
     out = pd.DataFrame(rows)
     single_rows = out[out["combination_size"] == 1]
     single_reference_rows = single_rows[~single_rows["contains_control_predictor"]]
@@ -331,6 +378,7 @@ def compute_predictor_combination_summary(
     best_single_aps = single_reference_rows["aps_mean"].max()
     out["delta_aps_vs_best_single"] = out["aps_mean"] - best_single_aps
     out["beats_best_single_aps"] = out["delta_aps_vs_best_single"] > 0
+    out = out.reindex(columns=COMBINATION_SUMMARY_COLUMNS)
     return out.sort_values(
         ["aps_mean", "positive_coverage_mean", "coverage_mean"],
         ascending=[False, False, False],
@@ -454,15 +502,30 @@ def write_predictor_combination_frontier_plot(
             label="Pareto frontier",
         )
 
-    best_single = work[work["combination_size"] == 1].sort_values("aps_mean", ascending=False).head(1)
-    label_rows = pd.concat([frontier, best_single], ignore_index=True).drop_duplicates("combination_id")
-    for _, row in label_rows.iterrows():
+    essential = _essential_candidate_rows(work)
+    label_rows = essential.drop_duplicates("combination_id").head(4)
+    fallback_offsets = [(8, 10), (8, -22), (-108, 12), (-108, -24)]
+    for fallback_offset, (_, row) in zip(fallback_offsets, label_rows.iterrows()):
         ax.annotate(
-            str(row["combination_id"]).replace("+", " + "),
+            _combination_label(row["combination_id"]),
             (row["positive_coverage_mean"], row["aps_mean"]),
-            xytext=(6, 6),
+            xytext=fallback_offset,
             textcoords="offset points",
-            fontsize=10.0,
+            fontsize=9.2,
+            color="#22303C",
+            arrowprops={
+                "arrowstyle": "-",
+                "color": NEUTRAL_COLOR,
+                "linewidth": 0.9,
+                "shrinkA": 3,
+                "shrinkB": 4,
+            },
+            bbox={
+                "boxstyle": "round,pad=0.12",
+                "facecolor": "white",
+                "edgecolor": "none",
+                "alpha": 0.80,
+            },
         )
     ax.set_xlabel("Mean positive coverage", fontsize=PLOT_AXIS_LABEL_SIZE)
     ax.set_ylabel("Mean APS", fontsize=PLOT_AXIS_LABEL_SIZE)
@@ -471,7 +534,7 @@ def write_predictor_combination_frontier_plot(
     _add_figure_heading(
         fig,
         title=title,
-        subtitle="Points on the frontier are not dominated in both positive coverage and APS.",
+        subtitle="Labels mark only essential single-predictor and combination candidates; full results are in the TSV table.",
     )
     ax.legend(frameon=False, fontsize=PLOT_LEGEND_SIZE, loc="lower right")
     _save_figure(fig, out_path)

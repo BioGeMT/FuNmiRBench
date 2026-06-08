@@ -6,7 +6,7 @@ import math
 import pathlib
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -43,6 +43,8 @@ class ValidationSummary:
     files_present: int
     benchmark_ready: int
     issues: list[ValidationIssue]
+    notices: list[ValidationIssue] = field(default_factory=list)
+    excluded_dataset_ids: set[str] = field(default_factory=set)
 
     @property
     def ok(self) -> bool:
@@ -212,6 +214,22 @@ def _validate_de_table(
             )
         )
 
+    fdr = None
+    valid_fdr = None
+    if fdr_threshold is not None:
+        fdr, valid_fdr = _finite_numeric(de["FDR"])
+        nonblank_fdr = de["FDR"].map(_text) != ""
+        invalid_fdr_count = int((nonblank_fdr & ~valid_fdr).sum())
+        if invalid_fdr_count:
+            issues.append(
+                ValidationIssue(
+                    dataset_id,
+                    "numeric_fdr",
+                    f"DE table has {invalid_fdr_count} non-numeric or non-finite FDR value(s).",
+                    str(path),
+                )
+            )
+
     if issues:
         return issues
 
@@ -220,7 +238,6 @@ def _validate_de_table(
     if fdr_threshold is None:
         positive_mask = usable & (effect > float(abs_logfc_threshold))
     else:
-        fdr, valid_fdr = _finite_numeric(de["FDR"])
         usable = usable & valid_fdr & (fdr > 0.0) & (fdr <= 1.0)
         positive_mask = usable & (fdr < float(fdr_threshold)) & (effect > float(abs_logfc_threshold))
     positives = int(positive_mask.sum())
@@ -336,6 +353,8 @@ def validate_experiments(
 
     files_present = 0
     invalid_dataset_ids = set()
+    notice_dataset_ids = set()
+    notices = []
     for _, row in df.iterrows():
         dataset_id = _text(row.get("id")) or REGISTRY_ISSUE_ID
         row_issues = _validate_registry_row(row)
@@ -369,8 +388,22 @@ def validate_experiments(
                 fdr_threshold=fdr_threshold,
                 abs_logfc_threshold=abs_logfc_threshold,
             )
-            issues.extend(table_issues)
-            if table_issues:
+            nonfatal_notices = [
+                issue
+                for issue in table_issues
+                if (
+                    issue.check == "ground_truth_classes"
+                    and issue.message.startswith("DE table has no positive genes")
+                )
+            ]
+            blocking_issues = [
+                issue for issue in table_issues if issue not in nonfatal_notices
+            ]
+            issues.extend(blocking_issues)
+            notices.extend(nonfatal_notices)
+            if nonfatal_notices:
+                notice_dataset_ids.add(dataset_id)
+            if blocking_issues:
                 invalid_dataset_ids.add(dataset_id)
         if row_issues:
             invalid_dataset_ids.add(dataset_id)
@@ -381,11 +414,14 @@ def validate_experiments(
     ):
         invalid_dataset_ids.update(_text(value) for value in df["id"] if _text(value))
 
+    excluded_dataset_ids = invalid_dataset_ids | notice_dataset_ids
     return ValidationSummary(
         total=int(len(df)),
         files_present=files_present,
-        benchmark_ready=max(0, int(len(df)) - len(invalid_dataset_ids)),
+        benchmark_ready=max(0, int(len(df)) - len(excluded_dataset_ids)),
         issues=issues,
+        notices=notices,
+        excluded_dataset_ids=excluded_dataset_ids,
     )
 
 
@@ -411,6 +447,23 @@ def log_validation_summary(summary: ValidationSummary) -> None:
     logger.info("Datasets in metadata:      %s", summary.total)
     logger.info("Files present:             %s", summary.files_present)
     logger.info("Benchmark-ready datasets:  %s", summary.benchmark_ready)
+    if summary.ok:
+        if not summary.notices:
+            return
+    if summary.notices:
+        logger.warning("Validation notices:        %s", len(summary.notices))
+        for notice in summary.notices[:MAX_LOGGED_ISSUES]:
+            location = f" ({notice.path})" if notice.path else ""
+            logger.warning(
+                "  - %s [%s]: %s%s",
+                notice.dataset_id,
+                notice.check,
+                notice.message,
+                location,
+            )
+        remaining_notices = len(summary.notices) - MAX_LOGGED_ISSUES
+        if remaining_notices > 0:
+            logger.warning("  ... %s more notice(s)", remaining_notices)
     if summary.ok:
         return
 
