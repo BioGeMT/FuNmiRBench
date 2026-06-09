@@ -421,7 +421,24 @@ def _rank_values_for_spec(frame, column, column_type):
     return frame[column].astype(float)
 
 
-def _add_recovery_endpoint_labels(ax, label_items, *, x_value, y_min, y_max):
+def _recovery_percent_decimals(max_value):
+    max_value = float(max_value or 0.0)
+    if max_value < 0.01:
+        return 2
+    if max_value < 0.10:
+        return 1
+    return 0
+
+
+def _recovery_fraction_y_max(max_endpoint):
+    target = max(float(max_endpoint or 0.0) * 1.35, 0.005)
+    for limit in (0.005, 0.01, 0.02, 0.05, 0.10, 0.20, 0.50, 1.02):
+        if target <= limit:
+            return limit
+    return 1.02
+
+
+def _add_recovery_endpoint_labels(ax, label_items, *, x_value, y_min, y_max, percent_decimals=0):
     if not label_items:
         return
     y_range = max(float(y_max) - float(y_min), 1e-9)
@@ -440,7 +457,7 @@ def _add_recovery_endpoint_labels(ax, label_items, *, x_value, y_min, y_max):
 
     label_x = float(x_value) + max(float(x_value) * 0.018, 1.5)
     for item, y_text in adjusted:
-        label = f"{item['label']} ({item['value']:.0%})"
+        label = f"{item['label']} ({item['value']:.{int(percent_decimals)}%})"
         ax.annotate(
             label,
             (x_value, item["y"]),
@@ -578,12 +595,14 @@ def _plot_positive_recovery_by_prediction_count(
         y_max = (
             1.02
             if not excluded_tool_ids
-            else min(1.02, max(0.10, max_endpoint * 1.22))
+            else _recovery_fraction_y_max(max_endpoint)
         )
         ax.set_ylim(0, y_max)
-        ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0, decimals=0))
+        percent_decimals = _recovery_percent_decimals(y_max)
+        ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0, decimals=percent_decimals))
     else:
         ax.set_ylim(bottom=0)
+        percent_decimals = 0
     ax.set_xlabel("Predicted targets per dataset", fontsize=ev.PLOT_AXIS_LABEL_SIZE)
     ax.set_ylabel(
         "Mean GT-positive recovery fraction" if normalized else "Mean GT positives recovered",
@@ -608,6 +627,7 @@ def _plot_positive_recovery_by_prediction_count(
             x_value=max_predictions,
             y_min=ax.get_ylim()[0],
             y_max=ax.get_ylim()[1],
+            percent_decimals=percent_decimals,
         )
     else:
         ax.legend(frameon=False, fontsize=ev.PLOT_LEGEND_SIZE, loc="upper left", bbox_to_anchor=(1.02, 1.0))
