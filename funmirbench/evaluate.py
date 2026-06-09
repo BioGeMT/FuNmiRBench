@@ -76,9 +76,7 @@ def evaluate_joined_dataframe(
             )
         except ValueError as exc:
             message = str(exc)
-            valid_rows = joined["logFC"].notna() & joined["FDR"].notna()
-            if "FDR" in joined.columns:
-                valid_rows = valid_rows & (joined["FDR"].astype(float) > 0)
+            valid_rows = _usable_gt_row_mask(joined, fdr_threshold=fdr_threshold)
             scored_rows = int(joined.loc[valid_rows, score_col].notna().sum())
             total_valid_rows = int(valid_rows.sum())
             sparse_scoring = scored_rows < total_valid_rows

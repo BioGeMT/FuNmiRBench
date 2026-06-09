@@ -24,6 +24,7 @@ from funmirbench.evaluate import (
     SCORE_PREFIX,
     _add_figure_heading,
     _annotate_ground_truth,
+    _filter_usable_gt_rows,
     _positive_mask,
     _rank_scale_scores,
     _save_figure,
@@ -146,8 +147,7 @@ def _prepare_combo_frame(joined, combo, *, fdr_threshold, abs_logfc_threshold):
         if optional in joined.columns:
             keep_cols.append(optional)
     work = joined[keep_cols].copy()
-    work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
-    work = work[work["FDR"].astype(float) > 0].copy()
+    work = _filter_usable_gt_rows(work, fdr_threshold=fdr_threshold)
     if work.empty:
         return None
     work = _annotate_ground_truth(work)
@@ -248,8 +248,7 @@ def _evaluate_top_fraction_intersection_dataset(
         if optional in joined.columns:
             keep_cols.append(optional)
     work = joined[keep_cols].copy()
-    work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
-    work = work[work["FDR"].astype(float) > 0].copy()
+    work = _filter_usable_gt_rows(work, fdr_threshold=fdr_threshold)
     if work.empty:
         return None
 

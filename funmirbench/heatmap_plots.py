@@ -28,11 +28,7 @@ def _overview_heatmap_height(row_count):
 
 def _prepare_heatmap_work(joined, *, required_cols, fdr_threshold, abs_logfc_threshold, perturbation):
     """Prepare the same usable rows and positives used by evaluation."""
-    work = joined[required_cols].copy()
-    work = work[work["logFC"].notna()].copy()
-    if fdr_threshold is not None:
-        work["FDR"] = pd.to_numeric(work["FDR"], errors="coerce")
-        work = work[work["FDR"].notna() & (work["FDR"] > 0.0) & (work["FDR"] <= 1.0)].copy()
+    work = _filter_usable_gt_rows(joined[required_cols], fdr_threshold=fdr_threshold)
     work = _annotate_ground_truth(work, perturbation=perturbation)
     work["is_positive"] = _positive_mask(
         work,

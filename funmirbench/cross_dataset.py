@@ -179,8 +179,7 @@ def _rank_class_plot_data(joined_frames, *, fdr_threshold, abs_logfc_threshold, 
     for optional in ("dataset_id", "perturbation"):
         if optional in combined.columns:
             keep_cols.append(optional)
-    work = combined[keep_cols].copy()
-    work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
+    work = ev._filter_usable_gt_rows(combined[keep_cols], fdr_threshold=fdr_threshold)
     if work.empty:
         return None
     work = ev._annotate_ground_truth(work)
@@ -493,8 +492,7 @@ def _plot_positive_recovery_by_prediction_count(
         if optional in combined.columns:
             keep_cols.append(optional)
     keep_cols = list(dict.fromkeys(keep_cols))
-    work = combined[keep_cols].copy()
-    work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
+    work = ev._filter_usable_gt_rows(combined[keep_cols], fdr_threshold=fdr_threshold)
     if work.empty:
         return False
 

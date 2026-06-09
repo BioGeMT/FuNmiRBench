@@ -99,6 +99,22 @@ def _positive_mask(df, *, fdr_threshold, abs_logfc_threshold):
     return effect_mask & (df["FDR"] < float(fdr_threshold))
 
 
+def _usable_gt_row_mask(df, *, fdr_threshold):
+    mask = pd.to_numeric(df["logFC"], errors="coerce").notna()
+    if fdr_threshold is not None:
+        fdr = pd.to_numeric(df["FDR"], errors="coerce")
+        mask = mask & fdr.notna() & (fdr > 0.0) & (fdr <= 1.0)
+    return mask
+
+
+def _filter_usable_gt_rows(df, *, fdr_threshold):
+    out = df.copy()
+    out["logFC"] = pd.to_numeric(out["logFC"], errors="coerce")
+    if "FDR" in out.columns:
+        out["FDR"] = pd.to_numeric(out["FDR"], errors="coerce")
+    return out.loc[_usable_gt_row_mask(out, fdr_threshold=fdr_threshold)].copy()
+
+
 def _selection_caption(fdr_threshold):
     if fdr_threshold is None:
         return "selected by expected effect"
@@ -376,14 +392,7 @@ def _prepare_scored_frame(
         if optional in joined.columns:
             keep_cols.append(optional)
 
-    keep = joined[keep_cols].copy()
-    keep = keep[keep["logFC"].notna()].copy()
-    keep["logFC"] = pd.to_numeric(keep["logFC"], errors="coerce")
-    keep = keep[keep["logFC"].notna()].copy()
-    if fdr_threshold is not None:
-        keep["FDR"] = pd.to_numeric(keep["FDR"], errors="coerce")
-        keep = keep[keep["FDR"].notna()].copy()
-        keep = keep[(keep["FDR"] > 0) & (keep["FDR"] <= 1)].copy()
+    keep = _filter_usable_gt_rows(joined[keep_cols], fdr_threshold=fdr_threshold)
     if keep.empty:
         raise ValueError(f"No usable rows remain for {score_col}.")
 
