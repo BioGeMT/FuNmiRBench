@@ -17,6 +17,7 @@ from funmirbench.build_cheating_predictions import (
 )
 from funmirbench.build_predictions import write_tsv
 from funmirbench.de_table import find_gene_id_column, read_de_table
+from funmirbench.evaluate_common import _filter_usable_gt_rows
 from funmirbench.logger import parse_log_level, setup_logging
 
 
@@ -73,12 +74,12 @@ def build_perfect_scores(
         if de["gene_id"].duplicated().any():
             raise ValueError(f"{dataset_id} contains duplicate gene_id values.")
 
-        keep = de[["gene_id", "logFC", "FDR"]].copy()
-        keep = keep[keep["gene_id"].notna() & keep["logFC"].notna() & keep["FDR"].notna()].copy()
+        keep = _filter_usable_gt_rows(
+            de[["gene_id", "logFC", "FDR"]],
+            fdr_threshold=fdr_threshold,
+        )
+        keep = keep[keep["gene_id"].notna()].copy()
         keep["gene_id"] = keep["gene_id"].astype(str)
-        keep["logFC"] = keep["logFC"].astype(float)
-        keep["FDR"] = keep["FDR"].astype(float)
-        keep = keep[keep["FDR"] > 0].copy()
         if keep.empty:
             continue
 

@@ -347,9 +347,7 @@ def _prepare_common_scored_frame(
         if optional in joined.columns:
             keep_cols.append(optional)
 
-    keep = joined[keep_cols].copy()
-    keep = keep[keep["logFC"].notna() & keep["FDR"].notna()].copy()
-    keep = keep[keep["FDR"].astype(float) > 0].copy()
+    keep = _filter_usable_gt_rows(joined[keep_cols], fdr_threshold=fdr_threshold)
     if keep.empty:
         raise ValueError("No usable rows remain for common PR comparison.")
 
@@ -521,8 +519,7 @@ def _plot_top_prediction_effect_cdfs(
     keep_cols = ["logFC", "FDR", *score_cols]
     if "gene_id" in joined.columns:
         keep_cols.append("gene_id")
-    work = joined[keep_cols].copy()
-    work = work[work["logFC"].notna()].copy()
+    work = _filter_usable_gt_rows(joined[keep_cols], fdr_threshold=None)
     work = _annotate_ground_truth(work, perturbation=perturbation)
     if work.empty:
         raise ValueError("No usable rows remain for top-prediction effect CDF plot.")
@@ -608,8 +605,10 @@ def _plot_algorithms_vs_genes_heatmap(
     joined, *, score_cols, rank_cols, tool_ids, dataset_id, out_path,
     fdr_threshold, abs_logfc_threshold, perturbation=None,
 ):
-    work = joined[["gene_id", "logFC", "FDR", *score_cols, *rank_cols]].copy()
-    work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
+    work = _filter_usable_gt_rows(
+        joined[["gene_id", "logFC", "FDR", *score_cols, *rank_cols]],
+        fdr_threshold=fdr_threshold,
+    )
     work = _annotate_ground_truth(work, perturbation=perturbation)
     work["is_positive"] = _positive_mask(
         work,
@@ -724,8 +723,10 @@ def _plot_top_positive_heatmap(
     joined, *, rank_cols, tool_ids, dataset_id, out_path,
     fdr_threshold, abs_logfc_threshold, positive_fraction, perturbation=None,
 ):
-    work = joined[["gene_id", "logFC", "FDR", *rank_cols]].copy()
-    work = work[work["logFC"].notna() & work["FDR"].notna()].copy()
+    work = _filter_usable_gt_rows(
+        joined[["gene_id", "logFC", "FDR", *rank_cols]],
+        fdr_threshold=fdr_threshold,
+    )
     work = _annotate_ground_truth(work, perturbation=perturbation)
     work["is_positive"] = _positive_mask(
         work,
