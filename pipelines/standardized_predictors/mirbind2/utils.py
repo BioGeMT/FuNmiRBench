@@ -1,4 +1,5 @@
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from funmirbench.logger import (
 logger = logging.getLogger("utils")
 
 MIRBASE_RELEASE = "22.1"
+ANSI_ESCAPE_RE = re.compile(r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])")
 
 
 def repo_root() -> Path:
@@ -48,6 +50,10 @@ def configure_logging(log_path: Path, log_level: str) -> None:
 
 def _log_row_count_change(label: str, before: int, after: int) -> None:
     logger.info("%s: %d -> %d rows", label, before, after)
+
+
+def _clean_column_name(column: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", str(column)).strip()
 
 
 def _drop_invalid_rows(
@@ -130,6 +136,7 @@ def load_predictions(
         raise FileNotFoundError(f"Missing prediction file: {path}")
 
     df = pd.read_csv(path, sep="\t", dtype=str)
+    df.columns = [_clean_column_name(column) for column in df.columns]
     missing = set(required_columns) - set(df.columns)
     if missing:
         raise ValueError(f"{path} is missing columns: {sorted(missing)}")
