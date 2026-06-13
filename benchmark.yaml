@@ -36,6 +36,11 @@ evaluation:
   predictor_top_fraction: 0.10
   write_top_prediction_cdfs: true
   report_min_common_coverage: 0.10
+  # If true, DE rows are filtered to Ensembl protein-coding genes before joining predictions.
+  # The gene set is cached at data/resources/ensembl/protein_coding_gene_ids.txt.
+  protein_coding_only: false
+  # protein_coding_gtf: data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz
+  # protein_coding_gene_cache: data/resources/ensembl/protein_coding_gene_ids.txt
   figure_dpi: 600
 
 out_dir: results/
