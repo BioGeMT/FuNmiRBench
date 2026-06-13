@@ -12,10 +12,13 @@ import logging
 import sys
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import quote
 
 
 LOG_LEVEL_CHOICES = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 STANDARDIZED_COLUMNS = ["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score"]
+ZENODO_RECORD = "20557595"
+ZENODO_API_RECORD_URL = f"https://zenodo.org/api/records/{ZENODO_RECORD}"
 
 
 def repo_root() -> Path:
@@ -28,6 +31,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from funmirbench.logger import parse_log_level, setup_logging  # noqa: E402
+
+
+def zenodo_download_url(filename: str | Path, *, record: str = ZENODO_RECORD) -> str:
+    """Return the direct Zenodo API content URL for a file in the FuNmiRBench record."""
+    safe_filename = quote(Path(filename).name, safe="")
+    return f"https://zenodo.org/api/records/{record}/files/{safe_filename}/content"
 
 
 def predictor_dir(tool_id: str, *, root: Path | None = None) -> Path:
