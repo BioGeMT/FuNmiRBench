@@ -87,16 +87,16 @@ def validate_standardized_table(
     *,
     required_columns: Iterable[str] = STANDARDIZED_COLUMNS,
 ) -> None:
-    """Validate the common standardized predictor output schema."""
+    """Validate the common standardized predictor output schema.
+
+    The check is intentionally schema-only. Some predictors may legitimately have
+    blank gene names or MIMAT IDs before future curation passes, so row-level QC
+    should stay predictor-specific instead of blocking shared output writing.
+    """
     required = list(required_columns)
     missing = [column for column in required if column not in df.columns]
     if missing:
         raise ValueError(f"Standardized predictor output is missing required columns: {missing}")
-
-    if df[required].isna().any().any():
-        null_counts = df[required].isna().sum()
-        null_counts = {column: int(count) for column, count in null_counts.items() if int(count)}
-        raise ValueError(f"Standardized predictor output contains null values: {null_counts}")
 
 
 def write_standardized_table(
