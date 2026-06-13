@@ -1,47 +1,79 @@
+#!/usr/bin/env python3
+"""CLI entrypoint for the miRDB standardization pipeline."""
+
+from __future__ import annotations
+
 import argparse
 import logging
+import sys
 from pathlib import Path
-from utils import configure_logging, download_file, load_prediction_files, create_mirna_name_to_mimat_mapping, map_mirna_names_to_mimat, create_ncbi_gene_id_to_ensembl_mapping, map_ncbi_gene_id_to_ensembl, create_refseq_to_ensembl_mapping, fill_unmapped_rows_with_refseq_to_ensembl, build_output_table, repo_root, resolve_path_relative_to_root
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import (  # noqa: E402
+    add_standard_io_args,
+    configure_file_logging,
+    log_step,
+    predictor_dir,
+    repo_root,
+    resolve_cli_path,
+    write_standardized_table,
+)
+from utils import (  # noqa: E402
+    build_output_table,
+    create_mirna_name_to_mimat_mapping,
+    create_ncbi_gene_id_to_ensembl_mapping,
+    create_refseq_to_ensembl_mapping,
+    download_file,
+    fill_unmapped_rows_with_refseq_to_ensembl,
+    load_prediction_files,
+    map_mirna_names_to_mimat,
+    map_ncbi_gene_id_to_ensembl,
+    resolve_path_relative_to_root,
+)
 
 logger = logging.getLogger("pipeline")
 
-def log_step(step_number: int, total_steps: int, message: str) -> None:
-    logger.info("Step %d/%d: %s", step_number, total_steps, message)
 
-def resolve_cli_path(path: Path, root: Path) -> Path:
-    if path.is_absolute():
-        return path
-    return root / path
+def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Standardize miRDB predictions for FuNmiRBench.")
+    parser.add_argument(
+        "--predictions-file",
+        type=Path,
+        default=pipeline_dir / "data" / "miRDB_v6.0_prediction_result_human_all_scores.txt.gz",
+        help="Raw all-score predictions file from miRDB",
+    )
+    parser.add_argument(
+        "--resources-dir",
+        type=Path,
+        default=pipeline_dir / "data" / "resources",
+        help="Directory for downloaded miRBase/BioMart files",
+    )
+    add_standard_io_args(
+        parser,
+        default_output=root / "data" / "predictions" / "mirdb_mirtarget" / "mirdb_mirtarget_standardized.tsv",
+        default_log_file=pipeline_dir / "mirdb_mirtarget_pipeline.log",
+    )
+    return parser.parse_args()
 
-def log_step(step_number: int, total_steps: int, message: str) -> None:
-    logger.info("Step %d/%d: %s", step_number, total_steps, message)
 
 def main() -> None:
     root = repo_root()
-    pipeline_dir = root / "pipelines" / "standardized_predictors" / "mirdb_mirtarget"
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--predictions-file", type=Path, default=pipeline_dir / "data" / "miRDB_v6.0_prediction_result_human_all_scores.txt.gz", help="Raw all-score predictions file from miRDB")
-    parser.add_argument("--resources-dir", type=Path, default=pipeline_dir / "data" / "resources", help="Directory for downloaded miRBase/BioMart files")
-    parser.add_argument("--output", type=Path, default=root / "data" / "predictions" / "mirdb_mirtarget" / "mirdb_mirtarget_standardized.tsv", help="Output TSV path")
-    parser.add_argument("--log-file", type=Path, default=pipeline_dir / "mirdb_mirtarget_pipeline.log", help="Log file path")
-    parser.add_argument("--log-level", type=str, default="INFO", help="Logging level. Default: INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] )
-
-    args = parser.parse_args()
+    pipeline_dir = predictor_dir("mirdb_mirtarget", root=root)
+    args = parse_args(root, pipeline_dir)
     args.predictions_file = resolve_cli_path(args.predictions_file, root)
     args.resources_dir = resolve_cli_path(args.resources_dir, root)
     args.output = resolve_cli_path(args.output, root)
     args.log_file = resolve_cli_path(args.log_file, root)
 
-    configure_logging(args.log_file, args.log_level)
-    logger.info("Starting pipeline")
+    configure_file_logging(args.log_file, args.log_level)
+    logger.info("Starting miRDB standardization pipeline")
     total_steps = 9
 
-    log_step(1, total_steps, "Resolve raw miRDB predictions and external miRBase/BioMart resources")
+    log_step(logger, 1, total_steps, "Resolve raw miRDB predictions and external miRBase/BioMart resources")
     mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"
-    mirbase_path = args.resources_dir / "mirbase" / "mature.fa"
     mirbase_path = download_file(
         mirbase_url,
-        mirbase_path,
+        args.resources_dir / "mirbase" / "mature.fa",
         resource_label="miRBase mature.fa resource",
     )
 
@@ -56,10 +88,9 @@ def main() -> None:
             </Dataset>
         </Query>"""
     biomart_url = "https://Sep2025.archive.ensembl.org/biomart/martservice"
-    biomart_path = args.resources_dir / "biomart" / "hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv"
     biomart_path = download_file(
         biomart_url,
-        biomart_path,
+        args.resources_dir / "biomart" / "hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv",
         params={"query": biomart_query},
         timeout=360,
         resource_label="BioMart NCBI Gene ID/RefSeq-to-Ensembl mapping table",
@@ -72,11 +103,14 @@ def main() -> None:
         timeout=360,
         resource_label="miRDB v6.0 all-score prediction file",
     )
+
     raw_mirna_column = "miRNA"
     raw_transcript_column = "refseq_id"
     raw_prediction_column = "prediction"
     raw_ncbi_gene_id_column = "ncbi_gene_id"
-    log_step(2, total_steps, "Load raw miRDB predictions")
+    final_columns = ["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score"]
+
+    log_step(logger, 2, total_steps, "Load raw miRDB predictions")
     pred_df = load_prediction_files(
         raw_predictions_path,
         raw_mirna_column,
@@ -85,10 +119,10 @@ def main() -> None:
         raw_ncbi_gene_id_column,
     )
 
-    log_step(3, total_steps, "Create miRNA name-to-MIMAT mapping from miRBase mature.fa")
+    log_step(logger, 3, total_steps, "Create miRNA name-to-MIMAT mapping from miRBase mature.fa")
     mirna_name_to_mimat_map = create_mirna_name_to_mimat_mapping(mirbase_path)
 
-    log_step(4, total_steps, "Create NCBI Gene ID-to-Ensembl gene mapping from BioMart table")
+    log_step(logger, 4, total_steps, "Create NCBI Gene ID-to-Ensembl gene mapping from BioMart table")
     biomart_ensembl_id_column = "Gene stable ID"
     biomart_gene_name_column = "Gene name"
     biomart_refseq_column = "RefSeq mRNA ID"
@@ -99,7 +133,8 @@ def main() -> None:
         biomart_gene_name_column,
         biomart_ncbi_gene_id_column,
     )
-    log_step(5, total_steps, "Create RefSeq-to-Ensembl fallback gene mapping from BioMart table")
+
+    log_step(logger, 5, total_steps, "Create RefSeq-to-Ensembl fallback gene mapping from BioMart table")
     refseq_to_ensembl_map = create_refseq_to_ensembl_mapping(
         biomart_path,
         biomart_ensembl_id_column,
@@ -107,59 +142,45 @@ def main() -> None:
         biomart_refseq_column,
     )
 
-    # Define final schema
-    mimat_column = "miRNA_ID"
-    ensembl_id_column = "Ensembl_ID"
-    gene_name_column = "Gene_Name"
-    mirna_name_column = "miRNA_Name"
-    score_column = "Score"
-    final_columns = [
-        ensembl_id_column,
-        gene_name_column,
-        mimat_column,
-        mirna_name_column,
-        score_column,
-    ]
-
-    log_step(6, total_steps, "Map prediction miRNA names to MIMAT IDs")
+    log_step(logger, 6, total_steps, "Map prediction miRNA names to MIMAT IDs")
     pred_df = map_mirna_names_to_mimat(
         pred_df,
         mirna_name_to_mimat_map,
         raw_mirna_column,
-        mirna_name_column,
-        mimat_column,
+        "miRNA_Name",
+        "miRNA_ID",
     )
 
-    log_step(7, total_steps, "Map prediction NCBI Gene IDs to Ensembl gene IDs and gene names")
+    log_step(logger, 7, total_steps, "Map prediction NCBI Gene IDs to Ensembl gene IDs and gene names")
     pred_df = map_ncbi_gene_id_to_ensembl(
         pred_df,
         ncbi_gene_id_to_ensembl_map,
         raw_ncbi_gene_id_column,
-        ensembl_id_column,
-        gene_name_column,
+        "Ensembl_ID",
+        "Gene_Name",
         drop_unmapped=False,
     )
-    log_step(8, total_steps, "Map remaining prediction RefSeq transcript IDs to Ensembl gene IDs and gene names")
+
+    log_step(logger, 8, total_steps, "Map remaining prediction RefSeq transcript IDs to Ensembl gene IDs and gene names")
     pred_df = fill_unmapped_rows_with_refseq_to_ensembl(
         pred_df,
         refseq_to_ensembl_map,
         raw_transcript_column,
-        ensembl_id_column,
-        gene_name_column,
+        "Ensembl_ID",
+        "Gene_Name",
     )
-    log_step(9, total_steps, "Build and write final standardized output table")
+
+    log_step(logger, 9, total_steps, "Build, validate, and write standardized output table")
     final_df = build_output_table(
         pred_df,
         raw_prediction_column,
-        score_column,
+        "Score",
         final_columns,
-        ensembl_id_column,
-        mimat_column,
+        "Ensembl_ID",
+        "miRNA_ID",
     )
-
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    final_df.to_csv(args.output, sep="\t", index=False)
-    logger.info("Output written to: %s", resolve_path_relative_to_root(args.output))
+    write_standardized_table(final_df, args.output, logger=logger, columns=final_columns)
+    logger.info("Relative output path: %s", resolve_path_relative_to_root(args.output))
 
 
 if __name__ == "__main__":
