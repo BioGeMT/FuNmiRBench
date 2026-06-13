@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Collection
 
 import pandas as pd
 
@@ -21,6 +22,10 @@ def _emit_log(logger, message: str) -> None:
 
 def _elapsed(start: float) -> float:
     return time.perf_counter() - start
+
+
+def _strip_ensembl_version(value: object) -> str:
+    return str(value).strip().split(".", 1)[0]
 
 
 def _compute_global_rank_percentile(series: pd.Series) -> pd.Series:
@@ -56,7 +61,12 @@ def _normalize_scores(scores: pd.Series, *, score_direction: str, tool_id: str) 
     return normalized
 
 
-def load_experiment_table(meta: DatasetMeta, *, logger=None) -> pd.DataFrame:
+def load_experiment_table(
+    meta: DatasetMeta,
+    *,
+    protein_coding_gene_ids: Collection[str] | None = None,
+    logger=None,
+) -> pd.DataFrame:
     start = time.perf_counter()
     de = read_de_table(meta.full_path)
     gene_src = find_gene_id_column(de)
@@ -75,6 +85,16 @@ def load_experiment_table(meta: DatasetMeta, *, logger=None) -> pd.DataFrame:
     if "PValue" in de.columns:
         keep.append("PValue")
     out = de[keep].copy()
+    if protein_coding_gene_ids is not None:
+        before = len(out)
+        protein_coding_gene_ids = set(protein_coding_gene_ids)
+        out = out.loc[
+            out["gene_id"].map(_strip_ensembl_version).isin(protein_coding_gene_ids)
+        ].copy()
+        _emit_log(
+            logger,
+            f"    Protein-coding filter | DE rows={before:,} -> {len(out):,}",
+        )
     out.insert(0, "mirna", meta.miRNA)
     out.insert(0, "dataset_id", meta.id)
     out.insert(2, "perturbation", meta.perturbation)
@@ -179,9 +199,22 @@ def load_tool_scores(
     return out, path
 
 
-def build_joined(meta, tool_ids, predictions, root, min_score: float | None = None, *, logger=None):
+def build_joined(
+    meta,
+    tool_ids,
+    predictions,
+    root,
+    min_score: float | None = None,
+    *,
+    protein_coding_gene_ids: Collection[str] | None = None,
+    logger=None,
+):
     total_start = time.perf_counter()
-    joined = load_experiment_table(meta, logger=logger)
+    joined = load_experiment_table(
+        meta,
+        protein_coding_gene_ids=protein_coding_gene_ids,
+        logger=logger,
+    )
     paths = {}
     for tool_id in tool_ids:
         if tool_id not in predictions:
