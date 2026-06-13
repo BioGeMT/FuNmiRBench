@@ -35,7 +35,7 @@ def main() -> None:
     parser.add_argument(
         "--predictions-file",
         type=Path,
-        default=pipeline_dir / "3utrs_mirbind2_predictions_no_sequences.tsv",
+        default=pipeline_dir / "3utrs_mirbind2_predictions.tsv",
         help="Raw miRBind2 TSV prediction file",
     )
     parser.add_argument(
