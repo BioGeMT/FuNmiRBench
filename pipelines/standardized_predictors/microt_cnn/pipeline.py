@@ -17,7 +17,6 @@ from common import (  # noqa: E402
     repo_root,
     resolve_cli_path,
     write_standardized_table,
-    zenodo_download_url,
 )
 from utils import (  # noqa: E402
     build_ensembl_tx_to_gene_from_gtf,
@@ -92,8 +91,9 @@ def main() -> None:
         resource_label="miRBase mature.fa resource",
     )
 
+    microt_cnn_predictions_url = "10.5281/zenodo.20313523"
     raw_predictions_path = download_file(
-        zenodo_download_url(args.predictions_file.name),
+        microt_cnn_predictions_url,
         args.predictions_file,
         timeout=360,
         resource_label="microT-CNN all-score prediction file",
