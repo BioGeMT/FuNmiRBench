@@ -218,17 +218,6 @@ def _validate_de_table(
     valid_fdr = None
     if fdr_threshold is not None:
         fdr, valid_fdr = _finite_numeric(de["FDR"])
-        nonblank_fdr = de["FDR"].map(_text) != ""
-        invalid_fdr_count = int((nonblank_fdr & ~valid_fdr).sum())
-        if invalid_fdr_count:
-            issues.append(
-                ValidationIssue(
-                    dataset_id,
-                    "numeric_fdr",
-                    f"DE table has {invalid_fdr_count} non-numeric or non-finite FDR value(s).",
-                    str(path),
-                )
-            )
 
     if issues:
         return issues
