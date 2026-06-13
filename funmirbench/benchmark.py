@@ -37,6 +37,7 @@ from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
 from funmirbench.logger import parse_log_level, setup_logging
 from funmirbench.predictor_combinations import write_predictor_combination_outputs
+from funmirbench.protein_coding import load_protein_coding_gene_ids
 from funmirbench.run_report import write_run_pdf_report
 from funmirbench.validate_experiments import (
     format_validation_failure,
@@ -194,6 +195,7 @@ def run_benchmark(config_path):
     report_min_common_coverage = float(
         eval_cfg.get("report_min_common_coverage", eval_cfg.get("publication_min_common_coverage", 0.10))
     )
+    protein_coding_only = bool(eval_cfg.get("protein_coding_only", False))
 
     logger.info("Syncing selected experiment DE tables from Zenodo...")
     synced = sync_zenodo_experiments(
@@ -236,6 +238,30 @@ def run_benchmark(config_path):
     )
     if not predictions:
         raise ValueError("Predictor selection resolved to no predictors.")
+    publication_predictions = {
+        tool_id: meta
+        for tool_id, meta in predictions.items()
+        if evaluate_module._is_publication_tool(tool_id)
+    }
+    if publication_predictions:
+        excluded_tool_ids = [tool_id for tool_id in predictions if tool_id not in publication_predictions]
+        if excluded_tool_ids:
+            logger.info(
+                "Excluding control/mock predictors from publication outputs: "
+                + ", ".join(excluded_tool_ids)
+            )
+        predictions = publication_predictions
+
+    protein_coding_gene_ids = None
+    if protein_coding_only:
+        logger.info("Protein-coding-only evaluation filter is enabled.")
+        protein_coding_gene_ids = load_protein_coding_gene_ids(
+            root=root,
+            gtf_path=eval_cfg.get("protein_coding_gtf"),
+            cache_path=eval_cfg.get("protein_coding_gene_cache"),
+        )
+        logger.info("Protein-coding gene set contains %d genes.", len(protein_coding_gene_ids))
+
     evaluate_module.FIGURE_DPI = int(eval_cfg.get("figure_dpi", eval_cfg.get("publication_figure_dpi", 450)))
     out_root = (root / config.get("out_dir", "results")).resolve()
     out_root.mkdir(parents=True, exist_ok=True)
@@ -279,6 +305,7 @@ def run_benchmark(config_path):
             tool_ids,
             predictions,
             root,
+            protein_coding_gene_ids=protein_coding_gene_ids,
             logger=logger.info,
         )
         joined_path = dataset_dir / "joined.tsv"
