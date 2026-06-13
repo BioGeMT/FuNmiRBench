@@ -35,7 +35,7 @@ def main() -> None:
     parser.add_argument(
         "--predictions-file",
         type=Path,
-        default=pipeline_dir / "unified_human_mirbase_mane_select_3utrs_selected_18_mirnas_mirbind2_predictions.tsv",
+        default=pipeline_dir / "3utrs_mirbind2_predictions_no_sequences.tsv",
         help="Raw miRBind2 TSV prediction file",
     )
     parser.add_argument(
@@ -76,22 +76,28 @@ def main() -> None:
     raw_ensembl_column = "Gene_ID"
     raw_gene_name_column = "Gene_Symbol"
     raw_mirna_name_column = "miRNA_Name"
-    raw_score_column = "miRBind2_3UTR_prediction"
+    raw_prediction_column = "miRBind2_3UTR_prediction"
     raw_columns = [
         "Transcript_ID",
         raw_ensembl_column,
         raw_gene_name_column,
         raw_mirna_name_column,
-        "miRNA_Sequence",
-        "UTR_sequence",
-        raw_score_column,
+        raw_prediction_column,
     ]
 
+    # Standardized predictor output schema.
     mimat_column = "miRNA_ID"
     ensembl_column = "Ensembl_ID"
     gene_name_column = "Gene_Name"
     mirna_name_column = "miRNA_Name"
     score_column = "Score"
+    final_columns = [
+        ensembl_column,
+        gene_name_column,
+        mimat_column,
+        mirna_name_column,
+        score_column,
+    ]
 
     total_steps = 5
     log_step(1, total_steps, "Load raw miRBind2 predictions")
@@ -101,7 +107,7 @@ def main() -> None:
         ensembl_column=raw_ensembl_column,
         gene_name_column=raw_gene_name_column,
         mirna_name_column=raw_mirna_name_column,
-        score_column=raw_score_column,
+        score_column=raw_prediction_column,
     )
 
     log_step(2, total_steps, "Create miRNA name-to-MIMAT mapping from miRBase mature.fa")
@@ -115,21 +121,22 @@ def main() -> None:
         mimat_column=mimat_column,
     )
 
-    log_step(4, total_steps, "Drop transcript and sequence columns, then build standardized schema")
+    log_step(4, total_steps, "Build standardized output columns")
     final_df = build_output_table(
         pred_df,
         raw_ensembl_column=raw_ensembl_column,
         raw_gene_name_column=raw_gene_name_column,
         raw_mirna_name_column=raw_mirna_name_column,
-        raw_score_column=raw_score_column,
+        raw_prediction_column=raw_prediction_column,
         ensembl_column=ensembl_column,
         gene_name_column=gene_name_column,
         mimat_column=mimat_column,
         mirna_name_column=mirna_name_column,
         score_column=score_column,
+        final_columns=final_columns,
     )
 
-    log_step(5, total_steps, "Write standardized output table")
+    log_step(5, total_steps, "Write final standardized output table")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     final_df.to_csv(args.output, sep="\t", index=False)
     logger.info("Output written to: %s", resolve_path_relative_to_root(args.output))
