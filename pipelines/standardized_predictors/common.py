@@ -9,12 +9,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from pathlib import Path
-from typing import Iterable
-
-import pandas as pd
-
-from funmirbench.logger import parse_log_level, setup_logging
+from typing import Any, Iterable
 
 
 LOG_LEVEL_CHOICES = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -26,9 +23,16 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+ROOT = repo_root()
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from funmirbench.logger import parse_log_level, setup_logging  # noqa: E402
+
+
 def predictor_dir(tool_id: str, *, root: Path | None = None) -> Path:
     """Return ``pipelines/standardized_predictors/<tool_id>``."""
-    return (root or repo_root()) / "pipelines" / "standardized_predictors" / tool_id
+    return (root or ROOT) / "pipelines" / "standardized_predictors" / tool_id
 
 
 def resolve_cli_path(path: str | Path, root: Path | None = None) -> Path:
@@ -36,7 +40,7 @@ def resolve_cli_path(path: str | Path, root: Path | None = None) -> Path:
     value = Path(path)
     if value.is_absolute():
         return value
-    return (root or repo_root()) / value
+    return (root or ROOT) / value
 
 
 def add_log_level_arg(parser: argparse.ArgumentParser) -> None:
@@ -83,7 +87,7 @@ def log_step(logger: logging.Logger, step_number: int, total_steps: int, message
 
 
 def validate_standardized_table(
-    df: pd.DataFrame,
+    df: Any,
     *,
     required_columns: Iterable[str] = STANDARDIZED_COLUMNS,
 ) -> None:
@@ -100,7 +104,7 @@ def validate_standardized_table(
 
 
 def write_standardized_table(
-    df: pd.DataFrame,
+    df: Any,
     output: Path,
     *,
     logger: logging.Logger | None = None,
