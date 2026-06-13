@@ -10,9 +10,12 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import quote
+
+import requests
 
 
 LOG_LEVEL_CHOICES = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -37,6 +40,54 @@ def zenodo_download_url(filename: str | Path, *, record: str = ZENODO_RECORD) ->
     """Return the direct Zenodo API content URL for a file in the FuNmiRBench record."""
     safe_filename = quote(Path(filename).name, safe="")
     return f"https://zenodo.org/api/records/{record}/files/{safe_filename}/content"
+
+
+def download_file_if_missing(
+    url: str,
+    output: Path,
+    *,
+    logger: logging.Logger | None = None,
+    timeout: int = 120,
+    resource_label: str = "file",
+) -> Path:
+    """Download ``url`` to ``output`` unless the file is already cached."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.exists():
+        if logger is not None:
+            logger.info("Using cached %s: %s", resource_label, output)
+        return output
+
+    if logger is not None:
+        logger.info("Downloading %s: %s", resource_label, output)
+
+    tmp_path = None
+    response = requests.get(url, stream=True, timeout=timeout)
+    response.raise_for_status()
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=output.parent,
+            prefix=f".{output.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            tmp_path = Path(handle.name)
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    handle.write(chunk)
+
+        if tmp_path.stat().st_size == 0:
+            raise RuntimeError(f"Downloaded empty {resource_label} from {url}")
+        tmp_path.replace(output)
+        tmp_path = None
+    finally:
+        response.close()
+        if tmp_path is not None and tmp_path.exists():
+            tmp_path.unlink()
+
+    if logger is not None:
+        logger.info("Saved %s: %s", resource_label, output)
+    return output
 
 
 def predictor_dir(tool_id: str, *, root: Path | None = None) -> Path:
