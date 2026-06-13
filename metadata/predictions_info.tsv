@@ -1,11 +1,10 @@
-tool_id	official_name	organism	score_type	score_direction	score_range	input_id_gene_type	canonical_id_gene_type	input_id_mirna_type	canonical_id_mirna_type	predictor_output_path
-random	Random	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/random/random_standardized.tsv
-random_3000	Random (3000 per dataset)	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/random/random_3000_standardized.tsv
-cheating	Cheating	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/cheating/cheating_standardized.tsv
-perfect	Perfect	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/perfect/perfect_standardized.tsv
-targetscan	TargetScan v8	Homo sapiens	raw_score	lower_is_stronger	context++ raw	ensembl_v115	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/targetscan/targetscan_standardized.tsv
-mirdb_mirtarget	miRDB	Homo sapiens	raw_score	higher_is_stronger	miRDB score	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv
-tec-mitarget	TEC-miTarget	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v109	ensembl_v109	mirbase_v22	mirbase_v22	data/predictions/tec-mitarget/tec_mitarget_standardized.tsv
-microt_cnn	microT-CNN	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v115	ensembl_v115	mirbase_v22	mirbase_v22	data/predictions/microt_cnn/microt_cnn_standardized.tsv
-mirbind2	miRBind2	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v115	ensembl_v115	mirbase_v22	mirbase_v22	data/predictions/mirbind2/mirbind2_standardized.tsv
-miraw	miRAW	Homo sapiens	probability	higher_is_stronger	0-1	ensembl_v115	ensembl_v115	mirbase_v22	mirbase_v22	data/predictions/miraw/miraw_standardized.tsv
+tool_id	official_name	score_direction	predictor_output_path
+random	Random	higher_is_stronger	data/predictions/random/random_standardized.tsv
+random_3000	Random (3000 per dataset)	higher_is_stronger	data/predictions/random/random_3000_standardized.tsv
+cheating	Cheating	higher_is_stronger	data/predictions/cheating/cheating_standardized.tsv
+perfect	Perfect	higher_is_stronger	data/predictions/perfect/perfect_standardized.tsv
+targetscan	TargetScan v8	lower_is_stronger	data/predictions/targetscan/targetscan_standardized.tsv
+mirdb_mirtarget	miRDB	higher_is_stronger	data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv
+microt_cnn	microT-CNN	higher_is_stronger	data/predictions/microt_cnn/microt_cnn_standardized.tsv
+mirbind2	miRBind2	higher_is_stronger	data/predictions/mirbind2/mirbind2_standardized.tsv
+miraw	miRAW	higher_is_stronger	data/predictions/miraw/miraw_standardized.tsv
