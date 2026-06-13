@@ -13,14 +13,12 @@ predictions_tsv: metadata/predictions_info.tsv
 experiments:
   id: [GSE124411_OE_miR_150_5p_2, GSE129076_OE_miR_450a_5p_1]
   # mirna_name: [hsa-miR-375-3p]
-  # mirna_sequence: [UUUGUUCGUUCGGCUCGCGUGA]
   # article_pubmed_id: [https://pubmed.ncbi.nlm.nih.gov/36074222]
   # organism: [Homo sapiens]
-  # experiment_type: [OE, KD]
-  # treatment: [Overexpression of hsa-miR-10a-5p]
+  # tested_cell_line: [HUV-EC-C]
   # tissue: [Cervix]
   # method: [RNA-seq]
-  # gse_url: [https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE124530]
+  # experiment_type: [OE, KD]
   # de_table_path: [data/experiments/processed/18745741/GSE124530_edger_out_oe_hsa_miR_10a_5p_oe_10a5p.tsv]
 
 # Filter predictors by ANY column in the predictions TSV.
