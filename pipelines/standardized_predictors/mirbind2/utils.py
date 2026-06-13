@@ -211,12 +211,13 @@ def build_output_table(
     raw_ensembl_column: str,
     raw_gene_name_column: str,
     raw_mirna_name_column: str,
-    raw_score_column: str,
+    raw_prediction_column: str,
     ensembl_column: str,
     gene_name_column: str,
     mimat_column: str,
     mirna_name_column: str,
     score_column: str,
+    final_columns: list[str],
 ) -> pd.DataFrame:
     out = pd.DataFrame(
         {
@@ -224,9 +225,10 @@ def build_output_table(
             gene_name_column: df[raw_gene_name_column].fillna("").astype(str).str.strip(),
             mimat_column: df[mimat_column].astype(str).str.strip(),
             mirna_name_column: df[raw_mirna_name_column].astype(str).str.strip(),
-            score_column: pd.to_numeric(df[raw_score_column], errors="coerce"),
+            score_column: pd.to_numeric(df[raw_prediction_column], errors="coerce"),
         }
     )
+    out = out.loc[:, final_columns]
     out = _drop_invalid_rows(
         out,
         [ensembl_column, mimat_column, mirna_name_column, score_column],

@@ -5,33 +5,29 @@ This directory contains the standardization pipeline for miRBind2 human 3UTR pre
 ## Files
 
 - `pipeline.py`: CLI entrypoint for the pipeline.
-- `utils.py`: helpers for logging, cleaning, MIMAT annotation, and output construction.
-- `mirbind2_pipeline.log`: log file written by the default run.
+- `utils.py`: helpers for logging, cleaning, mapping, score conversion, and output construction.
+- `mirbind2_pipeline.log`: example log from a completed run.
 
 ## Inputs
 
-The raw input file is not tracked in Git because it is large. Before running the
-pipeline, copy the raw miRBind2 prediction table into this directory with this
-exact filename:
+The raw input file is not tracked in Git because it is large. Before running the pipeline, copy the raw miRBind2 prediction table into this directory with this exact filename:
 
 ```text
-unified_human_mirbase_mane_select_3utrs_selected_18_mirnas_mirbind2_predictions.tsv
+3utrs_mirbind2_predictions_no_sequences.tsv
 ```
 
 Its header is:
 
 ```text
-noTranscript_ID	Gene_ID	Gene_Symbol	miRNA_Name	miRNA_Sequence	UTR_sequence	miRBind2_3UTR_prediction
+Transcript_ID	Gene_ID	Gene_Symbol	miRNA_Name	miRBind2_3UTR_prediction
 ```
 
-The pipeline validates these raw columns:
+The pipeline reads the raw miRBind2 score from `miRBind2_3UTR_prediction`, but this raw column name is not kept in the standardized output. The pipeline validates these raw columns:
 
-- `noTranscript_ID`
+- `Transcript_ID`
 - `Gene_ID`
 - `Gene_Symbol`
 - `miRNA_Name`
-- `miRNA_Sequence`
-- `UTR_sequence`
 - `miRBind2_3UTR_prediction`
 
 The pipeline uses the existing shared miRBase resource:
@@ -53,12 +49,9 @@ The pipeline:
 5. Builds a human miRNA name to `MIMAT` ID mapping from miRBase 22.1 `mature.fa`.
 6. Annotates `miRNA_Name` to `miRNA_ID`.
 7. Drops rows whose miRNA names cannot be mapped to `MIMAT` IDs.
-8. Drops raw transcript and sequence payload columns:
-   - `noTranscript_ID`
-   - `miRNA_Sequence`
-   - `UTR_sequence`
-9. Converts `miRBind2_3UTR_prediction` to numeric `Score`.
-10. Writes the standardized output table.
+8. Converts the raw prediction column to numeric `Score`.
+9. Builds the final output table with the shared standardized schema.
+10. Writes the standardized TSV to the default location.
 
 ## Output Schema
 
@@ -70,8 +63,7 @@ The output TSV contains:
 - `miRNA_Name`
 - `Score`
 
-`Score` is the numeric form of `miRBind2_3UTR_prediction`.
-Missing raw `Gene_Symbol` values are retained as blank `Gene_Name` values.
+`Gene_Name` is copied from the raw `Gene_Symbol` column. `miRNA_Name` is copied from the raw miRNA name column. `Score` is the numeric form of the raw miRBind2 prediction value. The raw `Transcript_ID` and `miRBind2_3UTR_prediction` columns are not retained in the standardized output.
 
 The score is a signed raw miRBind2-3UTR repression prediction, not a probability.
 Lower, more negative scores are treated as stronger predicted repression.
@@ -102,7 +94,7 @@ Relative CLI paths are resolved from the repository root.
 ```bash
 conda run -n standardized_predictors \
   python pipelines/standardized_predictors/mirbind2/pipeline.py \
-  --predictions-file pipelines/standardized_predictors/mirbind2/unified_human_mirbase_mane_select_3utrs_selected_18_mirnas_mirbind2_predictions.tsv \
+  --predictions-file pipelines/standardized_predictors/mirbind2/3utrs_mirbind2_predictions_no_sequences.tsv \
   --mirbase-mature data/resources/mirbase/mature.fa \
   --output data/predictions/mirbind2/mirbind2_standardized.tsv \
   --log-file pipelines/standardized_predictors/mirbind2/mirbind2_pipeline.log \
@@ -111,4 +103,4 @@ conda run -n standardized_predictors \
 
 ## Logging
 
-Logging is written both to stdout and to the log file passed via `--log-file`.
+Logging is written both to stdout and to the log file passed via `--log-file`. Main processing stages are logged as numbered steps and row-count changes are logged in a `before -> after` format.
