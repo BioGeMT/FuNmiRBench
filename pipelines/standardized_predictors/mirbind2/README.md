@@ -13,7 +13,7 @@ This directory contains the standardization pipeline for miRBind2 human 3UTR pre
 The raw input file is not tracked in Git because it is large. Before running the pipeline, copy the raw miRBind2 prediction table into this directory with this exact filename:
 
 ```text
-3utrs_mirbind2_predictions_no_sequences.tsv
+3utrs_mirbind2_predictions.tsv
 ```
 
 Its header is:
