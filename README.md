@@ -303,5 +303,4 @@ uv run funmirbench-validate-experiments --experiments-tsv metadata/mirna_experim
 uv run funmirbench-experiments-download-examples
 uv run funmirbench-experiments --config config.yaml
 uv run funmirbench-sync-metadata
-uv run pytest
 ```

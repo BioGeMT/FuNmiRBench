@@ -21,9 +21,3 @@ funmirbench-validate-experiments = "funmirbench.validate_experiments:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[dependency-groups]
-dev = ["pytest>=8"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
