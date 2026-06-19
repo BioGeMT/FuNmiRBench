@@ -70,7 +70,7 @@ def configure_file_logging(log_file: Path, log_level: str) -> None:
     setup_logging(parse_log_level(log_level))
     root_logger = logging.getLogger()
 
-    # Avoid duplicate file handlers when tests call multiple pipelines in one process.
+    # Avoid duplicate file handlers when multiple pipelines run in one process.
     log_file = log_file.resolve()
     for handler in root_logger.handlers:
         if isinstance(handler, logging.FileHandler) and Path(handler.baseFilename) == log_file:

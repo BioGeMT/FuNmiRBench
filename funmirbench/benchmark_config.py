@@ -73,4 +73,3 @@ def load_predictions(tsv_path, filters):
     if df["tool_id"].duplicated().any():
         raise ValueError("Duplicate tool_id values found after predictor filtering.")
     return {row["tool_id"]: row.to_dict() for _, row in df.iterrows()}
-
