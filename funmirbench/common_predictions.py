@@ -10,7 +10,7 @@ import pandas as pd
 from funmirbench.evaluate import SCORE_PREFIX
 
 
-EXCLUDED_COMMON_SUMMARY_TOOL_IDS = {"random", "random_3000", "cheating", "perfect"}
+EXCLUDED_COMMON_SUMMARY_TOOL_IDS = set()
 
 
 def _score_col(tool_id: str) -> str:
@@ -49,8 +49,7 @@ def build_common_prediction_summary(
 ):
     """Return dataset-level common prediction percentages.
 
-    Percentages use the joined table row count as denominator. Controls/oracles are
-    excluded by default.
+    Percentages use the joined table row count as denominator.
     """
     total_rows = int(len(joined))
     real_tools = _available_real_tools(joined, tool_ids, excluded_tool_ids=excluded_tool_ids)

@@ -1,8 +1,4 @@
 tool_id	official_name	score_direction	predictor_output_path
-random	Random	higher_is_stronger	data/predictions/random/random_standardized.tsv
-random_3000	Random (3000 per dataset)	higher_is_stronger	data/predictions/random/random_3000_standardized.tsv
-cheating	Cheating	higher_is_stronger	data/predictions/cheating/cheating_standardized.tsv
-perfect	Perfect	higher_is_stronger	data/predictions/perfect/perfect_standardized.tsv
 targetscan	TargetScan v8	lower_is_stronger	data/predictions/targetscan/targetscan_standardized.tsv
 mirdb_mirtarget	miRDB	higher_is_stronger	data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv
 microt_cnn	microT-CNN	higher_is_stronger	data/predictions/microt_cnn/microt_cnn_standardized.tsv

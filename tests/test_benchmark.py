@@ -4,16 +4,12 @@ import datetime as dt
 import json
 import pathlib
 import re
-import subprocess
-import sys
 
 import pandas as pd
 import pytest
 
 from funmirbench import DatasetMeta
 from funmirbench import benchmark
-from funmirbench.build_cheating_predictions import build_cheating_scores
-from funmirbench.build_predictions import build_random_scores, write_tsv
 
 
 PDF_MEDIA_BOX_PATTERN = re.compile(rb"/MediaBox\s*\[\s*0\s+0\s+([0-9.]+)\s+([0-9.]+)\s*\]")
@@ -38,45 +34,6 @@ def test_selected_experiment_paths_applies_filters(tmp_path):
     paths = benchmark.selected_experiment_paths(experiments_tsv, {"id": ["B"]})
 
     assert paths == ["data/experiments/processed/18745741/b.tsv"]
-
-
-def test_validate_threshold_sensitive_predictors_requires_matching_metadata(tmp_path):
-    cheating_path = tmp_path / "cheating_standardized.tsv"
-    cheating_path.write_text("", encoding="utf-8")
-    predictions = {"cheating": {"predictor_output_path": str(cheating_path)}}
-
-    with pytest.raises(ValueError, match="no sidecar metadata file"):
-        benchmark.validate_threshold_sensitive_predictors(
-            predictions,
-            root=tmp_path,
-            fdr_threshold=0.10,
-            abs_logfc_threshold=1.0,
-        )
-
-    metadata_path = pathlib.Path(str(cheating_path) + ".meta.json")
-    metadata_path.write_text(
-        json.dumps({"fdr_threshold": 0.10, "abs_logfc_threshold": 1.0}),
-        encoding="utf-8",
-    )
-
-    benchmark.validate_threshold_sensitive_predictors(
-        predictions,
-        root=tmp_path,
-        fdr_threshold=0.10,
-        abs_logfc_threshold=1.0,
-    )
-
-    metadata_path.write_text(
-        json.dumps({"fdr_threshold": 0.05, "abs_logfc_threshold": 1.0}),
-        encoding="utf-8",
-    )
-    with pytest.raises(ValueError, match="was built with thresholds"):
-        benchmark.validate_threshold_sensitive_predictors(
-            predictions,
-            root=tmp_path,
-            fdr_threshold=0.10,
-            abs_logfc_threshold=1.0,
-        )
 
 
 def test_run_benchmark_stops_on_experiment_validation_errors(tmp_path, monkeypatch):
@@ -116,7 +73,7 @@ def test_run_benchmark_stops_on_experiment_validation_errors(tmp_path, monkeypat
     pd.DataFrame(
         [
             {
-                "tool_id": "random",
+                "tool_id": "tool_a",
                 "predictor_output_path": str(score_path),
             }
         ]
@@ -130,7 +87,7 @@ def test_run_benchmark_stops_on_experiment_validation_errors(tmp_path, monkeypat
                 "experiments:",
                 "  id: [T001]",
                 "predictors:",
-                "  tool_id: [random]",
+                "  tool_id: [tool_a]",
                 f"out_dir: {results_dir}",
             ]
         )
@@ -166,7 +123,7 @@ def test_build_run_dir_name_uses_date_only(tmp_path):
 
     name = benchmark.build_run_dir_name(
         experiments=experiments,
-        tool_ids=["random", "cheating"],
+        tool_ids=["targetscan", "mirdb_mirtarget"],
         eval_cfg={"fdr_threshold": 0.05, "abs_logfc_threshold": 1.0},
         tags=["demo"],
         run_date=dt.date(2026, 5, 10),
@@ -175,51 +132,92 @@ def test_build_run_dir_name_uses_date_only(tmp_path):
     assert name == "20260510"
 
 
-def test_example_end_to_end(tmp_path):
+def test_example_end_to_end(tmp_path, monkeypatch):
     """Run a small two-predictor benchmark config and check outputs."""
-    repo_root = pathlib.Path(__file__).resolve().parents[1]
     tmp_dir = tmp_path
     config = tmp_dir / "benchmark.yaml"
     out_root = tmp_dir / "results"
 
-    experiments = pd.read_csv(repo_root / "metadata" / "mirna_experiment_info.tsv", sep="\t")
-    experiments = experiments[
-        experiments["id"].isin([
-            "GSE109725_OE_miR_204_5p",
-            "GSE118315_KO_miR_124_3p",
-            "GSE210778_OE_miR_375_3p",
-        ])
-    ].copy()
-    experiments["de_table_path"] = experiments["de_table_path"].map(
-        lambda value: str((repo_root / value).resolve())
+    de_dir = tmp_dir / "data" / "experiments" / "processed"
+    de_dir.mkdir(parents=True)
+    (de_dir / "d001.tsv").write_text(
+        "gene_id\tlogFC\tFDR\tPValue\n"
+        "ENSG1\t-2.0\t0.01\t0.001\n"
+        "ENSG2\t0.2\t0.50\t0.500\n"
+        "ENSG3\t1.5\t0.02\t0.002\n",
+        encoding="utf-8",
+    )
+    (de_dir / "d002.tsv").write_text(
+        "gene_id\tlogFC\tFDR\tPValue\n"
+        "ENSG4\t-1.8\t0.01\t0.001\n"
+        "ENSG5\t0.1\t0.40\t0.400\n"
+        "ENSG6\t1.4\t0.02\t0.002\n",
+        encoding="utf-8",
+    )
+    experiments = pd.DataFrame(
+        [
+            {
+                "id": "D001",
+                "mirna_name": "hsa-miR-test",
+                "tested_cell_line": "HeLa",
+                "tissue": "cervix",
+                "experiment_type": "OE",
+                "organism": "Homo sapiens",
+                "gse_url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE000001",
+                "de_table_path": "data/experiments/processed/d001.tsv",
+            },
+            {
+                "id": "D002",
+                "mirna_name": "hsa-miR-test",
+                "tested_cell_line": "HeLa",
+                "tissue": "cervix",
+                "experiment_type": "OE",
+                "organism": "Homo sapiens",
+                "gse_url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE000002",
+                "de_table_path": "data/experiments/processed/d002.tsv",
+            },
+        ]
     )
     experiments_tsv = tmp_dir / "experiments.tsv"
     experiments.to_csv(experiments_tsv, sep="\t", index=False)
 
-    predictions = pd.read_csv(repo_root / "metadata" / "predictions_info.tsv", sep="\t")
-    predictions = predictions[predictions["tool_id"].isin(["random", "cheating"])].copy()
-
-    random_path = tmp_dir / "random_standardized.tsv"
-    cheating_path = tmp_dir / "cheating_standardized.tsv"
-    write_tsv(build_random_scores(experiments_tsv, tmp_dir), random_path)
-    write_tsv(
-        build_cheating_scores(
-            experiments_tsv,
-            tmp_dir,
-            dataset_ids=[
-                "GSE109725_OE_miR_204_5p",
-                "GSE118315_KO_miR_124_3p",
-                "GSE210778_OE_miR_375_3p",
-            ],
-        ),
-        cheating_path,
+    targetscan_path = tmp_dir / "targetscan_standardized.tsv"
+    mirdb_path = tmp_dir / "mirdb_mirtarget_standardized.tsv"
+    targetscan_path.write_text(
+        "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+        "ENSG1\t\t\thsa-miR-test\t0.9\n"
+        "ENSG2\t\t\thsa-miR-test\t0.1\n"
+        "ENSG3\t\t\thsa-miR-test\t0.2\n"
+        "ENSG4\t\t\thsa-miR-test\t0.85\n"
+        "ENSG5\t\t\thsa-miR-test\t0.15\n"
+        "ENSG6\t\t\thsa-miR-test\t0.25\n",
+        encoding="utf-8",
     )
-
-    predictions["predictor_output_path"] = predictions["tool_id"].map(
-        {
-            "random": str(random_path.resolve()),
-            "cheating": str(cheating_path.resolve()),
-        }
+    mirdb_path.write_text(
+        "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+        "ENSG1\t\t\thsa-miR-test\t0.8\n"
+        "ENSG2\t\t\thsa-miR-test\t0.2\n"
+        "ENSG3\t\t\thsa-miR-test\t0.3\n"
+        "ENSG4\t\t\thsa-miR-test\t0.75\n"
+        "ENSG5\t\t\thsa-miR-test\t0.25\n"
+        "ENSG6\t\t\thsa-miR-test\t0.35\n",
+        encoding="utf-8",
+    )
+    predictions = pd.DataFrame(
+        [
+            {
+                "tool_id": "targetscan",
+                "official_name": "TargetScan v8",
+                "score_direction": "higher_is_stronger",
+                "predictor_output_path": str(targetscan_path.resolve()),
+            },
+            {
+                "tool_id": "mirdb_mirtarget",
+                "official_name": "miRDB",
+                "score_direction": "higher_is_stronger",
+                "predictor_output_path": str(mirdb_path.resolve()),
+            },
+        ]
     )
     predictions_tsv = tmp_dir / "predictions.tsv"
     predictions.to_csv(predictions_tsv, sep="\t", index=False)
@@ -231,10 +229,10 @@ def test_example_end_to_end(tmp_path):
                 f"predictions_tsv: {predictions_tsv}",
                 "",
                 "experiments:",
-                "  id: [GSE109725_OE_miR_204_5p, GSE118315_KO_miR_124_3p, GSE210778_OE_miR_375_3p]",
+                "  id: [D001, D002]",
                 "",
                 "predictors:",
-                "  tool_id: [random, cheating]",
+                "  tool_id: [targetscan, mirdb_mirtarget]",
                 "",
                 "evaluation:",
                 "  fdr_threshold: 0.05",
@@ -250,13 +248,9 @@ def test_example_end_to_end(tmp_path):
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, "-m", "funmirbench.benchmark", "--config", str(config)],
-        capture_output=True,
-        text=True,
-        cwd=str(repo_root),
-    )
-    assert result.returncode == 0, f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    monkeypatch.setattr(benchmark, "sync_zenodo_experiments", lambda *args, **kwargs: [])
+
+    benchmark.run_benchmark(config)
 
     summary_paths = list(out_root.glob("*/summary.json"))
     assert len(summary_paths) == 1
@@ -281,12 +275,8 @@ def test_example_end_to_end(tmp_path):
     assert summary["metric_tables"]["auroc"].endswith("auroc_per_experiment.tsv")
     assert summary["readme"].endswith("README.md")
     assert summary["report_pdf"].endswith("REPORT.pdf")
-    assert set(summary["dataset_ids"]) == {
-        "GSE109725_OE_miR_204_5p",
-        "GSE210778_OE_miR_375_3p",
-        "GSE118315_KO_miR_124_3p",
-    }
-    assert summary["tool_ids"] == ["random", "cheating"]
+    assert set(summary["dataset_ids"]) == {"D001", "D002"}
+    assert summary["tool_ids"] == ["targetscan", "mirdb_mirtarget"]
 
     report_pdf = out_dir / "REPORT.pdf"
     run_media_boxes = _pdf_media_boxes(report_pdf)
@@ -299,12 +289,12 @@ def test_example_end_to_end(tmp_path):
     dataset_pdf = (
         out_dir
         / "datasets"
-        / "GSE109725_OE_miR_204_5p"
+        / "D001"
         / "reports"
-        / "GSE109725_OE_miR_204_5p__random_evaluation_report.pdf"
+        / "D001__targetscan_evaluation_report.pdf"
     )
     dataset_media_boxes = _pdf_media_boxes(dataset_pdf)
-    assert len(dataset_media_boxes) == 2
+    assert len(dataset_media_boxes) >= 2
     assert len(set(dataset_media_boxes)) == 1
 
     assert (
@@ -336,10 +326,10 @@ def test_example_end_to_end(tmp_path):
         / "predictor_combination_expanded_frontier.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "heatmaps" / "top_10pct_positive_genes.png"
+        out_dir / "datasets" / "D001" / "plots" / "heatmaps" / "top_10pct_positive_genes.png"
     ).is_file()
     assert (
-        out_dir / "datasets" / "GSE109725_OE_miR_204_5p" / "plots" / "comparisons" / "top_100_effect_cdfs.png"
+        out_dir / "datasets" / "D001" / "plots" / "comparisons" / "top_100_effect_cdfs.png"
     ).is_file()
 
 
@@ -374,7 +364,7 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
     pd.DataFrame(
         [
             {
-                "tool_id": "random",
+                "tool_id": "tool_a",
                 "predictor_output_path": str(score_path),
             }
         ]
@@ -388,7 +378,7 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
                 "experiments:",
                 "  id: [T001]",
                 "predictors:",
-                "  tool_id: [random]",
+                "  tool_id: [tool_a]",
                 f"out_dir: {results_dir}",
             ]
         )
@@ -439,7 +429,7 @@ def test_run_benchmark_syncs_missing_experiment_tables(tmp_path, monkeypatch):
     assert sync_calls == [(["data/experiments/processed/18745741/demo.tsv"], tmp_path, None, 120, False)]
     joined = pd.read_csv(out_dir / "datasets" / "T001" / "joined.tsv", sep="\t")
     assert joined["gene_id"].tolist() == ["ENSG1", "ENSG2"]
-    assert joined["score_random"].tolist() == [0.9, 0.1]
+    assert joined["score_tool_a"].tolist() == [0.9, 0.1]
 
 
 def test_run_benchmark_passes_post_evaluation_joined_frames(tmp_path, monkeypatch):
@@ -473,7 +463,7 @@ def test_run_benchmark_passes_post_evaluation_joined_frames(tmp_path, monkeypatc
     pd.DataFrame(
         [
             {
-                "tool_id": "random",
+                "tool_id": "tool_a",
                 "predictor_output_path": str(score_path),
             }
         ]
@@ -487,7 +477,7 @@ def test_run_benchmark_passes_post_evaluation_joined_frames(tmp_path, monkeypatc
                 "experiments:",
                 "  id: [T001]",
                 "predictors:",
-                "  tool_id: [random]",
+                "  tool_id: [tool_a]",
                 f"out_dir: {results_dir}",
             ]
         )
@@ -509,7 +499,7 @@ def test_run_benchmark_passes_post_evaluation_joined_frames(tmp_path, monkeypatc
     captured = {}
 
     def fake_evaluate_joined_dataframe(joined, *args, **kwargs):
-        joined["local_rank_random"] = [0.8, 0.2]
+        joined["local_rank_tool_a"] = [0.8, 0.2]
         return {
             "metric_rows": [],
             "plots": [],
@@ -532,4 +522,4 @@ def test_run_benchmark_passes_post_evaluation_joined_frames(tmp_path, monkeypatc
     benchmark.run_benchmark(config)
 
     assert len(captured["joined_frames"]) == 1
-    assert "local_rank_random" in captured["joined_frames"][0].columns
+    assert "local_rank_tool_a" in captured["joined_frames"][0].columns

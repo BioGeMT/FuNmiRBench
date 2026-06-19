@@ -95,12 +95,12 @@ class TestBuildJoined:
             tissue="cervix", perturbation="OE", organism="Homo sapiens",
             geo_accession="GSE002", data_path="de.tsv", root=tmp_path,
         )
-        predictions = {"mock": {"predictor_output_path": "scores.tsv"}}
-        joined, paths = build_joined(meta, ["mock"], predictions, tmp_path)
+        predictions = {"tool_a": {"predictor_output_path": "scores.tsv"}}
+        joined, paths = build_joined(meta, ["tool_a"], predictions, tmp_path)
         assert len(joined) == 3
-        assert "score_mock" in joined.columns
-        assert "global_rank_mock" in joined.columns
-        assert pd.isna(joined[joined["gene_id"] == "ENSG003"]["score_mock"].iloc[0])
+        assert "score_tool_a" in joined.columns
+        assert "global_rank_tool_a" in joined.columns
+        assert pd.isna(joined[joined["gene_id"] == "ENSG003"]["score_tool_a"].iloc[0])
 
     def test_duplicate_tool_scores_keep_strongest(self, tmp_path):
         _write(tmp_path / "de.tsv", (
@@ -118,11 +118,11 @@ class TestBuildJoined:
             tissue="cervix", perturbation="OE", organism="Homo sapiens",
             geo_accession="GSE006", data_path="de.tsv", root=tmp_path,
         )
-        predictions = {"mock": {"predictor_output_path": "scores.tsv"}}
-        joined, _ = build_joined(meta, ["mock"], predictions, tmp_path)
-        scored = joined.set_index("gene_id")["score_mock"].to_dict()
+        predictions = {"tool_a": {"predictor_output_path": "scores.tsv"}}
+        joined, _ = build_joined(meta, ["tool_a"], predictions, tmp_path)
+        scored = joined.set_index("gene_id")["score_tool_a"].to_dict()
         assert scored["ENSG001"] == 0.9
-        ranked = joined.set_index("gene_id")["global_rank_mock"].to_dict()
+        ranked = joined.set_index("gene_id")["global_rank_tool_a"].to_dict()
         assert ranked["ENSG001"] == 1.0
 
     def test_lower_is_stronger_scores_are_inverted(self, tmp_path):
@@ -223,9 +223,9 @@ class TestBuildJoined:
             tissue="cervix", perturbation="OE", organism="Homo sapiens",
             geo_accession="GSE010", data_path="de.tsv", root=tmp_path,
         )
-        predictions = {"mock": {"predictor_output_path": "scores.tsv"}}
-        joined, _ = build_joined(meta, ["mock"], predictions, tmp_path)
-        ranked = joined.set_index("gene_id")["global_rank_mock"].to_dict()
+        predictions = {"tool_a": {"predictor_output_path": "scores.tsv"}}
+        joined, _ = build_joined(meta, ["tool_a"], predictions, tmp_path)
+        ranked = joined.set_index("gene_id")["global_rank_tool_a"].to_dict()
         assert ranked["ENSG001"] == ranked["ENSG002"]
         assert ranked["ENSG001"] == pytest.approx(2.0 / 3.0)
         assert ranked["ENSG003"] == pytest.approx(1.0 / 3.0)
@@ -246,8 +246,8 @@ class TestBuildJoined:
             tissue="cervix", perturbation="OE", organism="Homo sapiens",
             geo_accession="GSE011", data_path="de.tsv", root=tmp_path,
         )
-        predictions = {"mock": {"predictor_output_path": "scores.tsv"}}
-        joined, _ = build_joined(meta, ["mock"], predictions, tmp_path)
-        scored = joined.set_index("gene_id")["score_mock"].to_dict()
+        predictions = {"tool_a": {"predictor_output_path": "scores.tsv"}}
+        joined, _ = build_joined(meta, ["tool_a"], predictions, tmp_path)
+        scored = joined.set_index("gene_id")["score_tool_a"].to_dict()
         assert scored["ENSG001"] == 0.9
         assert pd.isna(scored["ENSG002"])

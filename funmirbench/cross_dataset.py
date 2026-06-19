@@ -12,7 +12,7 @@ from matplotlib.ticker import NullLocator, PercentFormatter
 import funmirbench.evaluate as ev
 
 
-CONTROL_PLOT_TOOL_IDS = ev.PUBLICATION_EXCLUDED_TOOL_IDS
+CONTROL_PLOT_TOOL_IDS = set()
 
 
 def _is_real_plot_tool(tool_id):

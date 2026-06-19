@@ -29,7 +29,7 @@ def test_write_metric_tables_keeps_rows_with_missing_ids(tmp_path):
                 "cell_line": "HeLa",
                 "perturbation": "OE",
                 "geo_accession": None,
-                "tool_id": "mock",
+                "tool_id": "tool_a",
                 "coverage": 0.75,
                 "positive_coverage": 0.5,
                 "aps": 0.75,
@@ -65,8 +65,8 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
                 "gene_id": ["ENSG1", "ENSG2", "ENSG3"],
                 "logFC": [2.0, 0.1, -1.5],
                 "FDR": [0.01, 0.6, 0.02],
-                "global_rank_mock": [0.9, 0.3, 0.7],
-                "global_rank_cheating": [0.98, 0.2, 0.8],
+                "global_rank_tool_a": [0.9, 0.3, 0.7],
+                "global_rank_mirbind2": [0.98, 0.2, 0.8],
                 "global_rank_targetscan": [0.85, 0.2, 0.65],
             }
         ),
@@ -76,8 +76,8 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
                 "gene_id": ["ENSG4", "ENSG5", "ENSG6"],
                 "logFC": [1.8, -0.2, -1.7],
                 "FDR": [0.03, 0.4, 0.01],
-                "global_rank_mock": [0.8, 0.4, 0.6],
-                "global_rank_cheating": [0.96, 0.1, 0.75],
+                "global_rank_tool_a": [0.8, 0.4, 0.6],
+                "global_rank_mirbind2": [0.96, 0.1, 0.75],
                 "global_rank_targetscan": [0.72, 0.35, 0.62],
             }
         ),
@@ -90,7 +90,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
                 "cell_line": "HeLa",
                 "perturbation": "OE",
                 "geo_accession": "GSE1",
-                "tool_id": "mock",
+                "tool_id": "tool_a",
                 "coverage": 0.8,
                 "positive_coverage": 0.5,
                 "aps": 0.7,
@@ -104,7 +104,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
                 "cell_line": "A549",
                 "perturbation": "KO",
                 "geo_accession": "GSE2",
-                "tool_id": "mock",
+                "tool_id": "tool_a",
                 "coverage": 0.6,
                 "positive_coverage": 0.25,
                 "aps": 0.5,
@@ -132,7 +132,7 @@ def test_write_cross_dataset_summaries_creates_table_and_plots(tmp_path):
                 "cell_line": "HeLa",
                 "perturbation": "OE",
                 "geo_accession": "GSE1",
-                "tool_id": "cheating",
+                "tool_id": "mirbind2",
                 "coverage": 1.0,
                 "positive_coverage": 1.0,
                 "aps": 0.95,
@@ -182,13 +182,13 @@ def test_metric_plot_limits_allow_negative_spearman():
 def test_rank_distribution_specs_prefer_local_ranks():
     frame = pd.DataFrame(
         {
-            "local_rank_mock": [0.9, 0.1],
-            "global_rank_mock": [0.1, 0.9],
+            "local_rank_tool_a": [0.9, 0.1],
+            "global_rank_tool_a": [0.1, 0.9],
             "global_rank_targetscan": [0.2, 0.3],
         }
     )
     assert evaluate_module._rank_distribution_specs(frame) == [
-        ("mock", "local_rank_mock", "local"),
+        ("tool_a", "local_rank_tool_a", "local"),
         ("targetscan", "global_rank_targetscan", "global"),
     ]
 
@@ -198,10 +198,10 @@ def test_positive_count_caption_uses_scored_over_total():
 
 
 def test_tool_colors_follow_predictor_order():
-    evaluate_module._set_tool_colors(["targetscan", "mirdb", "random"])
+    evaluate_module._set_tool_colors(["targetscan", "mirdb", "microt_cnn"])
     assert evaluate_module._tool_color("targetscan") == evaluate_module.CURVE_COLORS[0]
     assert evaluate_module._tool_color("mirdb") == evaluate_module.CURVE_COLORS[1]
-    assert evaluate_module._tool_color("random") == evaluate_module.CURVE_COLORS[2]
+    assert evaluate_module._tool_color("microt_cnn") == evaluate_module.CURVE_COLORS[2]
 
 
 def test_heatmap_rows_are_sorted_by_perturbation_aware_logfc():
@@ -226,7 +226,7 @@ def test_evaluate_rejects_single_class_labels(tmp_path):
             "gene_id": ["ENSG1", "ENSG2"],
             "logFC": [2.0, 3.0],
             "FDR": [0.01, 0.001],
-            "score_mock": [0.8, 0.2],
+            "score_tool_a": [0.8, 0.2],
         }
     )
     with pytest.raises(ValueError, match="No negatives remain"):
@@ -249,7 +249,7 @@ def test_evaluate_uses_perturbation_aware_gt_labels(tmp_path):
             "gene_id": ["ENSG1", "ENSG2"],
             "logFC": [-2.0, 2.0],
             "FDR": [0.01, 0.01],
-            "score_mock": [0.9, 0.1],
+            "score_tool_a": [0.9, 0.1],
         }
     )
     result = evaluate_joined_dataframe(
@@ -274,7 +274,7 @@ def test_evaluate_uses_official_tool_name_in_report(tmp_path):
             "gene_id": ["ENSG1", "ENSG2", "ENSG3"],
             "logFC": [-2.0, -1.5, 0.2],
             "FDR": [0.01, 0.02, 0.8],
-            "score_mock": [0.9, 0.7, 0.1],
+            "score_tool_a": [0.9, 0.7, 0.1],
         }
     )
     evaluate_joined_dataframe(
@@ -285,11 +285,11 @@ def test_evaluate_uses_official_tool_name_in_report(tmp_path):
         abs_logfc_threshold=1.0,
         predictor_top_fraction=0.10,
         perturbation="OE",
-        tool_labels={"mock": "Mock Official Name"},
+        tool_labels={"tool_a": "Tool A Official Name"},
     )
-    report_text = (tmp_path / "reports" / "D001__mock_evaluation_report.md").read_text(encoding="utf-8")
-    assert "Mock Official Name" in report_text
-    assert "# Evaluation Report: D001 | Mock Official Name" in report_text
+    report_text = (tmp_path / "reports" / "D001__tool_a_evaluation_report.md").read_text(encoding="utf-8")
+    assert "Tool A Official Name" in report_text
+    assert "# Evaluation Report: D001 | Tool A Official Name" in report_text
 
 
 def test_evaluate_writes_combined_comparison_plots(tmp_path):
@@ -300,8 +300,8 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
             "gene_id": ["ENSG1", "ENSG2", "ENSG3", "ENSG4"],
             "logFC": [2.0, 1.5, 0.2, -0.1],
             "FDR": [0.01, 0.02, 0.3, 0.8],
-            "score_mock": [0.9, 0.2, 0.5, 0.1],
-            "score_cheating": [0.95, 0.88, 0.1, 0.05],
+            "score_tool_a": [0.9, 0.2, 0.5, 0.1],
+            "score_mirbind2": [0.95, 0.88, 0.1, 0.05],
         }
     )
     result = evaluate_joined_dataframe(
@@ -312,11 +312,11 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
         abs_logfc_threshold=1.0,
         predictor_top_fraction=0.10,
     )
-    assert "mock_scatter" in result["plots"]
-    assert "mock_gsea_enrichment" in result["plots"]
-    assert "mock_pr_curve" in result["plots"]
-    assert "mock_roc_curve" in result["plots"]
-    assert "cheating_pr_curve" in result["plots"]
+    assert "tool_a_scatter" in result["plots"]
+    assert "tool_a_gsea_enrichment" in result["plots"]
+    assert "tool_a_pr_curve" in result["plots"]
+    assert "tool_a_roc_curve" in result["plots"]
+    assert "mirbind2_pr_curve" in result["plots"]
     assert "predictor_pr_curves" in result["plots"]
     assert "predictor_pr_curves_all_scored" in result["plots"]
     assert "predictor_roc_curves" in result["plots"]
@@ -324,11 +324,11 @@ def test_evaluate_writes_combined_comparison_plots(tmp_path):
     assert "predictor_gsea_curves" in result["plots"]
     assert "predictor_top100_effect_cdfs" not in result["plots"]
     assert "top_10pct_positive_heatmap" in result["plots"]
-    assert (tmp_path / "plots" / "predictors" / "mock" / "score_vs_expected_effect.png").is_file()
-    assert (tmp_path / "plots" / "predictors" / "mock" / "gsea_enrichment.png").is_file()
-    assert (tmp_path / "plots" / "predictors" / "mock" / "precision_recall_curve.png").is_file()
-    assert (tmp_path / "plots" / "predictors" / "mock" / "roc_curve.png").is_file()
-    assert (tmp_path / "plots" / "predictors" / "cheating" / "precision_recall_curve.png").is_file()
+    assert (tmp_path / "plots" / "predictors" / "tool_a" / "score_vs_expected_effect.png").is_file()
+    assert (tmp_path / "plots" / "predictors" / "tool_a" / "gsea_enrichment.png").is_file()
+    assert (tmp_path / "plots" / "predictors" / "tool_a" / "precision_recall_curve.png").is_file()
+    assert (tmp_path / "plots" / "predictors" / "tool_a" / "roc_curve.png").is_file()
+    assert (tmp_path / "plots" / "predictors" / "mirbind2" / "precision_recall_curve.png").is_file()
     assert (tmp_path / "plots" / "comparisons" / "precision_recall_common.png").is_file()
     assert (tmp_path / "plots" / "comparisons" / "precision_recall_all_scored.png").is_file()
     assert (tmp_path / "plots" / "comparisons" / "roc_common.png").is_file()
@@ -346,8 +346,8 @@ def test_cross_predictor_plots_use_common_scored_rows(tmp_path, monkeypatch):
             "gene_id": ["ENSG1", "ENSG2", "ENSG3", "ENSG4"],
             "logFC": [2.0, 0.4, 0.2, -0.1],
             "FDR": [0.01, 0.01, 0.4, 0.8],
-            "score_mock": [0.9, 0.8, None, 0.2],
-            "score_cheating": [0.95, 0.7, 0.1, None],
+            "score_tool_a": [0.9, 0.8, None, 0.2],
+            "score_mirbind2": [0.95, 0.7, 0.1, None],
         }
     )
     captured = {}
@@ -399,18 +399,18 @@ def test_cross_predictor_plots_use_common_scored_rows(tmp_path, monkeypatch):
         assert all(len(item["y_true"]) == 2 for item in comparisons)
         assert all(int(item["y_true"].sum()) == 1 for item in comparisons)
         assert comparisons[0]["y_true"].tolist() == comparisons[1]["y_true"].tolist()
-        assert [item["tool_id"] for item in comparisons] == ["cheating", "mock"]
+        assert [item["tool_id"] for item in comparisons] == ["mirbind2", "tool_a"]
     own_comparisons = captured["pr_all"]
     assert len(own_comparisons) == 2
     assert sorted((item["tool_id"], len(item["y_true"])) for item in own_comparisons) == [
-        ("cheating", 3),
-        ("mock", 3),
+        ("mirbind2", 3),
+        ("tool_a", 3),
     ]
     own_roc_comparisons = captured["roc_all"]
     assert len(own_roc_comparisons) == 2
     assert sorted((item["tool_id"], len(item["y_true"])) for item in own_roc_comparisons) == [
-        ("cheating", 3),
-        ("mock", 3),
+        ("mirbind2", 3),
+        ("tool_a", 3),
     ]
 
 
@@ -438,10 +438,10 @@ def test_per_dataset_visuals_use_local_ranks_not_global_ranks(tmp_path, monkeypa
             "gene_id": ["ENSG1", "ENSG2", "ENSG3", "ENSG4"],
             "logFC": [2.0, 1.5, 0.2, -0.1],
             "FDR": [0.01, 0.02, 0.3, 0.8],
-            "score_mock": [0.9, 0.2, 0.5, 0.1],
-            "score_cheating": [0.95, 0.88, 0.1, 0.05],
-            "global_rank_mock": [0.0, 0.0, 1.0, 1.0],
-            "global_rank_cheating": [1.0, 1.0, 0.0, 0.0],
+            "score_tool_a": [0.9, 0.2, 0.5, 0.1],
+            "score_mirbind2": [0.95, 0.88, 0.1, 0.05],
+            "global_rank_tool_a": [0.0, 0.0, 1.0, 1.0],
+            "global_rank_mirbind2": [1.0, 1.0, 0.0, 0.0],
         }
     )
     captured = {}
@@ -485,12 +485,12 @@ def test_per_dataset_visuals_use_local_ranks_not_global_ranks(tmp_path, monkeypa
         predictor_top_fraction=0.10,
     )
 
-    expected_mock = evaluate_module._rank_scale_scores(joined["score_mock"])
-    expected_cheating = evaluate_module._rank_scale_scores(joined["score_cheating"])
+    expected_tool_a = evaluate_module._rank_scale_scores(joined["score_tool_a"])
+    expected_mirbind2 = evaluate_module._rank_scale_scores(joined["score_mirbind2"])
     for key in ("alg", "top", "corr"):
-        assert captured[f"{key}_cols"] == ["local_rank_cheating", "local_rank_mock"]
-        assert captured[key]["local_rank_mock"].tolist() == expected_mock.tolist()
-        assert captured[key]["local_rank_cheating"].tolist() == expected_cheating.tolist()
+        assert captured[f"{key}_cols"] == ["local_rank_mirbind2", "local_rank_tool_a"]
+        assert captured[key]["local_rank_tool_a"].tolist() == expected_tool_a.tolist()
+        assert captured[key]["local_rank_mirbind2"].tolist() == expected_mirbind2.tolist()
 
 
 def test_evaluate_uses_only_existing_pairs_and_reports_coverage(tmp_path):
@@ -551,8 +551,8 @@ def test_evaluate_uses_supplied_logger(tmp_path):
             "gene_id": ["ENSG1", "ENSG2", "ENSG3", "ENSG4"],
             "logFC": [2.0, 1.5, 0.2, -0.1],
             "FDR": [0.01, 0.02, 0.3, 0.8],
-            "score_mock": [0.9, 0.2, 0.5, 0.1],
-            "score_cheating": [0.95, 0.88, 0.1, 0.05],
+            "score_tool_a": [0.9, 0.2, 0.5, 0.1],
+            "score_mirbind2": [0.95, 0.88, 0.1, 0.05],
         }
     )
     messages = []
@@ -566,6 +566,6 @@ def test_evaluate_uses_supplied_logger(tmp_path):
         logger=messages.append,
     )
     assert any("Evaluation start: D001" in message for message in messages)
-    assert any("Tool: mock | coverage=" in message and "positive_cov=" in message for message in messages)
+    assert any("Tool: tool_a | coverage=" in message and "positive_cov=" in message for message in messages)
     assert any("wrote PR/ROC/GSEA comparison plots" in message for message in messages)
     assert any("Evaluation complete: D001" in message for message in messages)

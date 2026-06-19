@@ -34,12 +34,7 @@ from funmirbench.evaluate import (
 )
 
 
-EXCLUDED_COMBINATION_TOOL_IDS = {
-    "random",
-    "random_3000",
-    "cheating",
-    "perfect",
-}
+EXCLUDED_COMBINATION_TOOL_IDS = set()
 DEFAULT_MIN_DATASET_COVERAGE = 0.01
 DEFAULT_MAX_COMBINATION_SIZE = None
 DEFAULT_PREDICTOR_TOP_FRACTION = 0.10

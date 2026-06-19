@@ -59,7 +59,7 @@ def test_audit_run_flags_missing_auroc_metric_table(tmp_path):
     assert any("metric_tables is missing: auroc" in issue.message for issue in issues)
 
 
-def test_audit_run_warns_about_sparse_non_oracle_headline_candidates(tmp_path):
+def test_audit_run_warns_about_sparse_headline_candidates(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     _write_minimal_pdf(run_dir / "REPORT.pdf")
@@ -69,7 +69,7 @@ def test_audit_run_warns_about_sparse_non_oracle_headline_candidates(tmp_path):
     summary_table.write_text(
         "tool_id\tcoverage_mean\taps_mean\n"
         "tec-mitarget\t0.001\t0.173\n"
-        "cheating\t1.0\t0.999\n",
+        "mirbind2\t1.0\t0.999\n",
         encoding="utf-8",
     )
     summary = {
@@ -105,5 +105,5 @@ def test_audit_run_warns_about_sparse_non_oracle_headline_candidates(tmp_path):
 
     issues = audit_run(run_dir, min_headline_coverage=0.10)
 
-    assert any("Sparse non-oracle predictors" in issue.message for issue in issues)
-    assert not any("cheating" in issue.message for issue in issues)
+    assert any("Sparse predictors" in issue.message for issue in issues)
+    assert not any("mirbind2" in issue.message for issue in issues)

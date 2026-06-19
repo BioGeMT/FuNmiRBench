@@ -22,7 +22,6 @@ from sklearn.metrics import (
 SCORE_PREFIX = "score_"
 GLOBAL_RANK_PREFIX = "global_rank_"
 LOCAL_RANK_PREFIX = "local_rank_"
-PUBLICATION_EXCLUDED_TOOL_IDS = {"random", "random_3000", "cheating", "perfect"}
 FIGURE_DPI = 300
 REPORT_PAGE_SIZE = (8.27, 11.69)
 PLOT_TITLE_SIZE = 17.0
@@ -59,7 +58,7 @@ TOOL_COLORS = {}
 
 
 def _is_publication_tool(tool_id):
-    return str(tool_id) not in PUBLICATION_EXCLUDED_TOOL_IDS
+    return True
 
 
 def _publication_tool_ids(tool_ids):
