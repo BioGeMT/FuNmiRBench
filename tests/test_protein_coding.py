@@ -3,6 +3,9 @@
 import gzip
 import textwrap
 
+import pytest
+
+from funmirbench.benchmark import _optional_bool
 from funmirbench.protein_coding import (
     load_protein_coding_gene_ids,
     parse_protein_coding_gene_ids_from_gtf,
@@ -36,3 +39,19 @@ def test_load_protein_coding_gene_ids_uses_cache(tmp_path):
     cache.write_text("ENSG001.5\nENSG002\n", encoding="utf-8")
 
     assert load_protein_coding_gene_ids(root=tmp_path, cache_path=cache) == {"ENSG001", "ENSG002"}
+
+
+def test_optional_bool_parses_config_values():
+    assert _optional_bool(None, True) is True
+    assert _optional_bool(None, False) is False
+    assert _optional_bool(True, False) is True
+    assert _optional_bool(False, True) is False
+    assert _optional_bool("true", False) is True
+    assert _optional_bool("false", True) is False
+    assert _optional_bool("yes", False) is True
+    assert _optional_bool("no", True) is False
+
+
+def test_optional_bool_rejects_ambiguous_config_values():
+    with pytest.raises(ValueError, match="Expected a boolean value"):
+        _optional_bool("maybe", True)

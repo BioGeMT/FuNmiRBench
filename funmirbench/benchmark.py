@@ -71,6 +71,20 @@ def _optional_float(value, default=None):
     return float(value)
 
 
+def _optional_bool(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+    raise ValueError(f"Expected a boolean value, got {value!r}")
+
+
 def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
     dataset_plots_dir = plots_dir / dataset_id
     if dataset_plots_dir.exists():
@@ -199,11 +213,11 @@ def run_benchmark(config_path):
         eval_cfg.get("effect_threshold", eval_cfg.get("abs_logfc_threshold", 1.0))
     )
     predictor_top_fraction = float(eval_cfg.get("predictor_top_fraction", 0.10))
-    write_top_prediction_cdfs = bool(eval_cfg.get("write_top_prediction_cdfs", True))
+    write_top_prediction_cdfs = _optional_bool(eval_cfg.get("write_top_prediction_cdfs"), True)
     report_min_common_coverage = float(
         eval_cfg.get("report_min_common_coverage", eval_cfg.get("publication_min_common_coverage", 0.10))
     )
-    protein_coding_only = bool(eval_cfg.get("protein_coding_only", True))
+    protein_coding_only = _optional_bool(eval_cfg.get("protein_coding_only"), True)
 
     logger.info("Syncing selected experiment DE tables from Zenodo...")
     synced = sync_zenodo_experiments(
