@@ -8,7 +8,7 @@ predictions_tsv: metadata/predictions_info.tsv
 
 # Filter experiments by ANY column in the experiments TSV.
 # AND across columns, OR within each column's value list.
-# The default repo config ships with a small 3-dataset demo selection.
+# The default repo config ships with a small 2-dataset demo selection.
 # Edit or comment these active rows to benchmark other subsets.
 experiments:
   id: [GSE124411_OE_miR_150_5p_2, GSE129076_OE_miR_450a_5p_1]
@@ -36,11 +36,11 @@ evaluation:
   predictor_top_fraction: 0.10
   write_top_prediction_cdfs: true
   report_min_common_coverage: 0.10
-  # If true, DE rows are filtered to Ensembl protein-coding genes before joining predictions.
-  # The gene set is cached at data/resources/ensembl/protein_coding_gene_ids.txt.
-  protein_coding_only: false
-  # protein_coding_gtf: data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz
-  # protein_coding_gene_cache: data/resources/ensembl/protein_coding_gene_ids.txt
+  # Primary benchmark universe: Ensembl protein-coding genes only.
+  # The first run downloads/reuses the Ensembl v115 GTF and caches the gene set.
+  protein_coding_only: true
+  protein_coding_gtf: data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz
+  protein_coding_gene_cache: data/resources/ensembl/protein_coding_gene_ids.txt
   figure_dpi: 600
 
 out_dir: results/

@@ -203,7 +203,7 @@ def run_benchmark(config_path):
     report_min_common_coverage = float(
         eval_cfg.get("report_min_common_coverage", eval_cfg.get("publication_min_common_coverage", 0.10))
     )
-    protein_coding_only = bool(eval_cfg.get("protein_coding_only", False))
+    protein_coding_only = bool(eval_cfg.get("protein_coding_only", True))
 
     logger.info("Syncing selected experiment DE tables from Zenodo...")
     synced = sync_zenodo_experiments(
