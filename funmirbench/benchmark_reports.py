@@ -256,6 +256,7 @@ def write_run_readme(
     fdr_threshold,
     abs_logfc_threshold,
     predictor_top_fraction,
+    protein_coding_filter=None,
 ):
     summary_df = _load_cross_dataset_summary(combined_outputs)
     display_tool_ids = _publication_tool_ids(tool_ids) or list(tool_ids)
@@ -289,15 +290,33 @@ def write_run_readme(
         "- Per-dataset heatmaps and agreement plots: dataset-local tie-aware dense ranking over scored rows",
         "- Cross-dataset rank-distribution plots: global tie-aware dense ranking over each predictor's full standardized file",
         "- Combined PR/ROC/GSEA comparison plots: computed on the common set of genes scored by all compared predictors",
-        "",
-        "## Cross-Dataset Summary",
-        (
-            "Coverage, positive coverage, and mean metric performance are summarized numerically below. "
-            "The PDF report carries the same summary and analysis text, so coverage-vs-performance is reported "
-            "as a table instead of a separate scatter plot."
-        ),
-        "",
     ]
+    if protein_coding_filter and protein_coding_filter.get("enabled"):
+        lines.extend(
+            [
+                (
+                    "- Protein-coding filter: enabled "
+                    f"(Ensembl release {protein_coding_filter.get('ensembl_release', 'NA')}; "
+                    f"{protein_coding_filter.get('gene_count', 'NA')} genes)"
+                ),
+                f"- Protein-coding GTF: `{protein_coding_filter.get('gtf_path', 'NA')}`",
+                f"- Protein-coding gene cache: `{protein_coding_filter.get('gene_cache', 'NA')}`",
+            ]
+        )
+    else:
+        lines.append("- Protein-coding filter: disabled")
+    lines.extend(
+        [
+            "",
+            "## Cross-Dataset Summary",
+            (
+                "Coverage, positive coverage, and mean metric performance are summarized numerically below. "
+                "The PDF report carries the same summary and analysis text, so coverage-vs-performance is reported "
+                "as a table instead of a separate scatter plot."
+            ),
+            "",
+        ]
+    )
     if summary_df is not None and not summary_df.empty:
         lines.extend(_cross_dataset_markdown_table(summary_df))
         lines.extend(["", "### Coverage Notes"])

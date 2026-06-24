@@ -37,7 +37,12 @@ from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
 from funmirbench.logger import parse_log_level, setup_logging
 from funmirbench.predictor_combinations import write_predictor_combination_outputs
-from funmirbench.protein_coding import load_protein_coding_gene_ids
+from funmirbench.protein_coding import (
+    DEFAULT_CACHE_REL_PATH,
+    DEFAULT_GTF_REL_PATH,
+    ENSEMBL_RELEASE,
+    load_protein_coding_gene_ids,
+)
 from funmirbench.run_report import write_run_pdf_report
 from funmirbench.validate_experiments import (
     format_validation_failure,
@@ -91,6 +96,7 @@ def _finalize_run_bundle(
     fdr_threshold,
     abs_logfc_threshold,
     predictor_top_fraction,
+    protein_coding_filter,
 ):
     layout = _init_run_layout(out_dir)
     metric_tables = write_metric_tables(
@@ -136,6 +142,7 @@ def _finalize_run_bundle(
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
         predictor_top_fraction=predictor_top_fraction,
+        protein_coding_filter=protein_coding_filter,
     )
     report_path = write_run_pdf_report(
         out_dir,
@@ -160,6 +167,7 @@ def _finalize_run_bundle(
         "report_pdf": str(report_path),
         "metric_tables": metric_tables,
         "cross_dataset_outputs": combined_outputs,
+        "protein_coding_filter": protein_coding_filter,
         "datasets": dataset_outputs,
     }
     summary_path = out_dir / "summary.json"
@@ -253,6 +261,13 @@ def run_benchmark(config_path):
         predictions = publication_predictions
 
     protein_coding_gene_ids = None
+    protein_coding_filter = {
+        "enabled": protein_coding_only,
+        "ensembl_release": ENSEMBL_RELEASE,
+        "gtf_path": str(eval_cfg.get("protein_coding_gtf") or DEFAULT_GTF_REL_PATH),
+        "gene_cache": str(eval_cfg.get("protein_coding_gene_cache") or DEFAULT_CACHE_REL_PATH),
+        "gene_count": None,
+    }
     if protein_coding_only:
         logger.info("Protein-coding-only evaluation filter is enabled.")
         protein_coding_gene_ids = load_protein_coding_gene_ids(
@@ -260,6 +275,7 @@ def run_benchmark(config_path):
             gtf_path=eval_cfg.get("protein_coding_gtf"),
             cache_path=eval_cfg.get("protein_coding_gene_cache"),
         )
+        protein_coding_filter["gene_count"] = len(protein_coding_gene_ids)
         logger.info("Protein-coding gene set contains %d genes.", len(protein_coding_gene_ids))
 
     evaluate_module.FIGURE_DPI = int(eval_cfg.get("figure_dpi", eval_cfg.get("publication_figure_dpi", 450)))
@@ -404,6 +420,7 @@ def run_benchmark(config_path):
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
         predictor_top_fraction=predictor_top_fraction,
+        protein_coding_filter=protein_coding_filter,
     )
     return out_dir
 

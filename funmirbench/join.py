@@ -75,7 +75,7 @@ def load_experiment_table(
         de.insert(0, "gene_id", de.index.astype(str))
     else:
         de = de.rename(columns={gene_src: "gene_id"})
-    de["gene_id"] = de["gene_id"].astype(str)
+    de["gene_id"] = de["gene_id"].map(_strip_ensembl_version)
     missing = [col for col in ("logFC", "FDR") if col not in de.columns]
     if missing:
         raise ValueError(f"{meta.full_path} missing required columns: {missing}")
@@ -87,9 +87,12 @@ def load_experiment_table(
     out = de[keep].copy()
     if protein_coding_gene_ids is not None:
         before = len(out)
-        protein_coding_gene_ids = set(protein_coding_gene_ids)
+        protein_coding_gene_ids = {
+            _strip_ensembl_version(gene_id)
+            for gene_id in protein_coding_gene_ids
+        }
         out = out.loc[
-            out["gene_id"].map(_strip_ensembl_version).isin(protein_coding_gene_ids)
+            out["gene_id"].isin(protein_coding_gene_ids)
         ].copy()
         _emit_log(
             logger,
@@ -182,7 +185,7 @@ def load_tool_scores(
         min_score=min_score,
     )
     df[rank_col_name] = df["Score"].map(rank_map)
-    df["gene_id"] = df["Ensembl_ID"].astype(str)
+    df["gene_id"] = df["Ensembl_ID"].map(_strip_ensembl_version)
     if df["gene_id"].duplicated().any():
         keep_idx = df.groupby("gene_id")["Score"].idxmax()
         df = df.loc[keep_idx, ["gene_id", "Score", rank_col_name]].reset_index(drop=True)

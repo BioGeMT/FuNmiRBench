@@ -62,7 +62,7 @@ class TestLoadExperimentTable:
             geo_accession="GSE012", data_path="de.tsv", root=tmp_path,
         )
         out = load_experiment_table(meta, protein_coding_gene_ids={"ENSG001", "ENSG003"})
-        assert out["gene_id"].tolist() == ["ENSG001.1", "ENSG003"]
+        assert out["gene_id"].tolist() == ["ENSG001", "ENSG003"]
 
     def test_missing_required_columns_raises(self, tmp_path):
         _write(tmp_path / "de.tsv", (
@@ -120,8 +120,8 @@ class TestBuildJoined:
     def test_protein_coding_filter_applies_before_prediction_join(self, tmp_path):
         _write(tmp_path / "de.tsv", (
             "gene_id\tlogFC\tFDR\n"
-            "ENSG001\t2.0\t0.001\n"
-            "ENSG002\t-1.0\t0.05\n"
+            "ENSG001.7\t2.0\t0.001\n"
+            "ENSG002.3\t-1.0\t0.05\n"
             "ENSG003\t0.5\t0.3\n"
         ))
         _write(tmp_path / "scores.tsv", (
@@ -145,6 +145,27 @@ class TestBuildJoined:
         )
         assert joined["gene_id"].tolist() == ["ENSG001", "ENSG003"]
         assert joined["score_mock"].tolist() == [0.9, 0.8]
+
+    def test_versioned_prediction_ids_join_on_canonical_ensembl_id(self, tmp_path):
+        _write(tmp_path / "de.tsv", (
+            "gene_id\tlogFC\tFDR\n"
+            "ENSG001.5\t2.0\t0.001\n"
+            "ENSG002\t-1.0\t0.05\n"
+        ))
+        _write(tmp_path / "scores.tsv", (
+            "Ensembl_ID\tGene_Name\tmiRNA_ID\tmiRNA_Name\tScore\n"
+            "ENSG001\tGENE1\t\thsa-miR-1\t0.9\n"
+            "ENSG002.2\tGENE2\t\thsa-miR-1\t0.7\n"
+        ))
+        meta = DatasetMeta(
+            id="T014", miRNA="hsa-miR-1", cell_line="HeLa",
+            tissue="cervix", perturbation="OE", organism="Homo sapiens",
+            geo_accession="GSE014", data_path="de.tsv", root=tmp_path,
+        )
+        predictions = {"mock": {"predictor_output_path": "scores.tsv"}}
+        joined, _ = build_joined(meta, ["mock"], predictions, tmp_path)
+        scored = joined.set_index("gene_id")["score_mock"].to_dict()
+        assert scored == {"ENSG001": 0.9, "ENSG002": 0.7}
 
     def test_duplicate_tool_scores_keep_strongest(self, tmp_path):
         _write(tmp_path / "de.tsv", (
