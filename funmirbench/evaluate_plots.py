@@ -231,7 +231,7 @@ def _plot_single_predictor_roc_curve(item, *, dataset_id, out_path):
         linestyle="--",
         linewidth=1.4,
         color=NEUTRAL_COLOR,
-        label="random",
+        label="chance",
     )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
@@ -389,7 +389,7 @@ def _plot_predictor_roc_curves(comparisons, *, dataset_id, out_path):
         linestyle="--",
         linewidth=1.4,
         color=NEUTRAL_COLOR,
-        label="random",
+        label="chance",
     )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)
@@ -434,7 +434,7 @@ def _plot_predictor_roc_curves_own_scored(comparisons, *, dataset_id, out_path):
         linestyle="--",
         linewidth=1.4,
         color=NEUTRAL_COLOR,
-        label="random",
+        label="chance",
     )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.02)

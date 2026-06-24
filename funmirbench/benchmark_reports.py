@@ -17,7 +17,6 @@ from funmirbench.evaluate import (
 from funmirbench.cross_dataset import write_cross_dataset_summaries, write_metric_tables
 
 
-ORACLE_TOOL_IDS = {"cheating", "perfect"}
 MIN_HEADLINE_COVERAGE = 0.10
 
 
@@ -172,15 +171,12 @@ def _combination_markdown_table(display_df):
     return lines
 
 
-def _best_non_oracle(summary_df, *, min_coverage=MIN_HEADLINE_COVERAGE):
+def _best_headline_predictor(summary_df, *, min_coverage=MIN_HEADLINE_COVERAGE):
     if summary_df is None or summary_df.empty:
         return None
-    non_oracle = summary_df[~summary_df["tool_id"].astype(str).isin(ORACLE_TOOL_IDS)].copy()
-    if non_oracle.empty:
-        return None
 
-    coverage = pd.to_numeric(non_oracle["coverage_mean"], errors="coerce")
-    eligible = non_oracle[coverage >= float(min_coverage)].copy()
+    coverage = pd.to_numeric(summary_df["coverage_mean"], errors="coerce")
+    eligible = summary_df[coverage >= float(min_coverage)].copy()
     if eligible.empty:
         return None
     return eligible.sort_values(["aps_mean", "auroc_mean"], ascending=False).iloc[0]
@@ -235,16 +231,16 @@ def _coverage_analysis_lines(summary_df):
             f"{_format_summary_value(row['positive_coverage_mean'], percent=True)} versus "
             f"{_format_summary_value(row['coverage_mean'], percent=True)} overall coverage."
         )
-    best = _best_non_oracle(summary_df)
+    best = _best_headline_predictor(summary_df)
     if best is not None:
         lines.append(
-            f"Best non-oracle mean APS with >= {MIN_HEADLINE_COVERAGE:.0%} mean coverage: "
+            f"Best mean APS with >= {MIN_HEADLINE_COVERAGE:.0%} mean coverage: "
             f"{best['tool_id']} ({_format_summary_value(best['aps_mean'])}; "
             f"AUROC {_format_summary_value(best['auroc_mean'])})."
         )
     else:
         lines.append(
-            f"No non-oracle predictor reached >= {MIN_HEADLINE_COVERAGE:.0%} mean coverage for headline ranking."
+            f"No predictor reached >= {MIN_HEADLINE_COVERAGE:.0%} mean coverage for headline ranking."
         )
     return lines
 

@@ -58,14 +58,6 @@ already includes:
 - experiment metadata in `metadata/mirna_experiment_info.tsv`
 - predictor metadata in `metadata/predictions_info.tsv`
 
-Generate the demo predictor outputs:
-
-```bash
-uv run pipelines/standardized_predictors/random/pipeline.py
-uv run pipelines/standardized_predictors/cheating/pipeline.py
-uv run pipelines/standardized_predictors/perfect/pipeline.py
-```
-
 Then run the default benchmark:
 
 ```bash
@@ -81,7 +73,7 @@ The default config already points at:
 - `metadata/mirna_experiment_info.tsv`
 - `metadata/predictions_info.tsv`
 
-and selects 3 real experiment datasets plus 4 demo predictors and TargetScan.
+and selects a small set of curated experiment datasets plus the registered external predictors.
 
 ## Workflow
 
@@ -191,33 +183,9 @@ uv run funmirbench-sync-metadata --input pipelines/experiments/runs/<run_dir>/ca
 Predictor score files live under `data/predictions/` and are discovered through
 `metadata/predictions_info.tsv`.
 
-The repo ships three demo predictor pipelines:
-
-```bash
-uv run pipelines/standardized_predictors/random/pipeline.py
-uv run pipelines/standardized_predictors/cheating/pipeline.py
-uv run pipelines/standardized_predictors/perfect/pipeline.py
-```
-
-This creates:
-
-- `data/predictions/random/random_standardized.tsv`
-- `data/predictions/random/random_3000_standardized.tsv`
-- `data/predictions/cheating/cheating_standardized.tsv`
-- `data/predictions/perfect/perfect_standardized.tsv`
-
-The built-in demo predictors are intentionally different:
-
-- `random`: deterministic random baseline over the full available miRNA-gene pairs
-- `random_3000`: deterministic random baseline capped at 3000 genes per dataset
-- `cheating`: demo-only directional scores informed by the benchmark DE tables
-- `perfect`: dataset-aware oracle scores that exactly separate benchmark positives from negatives
-
-`cheating` and `perfect` are threshold-sensitive demo predictors. Their standardized outputs are
-generated against a specific `(FDR threshold, effect threshold)` pair, and the benchmark now checks
-that those build thresholds match the current `evaluation` config before running.
-
-The demo predictors already have registry rows in `metadata/predictions_info.tsv`.
+The repo includes standardization pipelines for the curated external predictors under
+`pipelines/standardized_predictors/`. Run the predictor-specific pipeline for each score file you
+want to generate, then register the resulting standardized TSV in `metadata/predictions_info.tsv`.
 
 ### 4. Run The Benchmark
 
@@ -275,7 +243,7 @@ experiments:
   id: [GSE109725_OE_miR_204_5p, GSE118315_KO_miR_124_3p, GSE210778_OE_miR_375_3p]
 
 predictors:
-  tool_id: [random, random_3000, cheating, perfect, targetscan]
+  tool_id: [targetscan, mirdb_mirtarget, microt_cnn, mirbind2, miraw]
 
 evaluation:
   fdr_threshold: 0.05
@@ -335,5 +303,4 @@ uv run funmirbench-validate-experiments --experiments-tsv metadata/mirna_experim
 uv run funmirbench-experiments-download-examples
 uv run funmirbench-experiments --config config.yaml
 uv run funmirbench-sync-metadata
-uv run pytest
 ```

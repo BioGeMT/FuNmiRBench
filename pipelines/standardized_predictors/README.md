@@ -13,12 +13,12 @@ conda activate standardized_predictors
 
 Current predictor pipelines:
 
-- `mock/`
-- `cheating/`
 - `targetscan/`
 - `tec-mitarget/`
 - `microt_cnn/`
 - `mirbind2/`
+- `mirdb_mirtarget/`
+- `miraw/`
 
 ## Standardized Schema
 
@@ -32,7 +32,7 @@ The predictor outputs are written in a shared TSV format with the columns:
 
 The shared annotation schema uses Ensembl v115 (GRCh38) and miRBase release 22.1.
 
-Not every demo pipeline currently populates every column, but they all write this schema.
+Not every pipeline currently populates every column, but they all write this schema.
 
 ## Pipelines
 
@@ -40,7 +40,7 @@ Not every demo pipeline currently populates every column, but they all write thi
 - `tec-mitarget/`
 - `microt_cnn/`
 - `mirbind2/`
-- `mock/`
-- `cheating/`
+- `mirdb_mirtarget/`
+- `miraw/`
 
 See the README in each pipeline directory for pipeline-specific inputs, processing steps, and outputs.

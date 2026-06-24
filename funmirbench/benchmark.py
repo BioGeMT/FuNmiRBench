@@ -12,15 +12,11 @@ import yaml
 
 import funmirbench.evaluate as evaluate_module
 from funmirbench.benchmark_config import (
-    DEFAULT_DEMO_ABS_LOGFC_THRESHOLD,
-    DEFAULT_DEMO_FDR_THRESHOLD,
-    THRESHOLD_SENSITIVE_DEMO_TOOLS,
     build_run_dir_name,
     filter_df,
     load_experiments,
     load_predictions,
     selected_experiment_paths,
-    validate_threshold_sensitive_predictors,
 )
 from funmirbench.benchmark_reports import (
     _init_run_layout,
@@ -240,20 +236,6 @@ def run_benchmark(config_path):
     )
     if not predictions:
         raise ValueError("Predictor selection resolved to no predictors.")
-    publication_predictions = {
-        tool_id: meta
-        for tool_id, meta in predictions.items()
-        if evaluate_module._is_publication_tool(tool_id)
-    }
-    if publication_predictions:
-        excluded_tool_ids = [tool_id for tool_id in predictions if tool_id not in publication_predictions]
-        if excluded_tool_ids:
-            logger.info(
-                "Excluding control/mock predictors from publication outputs: "
-                + ", ".join(excluded_tool_ids)
-            )
-        predictions = publication_predictions
-
     evaluate_module.FIGURE_DPI = int(eval_cfg.get("figure_dpi", eval_cfg.get("publication_figure_dpi", 450)))
     out_root = (root / config.get("out_dir", "results")).resolve()
     out_root.mkdir(parents=True, exist_ok=True)
@@ -281,13 +263,6 @@ def run_benchmark(config_path):
     dataset_outputs = []
     joined_frames = []
     common_prediction_summaries = []
-    validate_threshold_sensitive_predictors(
-        predictions,
-        root=root,
-        fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
-    )
-
     logger.info(f"Experiments: {len(experiments)}")
     logger.info(f"Predictors:  {tool_ids}")
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
 import pathlib
 import urllib.parse
 
@@ -12,17 +11,8 @@ import pandas as pd
 from funmirbench import DatasetMeta
 
 
-DEFAULT_DEMO_FDR_THRESHOLD = 0.05
-DEFAULT_DEMO_ABS_LOGFC_THRESHOLD = 1.0
-THRESHOLD_SENSITIVE_DEMO_TOOLS = {"cheating", "perfect"}
-
-
 def build_run_dir_name(*, experiments, tool_ids, eval_cfg, tags=None, run_date=None):
     """Return the timestamp-based run directory name.
-
-    Detailed dataset/predictor/threshold metadata is recorded in README.md and
-    summary.json. Keeping the directory name compact makes result paths short
-    and readable; collisions are handled by the caller with ``__rN`` suffixes.
     """
     del experiments, tool_ids, eval_cfg, tags
     run_timestamp = run_date or dt.datetime.now()
@@ -83,65 +73,3 @@ def load_predictions(tsv_path, filters):
     if df["tool_id"].duplicated().any():
         raise ValueError("Duplicate tool_id values found after predictor filtering.")
     return {row["tool_id"]: row.to_dict() for _, row in df.iterrows()}
-
-
-def _resolve_predictor_output_path(root, predictor_output_path):
-    path = pathlib.Path(predictor_output_path)
-    if not path.is_absolute():
-        path = root / path
-    return path
-
-
-def _predictor_metadata_sidecar_path(predictor_output_path):
-    return predictor_output_path.with_suffix(predictor_output_path.suffix + ".meta.json")
-
-
-def _thresholds_match(left, right, *, atol=1e-12):
-    if left is None or right is None:
-        return left is None and right is None
-    return abs(float(left) - float(right)) <= atol
-
-
-def validate_threshold_sensitive_predictors(predictions, *, root, fdr_threshold, abs_logfc_threshold):
-    if fdr_threshold is None:
-        return
-
-    for tool_id, tool_meta in predictions.items():
-        if tool_id not in THRESHOLD_SENSITIVE_DEMO_TOOLS:
-            continue
-
-        output_path = _resolve_predictor_output_path(root, tool_meta["predictor_output_path"])
-        metadata_path = _predictor_metadata_sidecar_path(output_path)
-        thresholds_are_default = (
-            _thresholds_match(fdr_threshold, DEFAULT_DEMO_FDR_THRESHOLD)
-            and _thresholds_match(abs_logfc_threshold, DEFAULT_DEMO_ABS_LOGFC_THRESHOLD)
-        )
-
-        if not metadata_path.is_file():
-            if thresholds_are_default:
-                continue
-            raise ValueError(
-                "Selected threshold-sensitive demo predictor "
-                f"{tool_id!r} at {output_path} has no sidecar metadata file "
-                f"({metadata_path}). Regenerate it with matching thresholds before benchmarking."
-            )
-
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        built_fdr_threshold = metadata.get("fdr_threshold")
-        built_abs_logfc_threshold = metadata.get("abs_logfc_threshold")
-        if built_fdr_threshold is None or built_abs_logfc_threshold is None:
-            raise ValueError(
-                "Threshold-sensitive demo predictor "
-                f"{tool_id!r} metadata file {metadata_path} is missing build threshold fields."
-            )
-        if not (
-            _thresholds_match(fdr_threshold, built_fdr_threshold)
-            and _thresholds_match(abs_logfc_threshold, built_abs_logfc_threshold)
-        ):
-            raise ValueError(
-                "Selected threshold-sensitive demo predictor "
-                f"{tool_id!r} was built with thresholds "
-                f"FDR<{built_fdr_threshold} and effect>{built_abs_logfc_threshold}, "
-                f"but the benchmark is configured for FDR<{fdr_threshold} and effect>{abs_logfc_threshold}. "
-                f"Regenerate {output_path.name} with matching thresholds."
-            )

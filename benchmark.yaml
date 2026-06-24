@@ -13,31 +13,22 @@ predictions_tsv: metadata/predictions_info.tsv
 experiments:
   id: [GSE124411_OE_miR_150_5p_2, GSE129076_OE_miR_450a_5p_1]
   # mirna_name: [hsa-miR-375-3p]
-  # mirna_sequence: [UUUGUUCGUUCGGCUCGCGUGA]
   # article_pubmed_id: [https://pubmed.ncbi.nlm.nih.gov/36074222]
   # organism: [Homo sapiens]
-  # experiment_type: [OE, KD]
-  # treatment: [Overexpression of hsa-miR-10a-5p]
+  # tested_cell_line: [HUV-EC-C]
   # tissue: [Cervix]
   # method: [RNA-seq]
+  # experiment_type: [OE, KD]
   # gse_url: [https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE124530]
   # de_table_path: [data/experiments/processed/18745741/GSE124530_edger_out_oe_hsa_miR_10a_5p_oe_10a5p.tsv]
 
 # Filter predictors by ANY column in the predictions TSV.
-# The default repo config compares two random baselines, the cheating and perfect
-# demo predictors, TargetScan, miRDB, and TEC-miTarget.
+# The default repo config compares TargetScan, miRDB, microT-CNN, miRBind2, and miRAW.
 predictors:
-  tool_id: [random, random_3000, cheating, perfect, targetscan, mirdb_mirtarget, tec-mitarget, microt_cnn, mirbind2, miraw]
-  # official_name: [Random, Random (3000 per dataset), Cheating, Perfect]
-  # organism: [Homo sapiens]
-  # score_type: [probability]
+  tool_id: [targetscan, mirdb_mirtarget, microt_cnn, mirbind2, miraw]
+  # official_name: [TargetScan v8, miRDB]
   # score_direction: [higher_is_stronger]
-  # score_range: [0-1]
-  # input_id_gene_type: [ensembl_v109]
-  # canonical_id_gene_type: [ensembl_v109]
-  # input_id_mirna_type: [mirbase_v22]
-  # canonical_id_mirna_type: [mirbase_v22]
-  # predictor_output_path: [data/predictions/random/random_standardized.tsv]
+  # predictor_output_path: [data/predictions/targetscan/targetscan_standardized.tsv]
 
 evaluation:
   fdr_threshold: null

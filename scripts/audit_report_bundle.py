@@ -41,7 +41,6 @@ EXPECTED_COMBINED_PLOTS = {
     "positive_recovery_fraction_by_prediction_count",
     "predictor_combination_expanded_frontier",
 }
-ORACLE_TOOL_IDS = {"cheating", "perfect"}
 DEFAULT_MIN_COVERAGE_FOR_HEADLINE = 0.10
 
 
@@ -146,24 +145,22 @@ def audit_run(run_dir: pathlib.Path, *, min_headline_coverage: float) -> list[Au
         )
 
     rows = _load_cross_dataset_rows(summary)
-    sparse_non_oracles = []
+    sparse_headline_candidates = []
     for row in rows:
         tool_id = str(row.get("tool_id", ""))
-        if tool_id in ORACLE_TOOL_IDS:
-            continue
         coverage = _float_or_none(row.get("coverage_mean"))
         aps = _float_or_none(row.get("aps_mean"))
         if coverage is not None and aps is not None and coverage < min_headline_coverage:
-            sparse_non_oracles.append((tool_id, coverage, aps))
-    if sparse_non_oracles:
+            sparse_headline_candidates.append((tool_id, coverage, aps))
+    if sparse_headline_candidates:
         formatted = ", ".join(
             f"{tool_id} coverage={coverage:.1%}, APS={aps:.3f}"
-            for tool_id, coverage, aps in sparse_non_oracles
+            for tool_id, coverage, aps in sparse_headline_candidates
         )
         issues.append(
             AuditIssue(
                 "WARN",
-                "Sparse non-oracle predictors should not be used for headline rankings: "
+                "Sparse predictors should not be used for headline rankings: "
                 + formatted,
             )
         )
@@ -186,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
         "--min-headline-coverage",
         type=float,
         default=DEFAULT_MIN_COVERAGE_FOR_HEADLINE,
-        help="Minimum mean coverage required before a non-oracle predictor can be used in headline ranking warnings.",
+        help="Minimum mean coverage required before a predictor can be used in headline ranking warnings.",
     )
     args = parser.parse_args(argv)
 
