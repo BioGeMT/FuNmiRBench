@@ -550,6 +550,28 @@ def write_run_pdf_report(
                 current_y -= 0.004
             return current_y
 
+        def add_dataset_inventory_table(ax, dataset_df, *, bbox, font_size):
+            table = ax.table(
+                cellText=dataset_df.values.tolist(),
+                colLabels=dataset_df.columns.tolist(),
+                cellLoc="left",
+                colLoc="left",
+                colWidths=[0.36, 0.23, 0.13, 0.28],
+                bbox=bbox,
+            )
+            table.auto_set_font_size(False)
+            table.set_fontsize(font_size)
+            table.scale(1.0, 1.28)
+            for (row, col), cell in table.get_celld().items():
+                if row == 0:
+                    cell.set_facecolor("#E9F1FB")
+                    cell.set_edgecolor("#D8E2EF")
+                    cell.set_text_props(weight="bold", color="#17324D")
+                else:
+                    cell.set_edgecolor("#E1E8F0")
+                    cell.set_facecolor("#FFFFFF" if row % 2 else "#F9FBFD")
+            return table
+
         fig, ax = new_page()
         add_header(
             ax,
@@ -694,8 +716,6 @@ def write_run_pdf_report(
                 )
         save_page(fig)
 
-        fig, ax = new_page()
-        add_header(ax, "Dataset Inventory", "Datasets included in this benchmark run.")
         dataset_df = pd.DataFrame(
             [
                 {
@@ -707,41 +727,39 @@ def write_run_pdf_report(
                 for item in dataset_outputs
             ]
         )
-        table = ax.table(
-            cellText=dataset_df.values.tolist(),
-            colLabels=dataset_df.columns.tolist(),
-            cellLoc="left",
-            colLoc="left",
-            bbox=[0.06, 0.56, 0.88, 0.24],
-        )
-        table.auto_set_font_size(False)
-        table.set_fontsize(9.2)
-        table.scale(1.0, 1.45)
-        for (row, col), cell in table.get_celld().items():
-            if row == 0:
-                cell.set_facecolor("#E9F1FB")
-                cell.set_edgecolor("#D8E2EF")
-                cell.set_text_props(weight="bold", color="#17324D")
-            else:
-                cell.set_edgecolor("#E1E8F0")
-                cell.set_facecolor("#FFFFFF" if row % 2 else "#F9FBFD")
-        add_block(
-            ax,
-            "Included Combined Figures",
-            [
-                "plots/combined/metrics/cross_dataset_<metric>_distribution.png: one figure per metric showing how that metric varies across the selected datasets",
-                "positive_background_local_rank_distributions.png: whether positives rank above background on the dataset-local rank scale",
-                "positive_background_local_rank_counts.png: binned dataset-local counts for positives and background genes on a log scale",
-                "positive_background_global_rank_distributions.png: whether positives rank above background on the predictor-global rank scale",
-                "positive_background_global_rank_counts.png: binned predictor-global counts for positives and background genes on a log scale",
-                "positive_recovery_fraction_by_prediction_count.png: GT-positive recovery fraction with endpoint labels",
-                "predictor_combination_expanded_frontier.png: essential coverage/APS candidates for the best singles and combinations",
-            ],
-            x=0.06,
-            y=0.45,
-            width=0.88,
-        )
-        save_page(fig)
+        inventory_lines = [
+            "plots/combined/metrics/cross_dataset_<metric>_distribution.png: one figure per metric showing how that metric varies across the selected datasets",
+            "positive_background_local_rank_distributions.png: whether positives rank above background on the dataset-local rank scale",
+            "positive_background_local_rank_counts.png: binned dataset-local counts for positives and background genes on a log scale",
+            "positive_background_global_rank_distributions.png: whether positives rank above background on the predictor-global rank scale",
+            "positive_background_global_rank_counts.png: binned predictor-global counts for positives and background genes on a log scale",
+            "positive_recovery_fraction_by_prediction_count.png: GT-positive recovery fraction with endpoint labels",
+            "predictor_combination_expanded_frontier.png: essential coverage/APS candidates for the best singles and combinations",
+        ]
+        if len(dataset_df) <= 12:
+            fig, ax = new_page()
+            add_header(ax, "Dataset Inventory", "Datasets included in this benchmark run.")
+            add_dataset_inventory_table(ax, dataset_df, bbox=[0.06, 0.56, 0.88, 0.24], font_size=9.2)
+            add_block(ax, "Included Combined Figures", inventory_lines, x=0.06, y=0.45, width=0.88)
+            save_page(fig)
+        else:
+            rows_per_page = 22
+            total_pages = (len(dataset_df) + rows_per_page - 1) // rows_per_page
+            for page_index in range(total_pages):
+                start = page_index * rows_per_page
+                page_df = dataset_df.iloc[start:start + rows_per_page]
+                fig, ax = new_page()
+                add_header(
+                    ax,
+                    f"Dataset Inventory ({page_index + 1}/{total_pages})",
+                    f"Datasets {start + 1}-{start + len(page_df)} of {len(dataset_df)} included in this benchmark run.",
+                )
+                add_dataset_inventory_table(ax, page_df, bbox=[0.04, 0.08, 0.92, 0.76], font_size=8.2)
+                save_page(fig)
+            fig, ax = new_page()
+            add_header(ax, "Included Combined Figures", "Figure families generated for each dataset and across datasets.")
+            add_block(ax, "Included Combined Figures", inventory_lines, x=0.06, y=0.82, width=0.88)
+            save_page(fig)
 
         combination_table = _combination_summary_report_df(
             combined_outputs.get("tables", {}).get("predictor_combination_summary")
