@@ -357,7 +357,7 @@ def write_publication_predictor_reports(
                     [
                         ["GT positives", gt_rule],
                         ["Effect sign", "-logFC for OE; +logFC for KO/KD"],
-                        ["Metric scope", "Usable ground truth plus positive and background scored genes"],
+                        ["Metric scope", "Scored genes only; missing predictor-gene pairs are not zero-filled"],
                     ],
                     title="Evaluation rule",
                     columns=["Rule", "Value"],
