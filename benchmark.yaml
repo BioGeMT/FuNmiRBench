@@ -6,10 +6,17 @@
 experiments_tsv: metadata/mirna_experiment_info.tsv
 predictions_tsv: metadata/predictions_info.tsv
 
-# The default repo config runs a small 2-dataset demo selection.
-# Use experiments: {} to run all registered Zenodo-backed experiments.
+# Filter experiments by any column in the experiments TSV.
+# AND across columns, OR within each column's value list.
+# The default repo config ships with a small 2-dataset demo selection.
+# Edit or comment these active rows to benchmark other subsets.
 experiments:
   id: [GSE124411_OE_miR_150_5p_2, GSE129076_OE_miR_450a_5p_1]
+  # mirna_name: [hsa-miR-375-3p]
+  # tested_cell_line: [HUV-EC-C]
+  # tissue: [Cervix]
+  # method: [RNA-seq]
+  # experiment_type: [OE, KD]
 
 # The default repo config compares TargetScan, miRDB, microT-CNN, miRBind2, and miRAW.
 predictors:
