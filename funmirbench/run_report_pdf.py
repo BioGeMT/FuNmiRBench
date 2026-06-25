@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+import math
 import textwrap
 
 import matplotlib.pyplot as plt
@@ -461,6 +462,88 @@ def _dataset_report_rows(dataset_outputs):
     ]
 
 
+def _draw_dataset_inventory_pages(pdf, dataset_outputs):
+    dataset_df = pd.DataFrame(_dataset_report_rows(dataset_outputs))
+    if dataset_df.empty:
+        fig, ax = _new_page()
+        _header(ax, "Dataset Inventory", "Datasets included in this benchmark run.")
+        _text_block(ax, "No datasets", ["No dataset metadata was available for this run."], x=0.06, y=0.82, width=0.88)
+        _save_page(pdf, fig)
+        return
+
+    compact_limit = 12
+    rows_per_page = 22
+    rows = dataset_df.values.tolist()
+    columns = dataset_df.columns.tolist()
+    col_widths = [0.36, 0.23, 0.13, 0.28]
+    if len(rows) <= compact_limit:
+        fig, ax = _new_page()
+        _header(ax, "Dataset Inventory", "Datasets included in this benchmark run.")
+        _draw_basic_table(
+            ax,
+            rows,
+            columns=columns,
+            col_widths=col_widths,
+            bbox=[0.06, 0.57, 0.88, 0.25],
+            font_size=REPORT_TABLE_SIZE,
+        )
+        _bullet_block(
+            ax,
+            "Included figure families",
+            [
+                "Combination plots compare predictors and rank-mean combinations.",
+                "Common-prediction tables report predictor overlap.",
+                "Rank pages pair distributions with binned count views.",
+                "Rank-count panels use log-scaled y-axes.",
+                "Dataset reports include heatmaps, CDFs, and predictor diagnostics.",
+            ],
+            x=0.06,
+            y=0.46,
+            width=0.88,
+        )
+        _save_page(pdf, fig)
+        return
+
+    total_pages = int(math.ceil(len(rows) / rows_per_page))
+    for page_index in range(total_pages):
+        start = page_index * rows_per_page
+        page_rows = rows[start:start + rows_per_page]
+        fig, ax = _new_page()
+        _header(
+            ax,
+            f"Dataset Inventory ({page_index + 1}/{total_pages})",
+            f"Datasets {start + 1}-{start + len(page_rows)} of {len(rows)} included in this benchmark run.",
+        )
+        _draw_basic_table(
+            ax,
+            page_rows,
+            columns=columns,
+            col_widths=col_widths,
+            bbox=[0.04, 0.08, 0.92, 0.76],
+            font_size=8.2,
+            wrap_scale=112,
+        )
+        _save_page(pdf, fig)
+
+    fig, ax = _new_page()
+    _header(ax, "Included Figure Families", "Figure families generated for each dataset and across datasets.")
+    _bullet_block(
+        ax,
+        "Included figure families",
+        [
+            "Combination plots compare predictors and rank-mean combinations.",
+            "Common-prediction tables report predictor overlap.",
+            "Rank pages pair distributions with binned count views.",
+            "Rank-count panels use log-scaled y-axes.",
+            "Dataset reports include heatmaps, CDFs, and predictor diagnostics.",
+        ],
+        x=0.06,
+        y=0.82,
+        width=0.88,
+    )
+    _save_page(pdf, fig)
+
+
 def write_publication_run_pdf_report(
     out_dir,
     *,
@@ -570,32 +653,7 @@ def write_publication_run_pdf_report(
             _text_block(ax, "No summary table", ["Cross-dataset summary table is unavailable for this run."], x=0.06, y=0.83, width=0.88)
         _save_page(pdf, fig)
 
-        fig, ax = _new_page()
-        _header(ax, "Dataset Inventory", "Datasets included in this benchmark run.")
-        dataset_df = pd.DataFrame(_dataset_report_rows(dataset_outputs))
-        _draw_basic_table(
-            ax,
-            dataset_df.values.tolist(),
-            columns=dataset_df.columns.tolist(),
-            col_widths=[0.35, 0.25, 0.15, 0.25],
-            bbox=[0.06, 0.57, 0.88, 0.25],
-            font_size=REPORT_TABLE_SIZE,
-        )
-        _bullet_block(
-            ax,
-            "Included figure families",
-            [
-                "Combination plots compare predictors and rank-mean combinations.",
-                "Common-prediction tables report predictor overlap.",
-                "Rank pages pair distributions with binned count views.",
-                "Rank-count panels use log-scaled y-axes.",
-                "Dataset reports include heatmaps, CDFs, and predictor diagnostics.",
-            ],
-            x=0.06,
-            y=0.46,
-            width=0.88,
-        )
-        _save_page(pdf, fig)
+        _draw_dataset_inventory_pages(pdf, dataset_outputs)
 
         _draw_common_prediction_page(pdf, combined_outputs)
 
