@@ -251,14 +251,23 @@ During evaluation, DE rows are first restricted to Ensembl protein-coding genes 
 release 115. This keeps the evaluation universe aligned with mRNA target predictors and avoids
 penalizing tools for non-coding genes they are not designed to score. Each predictor is then
 scored only on miRNA-gene pairs that exist in that predictor's standardized file. Missing pairs
-are not filled with zero for metrics. Each run writes coverage information to
-`tables/per_experiment/coverage_per_experiment.tsv`, and the per-predictor Markdown/PDF reports
-also record total rows, scored rows, missing rows, and coverage. For per-dataset heatmaps and agreement plots,
-FuNmiRBench uses a dataset-local tie-aware rank over the scored rows. For cross-dataset
-rank-distribution plots, it keeps a separate global tie-aware rank derived from each predictor's
-full standardized file. Predictor-agreement top fractions use an exact top-k selection per
-predictor with a deterministic tie-break instead of a quantile threshold. Combined PR, ROC, and
-GSEA comparison plots are computed on the common set of genes scored by all compared predictors.
+are not filled with zero for metrics.
+
+Coverage is a first-class diagnostic. Per-predictor APS, PR-AUC, AUROC, Spearman, and GSEA are
+computed on each predictor's own scored subset, so low-coverage predictor/dataset pairs should be
+read as subset-specific rather than directly comparable whole-universe results. Each run writes
+overall coverage to `tables/per_experiment/coverage_per_experiment.tsv` and GT-positive coverage
+to `tables/per_experiment/positive_coverage_per_experiment.tsv`; the per-predictor Markdown/PDF
+reports also record total rows, scored rows, missing rows, and scored GT positives. Cross-dataset
+reports flag sparse predictors and reserve headline rankings for predictors that meet the
+configured mean-coverage threshold.
+
+For per-dataset heatmaps and agreement plots, FuNmiRBench uses a dataset-local tie-aware rank over
+the scored rows. For cross-dataset rank-distribution plots, it keeps a separate global tie-aware
+rank derived from each predictor's full standardized file. Predictor-agreement top fractions use
+an exact top-k selection per predictor with a deterministic tie-break instead of a quantile
+threshold. Combined PR, ROC, and GSEA comparison plots are computed on the common set of genes
+scored by all compared predictors.
 
 YAML paths can be:
 

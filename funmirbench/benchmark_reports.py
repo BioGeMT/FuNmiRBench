@@ -210,7 +210,16 @@ def _report_takeaways(summary_df):
 def _coverage_analysis_lines(summary_df):
     if summary_df is None or summary_df.empty:
         return ["Cross-dataset predictor summary is unavailable for this run."]
-    lines = []
+    lines = [
+        (
+            "Metrics are computed on each predictor's own scored gene subset; missing "
+            "predictor-gene pairs are not filled with zero."
+        ),
+        (
+            "Coverage is therefore part of the metric interpretation, not only a "
+            "file-completeness check."
+        ),
+    ]
     sparse = summary_df[summary_df["coverage_mean"].astype(float) < 0.25].copy()
     if not sparse.empty:
         sparse_labels = [
@@ -218,7 +227,23 @@ def _coverage_analysis_lines(summary_df):
             f"{int(getattr(row, 'aps_count', 0))} evaluated datasets)"
             for row in sparse.itertuples(index=False)
         ]
-        lines.append("Sparse predictors: " + ", ".join(sparse_labels) + ". Treat their metrics as subset-specific.")
+        lines.append(
+            "Low-coverage predictors (<25% mean coverage): "
+            + ", ".join(sparse_labels)
+            + ". Treat their metrics as subset-specific."
+        )
+    very_sparse = summary_df[summary_df["coverage_mean"].astype(float) < MIN_HEADLINE_COVERAGE].copy()
+    if not very_sparse.empty:
+        very_sparse_labels = [
+            f"{row.tool_id} ({_format_summary_value(row.coverage_mean, percent=True)})"
+            for row in very_sparse.itertuples(index=False)
+        ]
+        lines.append(
+            f"Very sparse predictors (<{MIN_HEADLINE_COVERAGE:.0%} mean coverage) are excluded "
+            "from headline rankings: "
+            + ", ".join(very_sparse_labels)
+            + "."
+        )
     coverage_gap = (
         summary_df["positive_coverage_mean"].astype(float)
         - summary_df["coverage_mean"].astype(float)
