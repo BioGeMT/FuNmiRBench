@@ -243,21 +243,49 @@ def _draw_common_prediction_page(pdf, combined_outputs):
     )
     display = selected[["dataset_id", "Set", "tools", "Common predictions"]].copy()
     display.columns = ["Dataset", "Set", "Predictors", "Common predictions"]
-    fig, ax = _new_page()
-    _header(
-        ax,
-        "Common Prediction Coverage",
-        "Genes with non-missing scores for each predictor set; correlation heatmaps are omitted.",
-    )
-    _draw_basic_table(
-        ax,
-        display.values.tolist(),
-        columns=display.columns.tolist(),
-        col_widths=[0.30, 0.18, 0.34, 0.18],
-        bbox=[0.04, 0.10, 0.92, 0.74],
-        font_size=REPORT_TABLE_SIZE,
-    )
-    _save_page(pdf, fig)
+    rows = display.values.tolist()
+    columns = display.columns.tolist()
+    col_widths = [0.30, 0.18, 0.34, 0.18]
+    rows_per_page = 22
+    if len(rows) <= rows_per_page:
+        fig, ax = _new_page()
+        _header(
+            ax,
+            "Common Prediction Coverage",
+            "Genes with non-missing scores for each predictor set; correlation heatmaps are omitted.",
+        )
+        table_height = min(0.74, max(0.18, 0.044 * (len(rows) + 1)))
+        _draw_basic_table(
+            ax,
+            rows,
+            columns=columns,
+            col_widths=col_widths,
+            bbox=[0.04, 0.84 - table_height, 0.92, table_height],
+            font_size=REPORT_TABLE_SIZE,
+        )
+        _save_page(pdf, fig)
+        return
+
+    total_pages = int(math.ceil(len(rows) / rows_per_page))
+    for page_index in range(total_pages):
+        start = page_index * rows_per_page
+        page_rows = rows[start:start + rows_per_page]
+        fig, ax = _new_page()
+        _header(
+            ax,
+            f"Common Prediction Coverage ({page_index + 1}/{total_pages})",
+            f"Rows {start + 1}-{start + len(page_rows)} of {len(rows)}; genes with non-missing scores for each predictor set.",
+        )
+        _draw_basic_table(
+            ax,
+            page_rows,
+            columns=columns,
+            col_widths=col_widths,
+            bbox=[0.04, 0.08, 0.92, 0.76],
+            font_size=8.2,
+            wrap_scale=112,
+        )
+        _save_page(pdf, fig)
 
 
 def _coverage_note_bullets(summary_df):
