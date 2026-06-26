@@ -24,7 +24,7 @@ REQUIRED_REGISTRY_COLUMNS = (
     "de_table_path",
 )
 REQUIRED_DE_COLUMNS = ("gene_id", "logFC", "FDR")
-VALID_PERTURBATIONS = {"OE", "KO", "KD"}
+VALID_PERTURBATIONS = {"Overexpression", "Knockout", "Knockdown"}
 MAX_LOGGED_ISSUES = 20
 _ENSEMBL_GENE_ID = re.compile(r"^ENS[A-Z]*G\d+(?:\.\d+)?$", re.IGNORECASE)
 
@@ -111,10 +111,25 @@ def _finite_numeric(series: pd.Series) -> tuple[pd.Series, pd.Series]:
 
 
 def _expected_effect(logfc: pd.Series, perturbation: str) -> pd.Series:
-    perturbation = perturbation.upper()
-    if perturbation == "OE":
+    perturbation = _normalize_perturbation(perturbation)
+    if perturbation == "Overexpression":
         return -logfc
-    return logfc
+    if perturbation in {"Knockout", "Knockdown"}:
+        return logfc
+    raise ValueError(
+        f"Unsupported experiment_type {perturbation!r}; "
+        f"expected one of {sorted(VALID_PERTURBATIONS)}."
+    )
+
+
+def _normalize_perturbation(value: str) -> str:
+    text = _text(value)
+    canonical = {
+        "OVEREXPRESSION": "Overexpression",
+        "KNOCKOUT": "Knockout",
+        "KNOCKDOWN": "Knockdown",
+    }.get(text.upper())
+    return canonical or text
 
 
 def _gt_rule_caption(fdr_threshold, effect_threshold: float) -> str:
@@ -303,7 +318,7 @@ def _validate_registry_row(row: pd.Series) -> list[ValidationIssue]:
                 )
             )
 
-    perturbation = _text(row.get("experiment_type")).upper()
+    perturbation = _normalize_perturbation(row.get("experiment_type"))
     if perturbation and perturbation not in VALID_PERTURBATIONS:
         issues.append(
             ValidationIssue(
@@ -368,7 +383,7 @@ def validate_experiments(
             continue
 
         files_present += 1
-        perturbation = _text(row.get("experiment_type")).upper()
+        perturbation = _normalize_perturbation(row.get("experiment_type"))
         if perturbation in VALID_PERTURBATIONS:
             table_issues = _validate_de_table(
                 dataset_id=dataset_id,

@@ -75,9 +75,21 @@ def _format_threshold_value(value):
     return str(float(value))
 
 
+VALID_PERTURBATIONS = ("Overexpression", "Knockout", "Knockdown")
+_PERTURBATION_EFFECT_SIGN = {
+    "Overexpression": -1.0,
+    "Knockout": 1.0,
+    "Knockdown": 1.0,
+}
+
+
 def describe_gt_rule(fdr_threshold, abs_logfc_threshold, *, markdown=False):
     effect_text = f"perturbation-aware effect > {_format_threshold_value(abs_logfc_threshold)}"
-    suffix = "(`-logFC` for OE, `+logFC` for KO/KD)" if markdown else "(-logFC for OE, +logFC for KO/KD)"
+    suffix = (
+        "(`-logFC` for Overexpression, `+logFC` for Knockout/Knockdown)"
+        if markdown
+        else "(-logFC for Overexpression, +logFC for Knockout/Knockdown)"
+    )
     if fdr_threshold is None:
         if markdown:
             return f"{effect_text.replace('>', '`> ', 1) + '`'} {suffix}"
@@ -257,26 +269,21 @@ def _safe_neglog10(series):
 
 
 def _normalize_perturbation(value):
-    text = str(value or "").strip().upper()
-    if text in {"", "NAN", "NONE", "<NA>"}:
+    text = str(value or "").strip()
+    if text.upper() in {"", "NAN", "NONE", "<NA>"}:
         return ""
-    return text
-
-
-def _infer_perturbation_from_dataset_id(value):
-    dataset_id = str(value or "").upper()
-    for perturbation in ("OE", "KO", "KD"):
-        if f"_{perturbation}_" in dataset_id:
-            return perturbation
-    return ""
+    canonical = {
+        "OVEREXPRESSION": "Overexpression",
+        "KNOCKOUT": "Knockout",
+        "KNOCKDOWN": "Knockdown",
+    }.get(text.upper())
+    return canonical or text
 
 
 def _resolve_perturbation_series(df, *, perturbation=None):
     fallback = _normalize_perturbation(perturbation)
     if "perturbation" in df.columns:
         resolved = df["perturbation"].astype(str).map(_normalize_perturbation)
-    elif "dataset_id" in df.columns:
-        resolved = df["dataset_id"].astype(str).map(_infer_perturbation_from_dataset_id)
     else:
         resolved = pd.Series("", index=df.index, dtype="object")
     if fallback:
@@ -285,12 +292,19 @@ def _resolve_perturbation_series(df, *, perturbation=None):
 
 
 def _expected_effect_from_logfc(logfc, perturbations):
-    expected_effect = logfc.abs().astype(float)
-    oe_mask = perturbations == "OE"
-    ko_mask = perturbations.isin(["KO", "KD"])
-    expected_effect.loc[oe_mask] = -logfc.loc[oe_mask]
-    expected_effect.loc[ko_mask] = logfc.loc[ko_mask]
-    return expected_effect
+    invalid = sorted(
+        str(value)
+        for value in perturbations.dropna().unique()
+        if value not in _PERTURBATION_EFFECT_SIGN
+    )
+    if invalid:
+        expected = ", ".join(VALID_PERTURBATIONS)
+        raise ValueError(
+            "Missing or invalid perturbation value(s): "
+            f"{invalid}. Expected one of: {expected}."
+        )
+    signs = perturbations.map(_PERTURBATION_EFFECT_SIGN).astype(float)
+    return logfc.astype(float) * signs
 
 
 def _annotate_ground_truth(df, *, perturbation=None):
