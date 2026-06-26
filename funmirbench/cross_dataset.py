@@ -176,9 +176,10 @@ def _rank_class_plot_data(joined_frames, *, fdr_threshold, abs_logfc_threshold, 
         return None
 
     keep_cols = ["logFC", "FDR", *[column for _, column, _ in rank_specs]]
-    for optional in ("dataset_id", "perturbation"):
+    for optional in ("dataset_id", "perturbation", *ev.FDR_AUXILIARY_COLUMNS):
         if optional in combined.columns:
             keep_cols.append(optional)
+    keep_cols = list(dict.fromkeys(keep_cols))
     work = ev._filter_usable_gt_rows(combined[keep_cols], fdr_threshold=fdr_threshold)
     if work.empty:
         return None
@@ -505,7 +506,7 @@ def _plot_positive_recovery_by_prediction_count(
 
     dataset_col = "dataset_id" if "dataset_id" in combined.columns else None
     keep_cols = ["gene_id", "logFC", "FDR", *[column for _, column, _ in rank_specs]]
-    for optional in ("dataset_id", "perturbation"):
+    for optional in ("dataset_id", "perturbation", *ev.FDR_AUXILIARY_COLUMNS):
         if optional in combined.columns:
             keep_cols.append(optional)
     keep_cols = list(dict.fromkeys(keep_cols))

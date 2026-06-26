@@ -19,9 +19,17 @@ from sklearn.metrics import (
     roc_curve,
 )
 
+from funmirbench.de_table import add_fdr_derived_columns
+
 SCORE_PREFIX = "score_"
 GLOBAL_RANK_PREFIX = "global_rank_"
 LOCAL_RANK_PREFIX = "local_rank_"
+FDR_AUXILIARY_COLUMNS = (
+    "PValue",
+    "FDR_status",
+    "FDR_for_plot",
+    "FDR_for_eval",
+)
 FIGURE_DPI = 300
 REPORT_PAGE_SIZE = (8.27, 11.69)
 PLOT_TITLE_SIZE = 17.0
@@ -95,14 +103,18 @@ def _positive_mask(df, *, fdr_threshold, abs_logfc_threshold):
     effect_mask = df["expected_effect"] > float(abs_logfc_threshold)
     if fdr_threshold is None:
         return effect_mask
-    return effect_mask & (df["FDR"] < float(fdr_threshold))
+    fdr = df["FDR_for_eval"] if "FDR_for_eval" in df.columns else df["FDR"]
+    return effect_mask & (fdr < float(fdr_threshold))
 
 
 def _usable_gt_row_mask(df, *, fdr_threshold):
     mask = pd.to_numeric(df["logFC"], errors="coerce").notna()
     if fdr_threshold is not None:
-        fdr = pd.to_numeric(df["FDR"], errors="coerce")
-        mask = mask & fdr.notna() & (fdr > 0.0) & (fdr <= 1.0)
+        fdr = pd.to_numeric(
+            df["FDR_for_eval"] if "FDR_for_eval" in df.columns else df["FDR"],
+            errors="coerce",
+        )
+        mask = mask & fdr.notna() & (fdr >= 0.0) & (fdr <= 1.0)
     return mask
 
 
@@ -111,6 +123,7 @@ def _filter_usable_gt_rows(df, *, fdr_threshold):
     out["logFC"] = pd.to_numeric(out["logFC"], errors="coerce")
     if "FDR" in out.columns:
         out["FDR"] = pd.to_numeric(out["FDR"], errors="coerce")
+        out = add_fdr_derived_columns(out)
     return out.loc[_usable_gt_row_mask(out, fdr_threshold=fdr_threshold)].copy()
 
 
@@ -297,8 +310,9 @@ def _annotate_ground_truth(df, *, perturbation=None):
     out = df.copy()
     out["logFC"] = pd.to_numeric(out["logFC"], errors="coerce")
     if "FDR" in out.columns:
+        out = add_fdr_derived_columns(out)
         out["FDR"] = pd.to_numeric(out["FDR"], errors="coerce")
-        out["neglog10_FDR"] = _safe_neglog10(out["FDR"])
+        out["neglog10_FDR"] = _safe_neglog10(out["FDR_for_plot"])
     else:
         out["FDR"] = np.nan
         out["neglog10_FDR"] = np.nan
@@ -387,7 +401,7 @@ def _prepare_scored_frame(
         raise ValueError(f"Joined table missing required columns: {missing}")
 
     keep_cols = ["gene_id", "logFC", "FDR", score_col]
-    for optional in ("dataset_id", "mirna", "perturbation", "PValue"):
+    for optional in ("dataset_id", "mirna", "perturbation", *FDR_AUXILIARY_COLUMNS):
         if optional in joined.columns:
             keep_cols.append(optional)
 

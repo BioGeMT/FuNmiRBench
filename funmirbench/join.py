@@ -72,8 +72,14 @@ def load_experiment_table(meta: DatasetMeta, *, logger=None) -> pd.DataFrame:
     if de["gene_id"].duplicated().any():
         raise ValueError(f"Duplicate gene_id values found in {meta.full_path}")
     keep = ["gene_id", "logFC", "FDR"]
-    if "PValue" in de.columns:
-        keep.append("PValue")
+    for optional in (
+        "PValue",
+        "FDR_status",
+        "FDR_for_plot",
+        "FDR_for_eval",
+    ):
+        if optional in de.columns:
+            keep.append(optional)
     out = de[keep].copy()
     out.insert(0, "mirna", meta.miRNA)
     out.insert(0, "dataset_id", meta.id)

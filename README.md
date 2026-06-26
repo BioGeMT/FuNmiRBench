@@ -103,6 +103,17 @@ Supported inputs:
 - count matrix: counts matrix + control columns + treated columns -> DESeq2
 - reads: local FASTQs + local reference files + explicit sample groups -> `FastQC + fastp + STAR + featureCounts + DESeq2`
 
+RNA-seq pipeline summary:
+
+- `count_matrix` mode validates the configured count matrix and runs DESeq2 directly on the selected
+  control and treated columns.
+- `reads` mode runs read QC/trimming, aligns reads to the configured reference with STAR, counts
+  genes with featureCounts, then runs the same DESeq2 step.
+- DE outputs are benchmark-ready TSVs with original DESeq2 `PValue` and `FDR` values preserved.
+- Additional derived FDR columns make plotting and evaluation explicit without modifying the original
+  DESeq2 values:
+  `FDR_status`, `FDR_for_plot`, and `FDR_for_eval`.
+
 This path expects the `funmirbench-experiments` environment from `pipelines/experiments/environment.yml` to be
 active so `fastqc`, `fastp`, `STAR`, `featureCounts`, and `Rscript` are available on `PATH`.
 
@@ -154,6 +165,12 @@ Each run writes:
 - `data/experiments/processed/<dataset_id>.tsv`
 - `pipelines/experiments/runs/<timestamp>_<dataset_id>/candidate_metadata.tsv`
 - `pipelines/experiments/runs/<timestamp>_<dataset_id>/run_manifest.json`
+
+The processed DE TSV keeps `PValue` and `FDR` unchanged from DESeq2. For rows where DESeq2 reports
+`PValue` but no adjusted p-value after independent filtering, `FDR_for_eval` is set to `1` so the
+row remains a non-significant background gene. Rows with both `PValue` and `FDR` missing remain
+excluded from FDR-thresholded evaluation. Rows with `FDR = 0` use `FDR_for_plot = 1e-300` for finite
+`-log10` plotting while keeping `FDR_for_eval = 0`.
 
 The reads example uses a reproduced dataset id, `GSE93717_OE_miR_941_deseq2`, so syncing it creates
 a separate variant instead of overwriting the curated `GSE93717_OE_miR_941` registry row.
@@ -303,4 +320,8 @@ uv run funmirbench-validate-experiments --experiments-tsv metadata/mirna_experim
 uv run funmirbench-experiments-download-examples
 uv run funmirbench-experiments --config config.yaml
 uv run funmirbench-sync-metadata
+uv run funmirbench-add-fdr-derived-columns --metadata-tsv metadata/mirna_experiment_info.tsv
 ```
+
+`funmirbench-add-fdr-derived-columns` backfills existing processed DE tables with derived FDR columns
+used for plotting and evaluation. It keeps the original `PValue` and `FDR` values unchanged.
