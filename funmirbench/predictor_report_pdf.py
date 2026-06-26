@@ -356,7 +356,7 @@ def write_publication_predictor_reports(
                     ax,
                     [
                         ["GT positives", gt_rule],
-                        ["Effect sign", "-logFC for OE; +logFC for KO/KD"],
+                        ["Effect sign", "-logFC for Overexpression; +logFC for Knockout/Knockdown"],
                         ["Metric scope", "Usable ground truth plus positive and background scored genes"],
                     ],
                     title="Evaluation rule",
@@ -414,7 +414,7 @@ def write_publication_predictor_reports(
                 ax,
                 [
                     ["GT positives", gt_rule],
-                    ["Effect sign", "-logFC for OE; +logFC for KO/KD"],
+                    ["Effect sign", "-logFC for Overexpression; +logFC for Knockout/Knockdown"],
                     ["Score direction", "Higher aligned scores mean stronger predicted targeting"],
                     ["Metric scope", "Usable ground truth and an available score"],
                 ],
