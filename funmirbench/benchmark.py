@@ -17,6 +17,7 @@ from funmirbench.benchmark_config import (
     load_experiments,
     load_predictions,
     selected_experiment_paths,
+    validate_predictor_output_files,
 )
 from funmirbench.benchmark_reports import (
     _init_run_layout,
@@ -195,6 +196,15 @@ def run_benchmark(config_path):
         eval_cfg.get("report_min_common_coverage", eval_cfg.get("publication_min_common_coverage", 0.10))
     )
 
+    logger.info("Loading predictors...")
+    predictions = load_predictions(
+        root / config["predictions_tsv"],
+        config.get("predictors"),
+    )
+    if not predictions:
+        raise ValueError("Predictor selection resolved to no predictors.")
+    validate_predictor_output_files(predictions, root)
+
     logger.info("Syncing selected experiment DE tables from Zenodo...")
     synced = sync_zenodo_experiments(
         selected_experiment_paths(experiments_tsv, experiment_filters),
@@ -229,13 +239,6 @@ def run_benchmark(config_path):
     if not experiments:
         raise ValueError("Experiment selection resolved to no datasets.")
 
-    logger.info("Loading predictors...")
-    predictions = load_predictions(
-        root / config["predictions_tsv"],
-        config.get("predictors"),
-    )
-    if not predictions:
-        raise ValueError("Predictor selection resolved to no predictors.")
     evaluate_module.FIGURE_DPI = int(eval_cfg.get("figure_dpi", eval_cfg.get("publication_figure_dpi", 450)))
     out_root = (root / config.get("out_dir", "results")).resolve()
     out_root.mkdir(parents=True, exist_ok=True)
