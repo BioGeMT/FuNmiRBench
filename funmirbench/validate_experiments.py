@@ -232,7 +232,8 @@ def _validate_de_table(
     fdr = None
     valid_fdr = None
     if fdr_threshold is not None:
-        fdr, valid_fdr = _finite_numeric(de["FDR"])
+        fdr_source = de["FDR_for_eval"] if "FDR_for_eval" in de.columns else de["FDR"]
+        fdr, valid_fdr = _finite_numeric(fdr_source)
 
     if issues:
         return issues
@@ -242,7 +243,7 @@ def _validate_de_table(
     if fdr_threshold is None:
         positive_mask = usable & (effect > float(abs_logfc_threshold))
     else:
-        usable = usable & valid_fdr & (fdr > 0.0) & (fdr <= 1.0)
+        usable = usable & valid_fdr & (fdr >= 0.0) & (fdr <= 1.0)
         positive_mask = usable & (fdr < float(fdr_threshold)) & (effect > float(abs_logfc_threshold))
     positives = int(positive_mask.sum())
     negatives = int(usable.sum() - positives)

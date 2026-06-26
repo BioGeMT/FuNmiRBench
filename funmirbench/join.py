@@ -83,8 +83,14 @@ def load_experiment_table(
     if de["gene_id"].duplicated().any():
         raise ValueError(f"Duplicate gene_id values found in {meta.full_path}")
     keep = ["gene_id", "logFC", "FDR"]
-    if "PValue" in de.columns:
-        keep.append("PValue")
+    for optional in (
+        "PValue",
+        "FDR_status",
+        "FDR_for_plot",
+        "FDR_for_eval",
+    ):
+        if optional in de.columns:
+            keep.append(optional)
     out = de[keep].copy()
     if protein_coding_gene_ids is not None:
         before = len(out)
