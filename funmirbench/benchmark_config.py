@@ -73,3 +73,38 @@ def load_predictions(tsv_path, filters):
     if df["tool_id"].duplicated().any():
         raise ValueError("Duplicate tool_id values found after predictor filtering.")
     return {row["tool_id"]: row.to_dict() for _, row in df.iterrows()}
+
+
+def resolve_predictor_output_path(predictor_output_path, root):
+    path = pathlib.Path(str(predictor_output_path))
+    if not path.is_absolute():
+        path = pathlib.Path(root) / path
+    return path
+
+
+def validate_predictor_output_files(predictions, root):
+    missing = []
+    for tool_id, meta in predictions.items():
+        configured_path = meta.get("predictor_output_path")
+        if configured_path is None or pd.isna(configured_path) or str(configured_path).strip() == "":
+            missing.append((tool_id, configured_path))
+            continue
+        resolved_path = resolve_predictor_output_path(configured_path, root)
+        if not resolved_path.is_file():
+            missing.append((tool_id, configured_path))
+
+    if not missing:
+        return
+
+    lines = ["Missing predictor output files:", ""]
+    lines.extend(f"{tool_id}: {configured_path}" for tool_id, configured_path in missing)
+    lines.extend(
+        [
+            "",
+            (
+                "Generate or download the selected standardized predictor files, "
+                "or remove unavailable predictors from benchmark.yaml."
+            ),
+        ]
+    )
+    raise FileNotFoundError("\n".join(lines))

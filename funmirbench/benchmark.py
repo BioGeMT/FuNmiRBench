@@ -17,6 +17,7 @@ from funmirbench.benchmark_config import (
     load_experiments,
     load_predictions,
     selected_experiment_paths,
+    validate_predictor_output_files,
 )
 from funmirbench.benchmark_reports import (
     _init_run_layout,
@@ -219,6 +220,15 @@ def run_benchmark(config_path):
     )
     protein_coding_only = _optional_bool(eval_cfg.get("protein_coding_only"), True)
 
+    logger.info("Loading predictors...")
+    predictions = load_predictions(
+        root / config["predictions_tsv"],
+        config.get("predictors"),
+    )
+    if not predictions:
+        raise ValueError("Predictor selection resolved to no predictors.")
+    validate_predictor_output_files(predictions, root)
+
     logger.info("Syncing selected experiment DE tables from Zenodo...")
     synced = sync_zenodo_experiments(
         selected_experiment_paths(experiments_tsv, experiment_filters),
@@ -253,13 +263,6 @@ def run_benchmark(config_path):
     if not experiments:
         raise ValueError("Experiment selection resolved to no datasets.")
 
-    logger.info("Loading predictors...")
-    predictions = load_predictions(
-        root / config["predictions_tsv"],
-        config.get("predictors"),
-    )
-    if not predictions:
-        raise ValueError("Predictor selection resolved to no predictors.")
     publication_predictions = {
         tool_id: meta
         for tool_id, meta in predictions.items()
