@@ -8,10 +8,10 @@ predictions_tsv: metadata/predictions_info.tsv
 
 # Filter experiments by any column in the experiments TSV.
 # AND across columns, OR within each column's value list.
-# The default repo config ships with a small 2-dataset demo selection.
-# Edit or comment these active rows to benchmark other subsets.
+# By default, this empty filter block selects all rows in the experiments TSV.
+# Uncomment filter rows to benchmark a smaller subset.
 experiments:
-  id: [GSE124411_OE_miR_150_5p_2, GSE129076_OE_miR_450a_5p_1]
+  # id: [GSE124411_OE_miR_150_5p_2, GSE129076_OE_miR_450a_5p_1]
   # mirna_name: [hsa-miR-375-3p]
   # tested_cell_line: [HUV-EC-C]
   # tissue: [Cervix]
@@ -23,7 +23,7 @@ predictors:
   tool_id: [targetscan, mirdb_mirtarget, microt_cnn, mirbind2, miraw]
 
 evaluation:
-  fdr_threshold: null
+  fdr_threshold: 0.05
   effect_threshold: 1.0
   predictor_top_fraction: 0.10
   write_top_prediction_cdfs: true
