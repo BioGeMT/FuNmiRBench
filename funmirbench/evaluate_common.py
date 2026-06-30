@@ -26,9 +26,8 @@ GLOBAL_RANK_PREFIX = "global_rank_"
 LOCAL_RANK_PREFIX = "local_rank_"
 FDR_AUXILIARY_COLUMNS = (
     "PValue",
-    "FDR_status",
-    "FDR_for_plot",
-    "FDR_for_eval",
+    "plot_FDR",
+    "benchmark_FDR",
 )
 FIGURE_DPI = 300
 REPORT_PAGE_SIZE = (8.27, 11.69)
@@ -103,7 +102,7 @@ def _positive_mask(df, *, fdr_threshold, abs_logfc_threshold):
     effect_mask = df["expected_effect"] > float(abs_logfc_threshold)
     if fdr_threshold is None:
         return effect_mask
-    fdr = df["FDR_for_eval"] if "FDR_for_eval" in df.columns else df["FDR"]
+    fdr = df["benchmark_FDR"] if "benchmark_FDR" in df.columns else df["FDR"]
     return effect_mask & (fdr < float(fdr_threshold))
 
 
@@ -111,7 +110,7 @@ def _usable_gt_row_mask(df, *, fdr_threshold):
     mask = pd.to_numeric(df["logFC"], errors="coerce").notna()
     if fdr_threshold is not None:
         fdr = pd.to_numeric(
-            df["FDR_for_eval"] if "FDR_for_eval" in df.columns else df["FDR"],
+            df["benchmark_FDR"] if "benchmark_FDR" in df.columns else df["FDR"],
             errors="coerce",
         )
         mask = mask & fdr.notna() & (fdr >= 0.0) & (fdr <= 1.0)
@@ -312,7 +311,7 @@ def _annotate_ground_truth(df, *, perturbation=None):
     if "FDR" in out.columns:
         out = add_fdr_derived_columns(out)
         out["FDR"] = pd.to_numeric(out["FDR"], errors="coerce")
-        out["neglog10_FDR"] = _safe_neglog10(out["FDR_for_plot"])
+        out["neglog10_FDR"] = _safe_neglog10(out["plot_FDR"])
     else:
         out["FDR"] = np.nan
         out["neglog10_FDR"] = np.nan
