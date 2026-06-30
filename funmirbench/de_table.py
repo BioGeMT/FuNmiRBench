@@ -3,10 +3,11 @@
 import re
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 _ENSEMBL = re.compile(r"^ENS[A-Z]*G\d+", re.IGNORECASE)
-FDR_PLOT_FLOOR = 1e-300
+FDR_PLOT_FLOOR = np.nextafter(0, 1)
 FDR_DERIVED_COLUMNS = (
     "plot_FDR",
     "benchmark_FDR",

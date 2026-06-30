@@ -168,7 +168,8 @@ The processed DE TSV keeps `PValue` and `FDR` unchanged from the DE method, incl
 adjusted p-values and exact zero values. During benchmarking, rows with `PValue` but no adjusted
 p-value get `benchmark_FDR = 1`, so they remain non-significant background genes. Rows with both
 `PValue` and `FDR` missing remain excluded from FDR-thresholded evaluation. Rows with `FDR = 0`
-use `plot_FDR = 1e-300` for finite `-log10` plotting while keeping `benchmark_FDR = 0`.
+use the smallest positive floating-point value for `plot_FDR`, computed with `np.nextafter(0, 1)`,
+for finite `-log10` plotting while keeping `benchmark_FDR = 0`.
 
 Benchmark DE tables use a canonical schema independent of the DE method:
 

@@ -19,7 +19,7 @@ from sklearn.metrics import (
     roc_curve,
 )
 
-from funmirbench.de_table import add_fdr_derived_columns
+from funmirbench.de_table import FDR_PLOT_FLOOR, add_fdr_derived_columns
 
 SCORE_PREFIX = "score_"
 GLOBAL_RANK_PREFIX = "global_rank_"
@@ -264,7 +264,7 @@ def _ecdf(values):
 
 
 def _safe_neglog10(series):
-    clipped = pd.to_numeric(series, errors="coerce").clip(lower=1e-300)
+    clipped = pd.to_numeric(series, errors="coerce").clip(lower=FDR_PLOT_FLOOR)
     return -clipped.map(math.log10)
 
 
