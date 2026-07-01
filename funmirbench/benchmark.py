@@ -260,19 +260,6 @@ def run_benchmark(config_path):
     )
     if not predictions:
         raise ValueError("Predictor selection resolved to no predictors.")
-    publication_predictions = {
-        tool_id: meta
-        for tool_id, meta in predictions.items()
-        if evaluate_module._is_publication_tool(tool_id)
-    }
-    if publication_predictions:
-        excluded_tool_ids = [tool_id for tool_id in predictions if tool_id not in publication_predictions]
-        if excluded_tool_ids:
-            logger.info(
-                "Excluding control/mock predictors from publication outputs: "
-                + ", ".join(excluded_tool_ids)
-            )
-        predictions = publication_predictions
 
     protein_coding_gene_ids = None
     protein_coding_filter = {
