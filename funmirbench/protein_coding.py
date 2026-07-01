@@ -7,6 +7,8 @@ import logging
 import pathlib
 import shutil
 import tempfile
+import time
+import urllib.error
 import urllib.request
 
 from funmirbench.gene_ids import strip_ensembl_version
@@ -19,13 +21,43 @@ DEFAULT_ENSEMBL_GTF_URL = (
 )
 DEFAULT_GTF_REL_PATH = pathlib.Path("data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz")
 DEFAULT_CACHE_REL_PATH = pathlib.Path("data/resources/ensembl/protein_coding_gene_ids.txt")
+DOWNLOAD_RETRIES = 3
+DOWNLOAD_TIMEOUT_SECONDS = 60
 
 logger = logging.getLogger(__name__)
 
 
+def _split_gtf_attributes(raw_attrs: str) -> list[str]:
+    items = []
+    current = []
+    in_quotes = False
+    escaped = False
+    for char in raw_attrs.strip():
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            current.append(char)
+            escaped = True
+            continue
+        if char == '"':
+            in_quotes = not in_quotes
+            current.append(char)
+            continue
+        if char == ";" and not in_quotes:
+            items.append("".join(current))
+            current = []
+            continue
+        current.append(char)
+    if current:
+        items.append("".join(current))
+    return items
+
+
 def _parse_gtf_attributes(raw_attrs: str) -> dict[str, str]:
     attrs = {}
-    for item in raw_attrs.strip().split(";"):
+    for item in _split_gtf_attributes(raw_attrs):
         item = item.strip()
         if not item or " " not in item:
             continue
@@ -34,28 +66,51 @@ def _parse_gtf_attributes(raw_attrs: str) -> dict[str, str]:
     return attrs
 
 
-def _download_file(url: str, dest: pathlib.Path) -> pathlib.Path:
+def _download_file(
+    url: str,
+    dest: pathlib.Path,
+    *,
+    retries: int = DOWNLOAD_RETRIES,
+    timeout: int = DOWNLOAD_TIMEOUT_SECONDS,
+) -> pathlib.Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            dir=dest.parent,
-            prefix=f".{dest.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            tmp_path = pathlib.Path(handle.name)
-            with urllib.request.urlopen(url) as response:
-                shutil.copyfileobj(response, handle)
-        if tmp_path.stat().st_size == 0:
-            raise RuntimeError(f"Downloaded empty file from {url}")
-        tmp_path.replace(dest)
+    last_error = None
+    for attempt in range(1, retries + 1):
         tmp_path = None
-    finally:
-        if tmp_path is not None and tmp_path.exists():
-            tmp_path.unlink()
-    return dest
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=dest.parent,
+                prefix=f".{dest.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                tmp_path = pathlib.Path(handle.name)
+                with urllib.request.urlopen(url, timeout=timeout) as response:
+                    shutil.copyfileobj(response, handle)
+            if tmp_path.stat().st_size == 0:
+                raise RuntimeError(f"Downloaded empty file from {url}")
+            tmp_path.replace(dest)
+            tmp_path = None
+            return dest
+        except (OSError, RuntimeError, urllib.error.URLError, TimeoutError) as exc:
+            last_error = exc
+            if attempt >= retries:
+                break
+            logger.warning(
+                "Download failed for %s (attempt %d/%d): %s",
+                url,
+                attempt,
+                retries,
+                exc,
+            )
+            time.sleep(min(2 ** (attempt - 1), 5))
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                tmp_path.unlink()
+    raise RuntimeError(
+        f"Failed to download {url} to {dest} after {retries} attempts"
+    ) from last_error
 
 
 def ensure_ensembl_gtf(
