@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 import pathlib
 import urllib.parse
 
@@ -76,7 +77,7 @@ def load_predictions(tsv_path, filters):
 
 
 def resolve_predictor_output_path(predictor_output_path, root):
-    path = pathlib.Path(str(predictor_output_path))
+    path = pathlib.Path(os.path.expandvars(str(predictor_output_path))).expanduser()
     if not path.is_absolute():
         path = pathlib.Path(root) / path
     return path
