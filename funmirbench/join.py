@@ -10,6 +10,7 @@ import pandas as pd
 
 from funmirbench import DatasetMeta
 from funmirbench.de_table import find_gene_id_column, read_de_table
+from funmirbench.gene_ids import strip_ensembl_version
 
 
 PREDICTOR_CHUNK_SIZE = 1_000_000
@@ -22,10 +23,6 @@ def _emit_log(logger, message: str) -> None:
 
 def _elapsed(start: float) -> float:
     return time.perf_counter() - start
-
-
-def _strip_ensembl_version(value: object) -> str:
-    return str(value).strip().split(".", 1)[0]
 
 
 def _compute_global_rank_percentile(series: pd.Series) -> pd.Series:
@@ -75,7 +72,7 @@ def load_experiment_table(
         de.insert(0, "gene_id", de.index.astype(str))
     else:
         de = de.rename(columns={gene_src: "gene_id"})
-    de["gene_id"] = de["gene_id"].map(_strip_ensembl_version)
+    de["gene_id"] = de["gene_id"].map(strip_ensembl_version)
     missing = [col for col in ("logFC", "FDR") if col not in de.columns]
     if missing:
         raise ValueError(f"{meta.full_path} missing required columns: {missing}")
@@ -88,7 +85,7 @@ def load_experiment_table(
     if protein_coding_gene_ids is not None:
         before = len(out)
         protein_coding_gene_ids = {
-            _strip_ensembl_version(gene_id)
+            strip_ensembl_version(gene_id)
             for gene_id in protein_coding_gene_ids
         }
         out = out.loc[
@@ -185,7 +182,7 @@ def load_tool_scores(
         min_score=min_score,
     )
     df[rank_col_name] = df["Score"].map(rank_map)
-    df["gene_id"] = df["Ensembl_ID"].map(_strip_ensembl_version)
+    df["gene_id"] = df["Ensembl_ID"].map(strip_ensembl_version)
     if df["gene_id"].duplicated().any():
         keep_idx = df.groupby("gene_id")["Score"].idxmax()
         df = df.loc[keep_idx, ["gene_id", "Score", rank_col_name]].reset_index(drop=True)

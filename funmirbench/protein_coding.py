@@ -9,6 +9,8 @@ import shutil
 import tempfile
 import urllib.request
 
+from funmirbench.gene_ids import strip_ensembl_version
+
 
 ENSEMBL_RELEASE = "115"
 DEFAULT_ENSEMBL_GTF_URL = (
@@ -19,10 +21,6 @@ DEFAULT_GTF_REL_PATH = pathlib.Path("data/resources/ensembl/Homo_sapiens.GRCh38.
 DEFAULT_CACHE_REL_PATH = pathlib.Path("data/resources/ensembl/protein_coding_gene_ids.txt")
 
 logger = logging.getLogger(__name__)
-
-
-def _strip_ensembl_version(value: str) -> str:
-    return str(value).strip().split(".", 1)[0]
 
 
 def _parse_gtf_attributes(raw_attrs: str) -> dict[str, str]:
@@ -92,7 +90,7 @@ def parse_protein_coding_gene_ids_from_gtf(gtf_gz_path: pathlib.Path) -> set[str
                 continue
             gene_id = attrs.get("gene_id")
             if gene_id:
-                gene_ids.add(_strip_ensembl_version(gene_id))
+                gene_ids.add(strip_ensembl_version(gene_id))
     if not gene_ids:
         raise ValueError(f"No protein-coding gene IDs parsed from {gtf_gz_path}")
     return gene_ids
@@ -100,7 +98,7 @@ def parse_protein_coding_gene_ids_from_gtf(gtf_gz_path: pathlib.Path) -> set[str
 
 def read_gene_id_cache(cache_path: pathlib.Path) -> set[str]:
     return {
-        _strip_ensembl_version(line)
+        strip_ensembl_version(line)
         for line in cache_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     }
