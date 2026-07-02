@@ -13,6 +13,7 @@ import funmirbench.evaluate as ev
 
 
 CONTROL_PLOT_TOOL_IDS = set()
+DEFAULT_RANK_FRACTION_BINS = 10
 
 
 def _is_real_plot_tool(tool_id):
@@ -212,9 +213,7 @@ def _rank_class_plot_data(joined_frames, *, fdr_threshold, abs_logfc_threshold, 
     }
 
 
-def _plot_rank_class_distributions(
-    joined_frames, *, out_path, fdr_threshold, abs_logfc_threshold, rank_type
-):
+def _plot_rank_class_distributions(joined_frames, *, out_path, fdr_threshold, abs_logfc_threshold, rank_type):
     plot_data = _rank_class_plot_data(
         joined_frames,
         fdr_threshold=fdr_threshold,
@@ -279,20 +278,11 @@ def _plot_rank_class_distributions(
         rotation=0,
         ha="center",
     )
-    ev._add_figure_heading(
-        fig,
-        title=meta["title"],
-        subtitle=meta["subtitle"],
-    )
+    ev._add_figure_heading(fig, title=meta["title"], subtitle=meta["subtitle"])
     ax.legend(
         handles=[
             Patch(facecolor=ev.NEGATIVE_COLOR, edgecolor=ev.NEGATIVE_COLOR, alpha=0.45, label="Background genes"),
-            Patch(
-                facecolor="#C8D6EA",
-                edgecolor="#6E89A8",
-                alpha=0.50,
-                label="GT positives (predictor color)",
-            ),
+            Patch(facecolor="#C8D6EA", edgecolor="#6E89A8", alpha=0.50, label="GT positives (predictor color)"),
         ],
         frameon=False,
         fontsize=ev.PLOT_LEGEND_SIZE,
@@ -306,9 +296,7 @@ def _plot_rank_class_distributions(
     return True
 
 
-def _plot_rank_class_count_distributions(
-    joined_frames, *, out_path, fdr_threshold, abs_logfc_threshold, rank_type
-):
+def _plot_rank_class_count_distributions(joined_frames, *, out_path, fdr_threshold, abs_logfc_threshold, rank_type):
     plot_data = _rank_class_plot_data(
         joined_frames,
         fdr_threshold=fdr_threshold,
@@ -340,41 +328,18 @@ def _plot_rank_class_count_distributions(
         max_count = max(max_count, int(counts.max()))
 
     meta = _rank_distribution_metadata(rank_type)
-    for ax, tool_id, pos_values, bg_values in zip(
-        axes,
-        tool_ids,
-        positive_data,
-        background_data,
-    ):
+    for ax, tool_id, pos_values, bg_values in zip(axes, tool_ids, positive_data, background_data):
         ev._style_axes(ax, grid_axis="y")
         if bg_values:
-            ax.hist(
-                bg_values,
-                bins=bins,
-                color=ev.NEGATIVE_COLOR,
-                alpha=0.55,
-            )
+            ax.hist(bg_values, bins=bins, color=ev.NEGATIVE_COLOR, alpha=0.55)
         if pos_values:
-            ax.hist(
-                pos_values,
-                bins=bins,
-                histtype="step",
-                color=ev._tool_color(tool_id),
-                linewidth=2.2,
-            )
+            ax.hist(pos_values, bins=bins, histtype="step", color=ev._tool_color(tool_id), linewidth=2.2)
         ax.set_title(ev._tool_label(tool_id), fontsize=12, loc="left", pad=8)
         ax.set_xlim(0, 1)
         ax.set_yscale("log")
         ax.yaxis.set_minor_locator(NullLocator())
         ax.set_ylim(0.8, max_count * 1.6)
-        ax.tick_params(
-            axis="both",
-            which="major",
-            bottom=True,
-            left=True,
-            labelbottom=True,
-            labelleft=True,
-        )
+        ax.tick_params(axis="both", which="major", bottom=True, left=True, labelbottom=True, labelleft=True)
 
     for ax in axes[len(tool_ids) :]:
         ax.set_visible(False)
@@ -390,28 +355,108 @@ def _plot_rank_class_count_distributions(
     fig.supylabel("Gene count (log scale)", fontsize=ev.PLOT_AXIS_LABEL_SIZE, x=0.035)
     fig.subplots_adjust(top=0.70, bottom=0.24, hspace=0.48, wspace=0.24)
     legend_handles = [
-        Patch(
-            facecolor=ev.NEGATIVE_COLOR,
-            edgecolor=ev.NEGATIVE_COLOR,
-            alpha=0.55,
-            label="Background genes",
-        ),
-        Line2D(
-            [0],
-            [0],
-            color=ev.POSITIVE_COLOR,
-            linewidth=2.2,
-            label="GT positives (predictor color)",
-        ),
+        Patch(facecolor=ev.NEGATIVE_COLOR, edgecolor=ev.NEGATIVE_COLOR, alpha=0.55, label="Background genes"),
+        Line2D([0], [0], color=ev.POSITIVE_COLOR, linewidth=2.2, label="GT positives (predictor color)"),
     ]
-    fig.legend(
-        handles=legend_handles,
-        frameon=False,
-        fontsize=ev.PLOT_LEGEND_SIZE,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.82),
-        ncol=2,
+    fig.legend(handles=legend_handles, frameon=False, fontsize=ev.PLOT_LEGEND_SIZE, loc="upper center", bbox_to_anchor=(0.5, 0.82), ncol=2)
+    ev._save_figure(fig, out_path)
+    return True
+
+
+def _rank_positive_fraction_rows(plot_data, *, rank_type, n_bins=DEFAULT_RANK_FRACTION_BINS):
+    tool_ids = plot_data["tool_ids"]
+    positive_data = plot_data["positive_data"]
+    background_data = plot_data["background_data"]
+    bins = np.linspace(0.0, 1.0, int(n_bins) + 1)
+    rows = []
+    for tool_id, pos_values, bg_values in zip(tool_ids, positive_data, background_data):
+        pos_counts, _ = np.histogram(pos_values, bins=bins)
+        bg_counts, _ = np.histogram(bg_values, bins=bins)
+        total_counts = pos_counts + bg_counts
+        overall_total = int(total_counts.sum())
+        overall_positive = int(pos_counts.sum())
+        overall_fraction = float(overall_positive / overall_total) if overall_total else float("nan")
+        for idx, (left, right) in enumerate(zip(bins[:-1], bins[1:])):
+            total = int(total_counts[idx])
+            positives = int(pos_counts[idx])
+            background = int(bg_counts[idx])
+            positive_fraction = float(positives / total) if total else float("nan")
+            rows.append(
+                {
+                    "rank_type": rank_type,
+                    "tool_id": tool_id,
+                    "tool_label": ev._tool_label(tool_id),
+                    "rank_bin_start": float(left),
+                    "rank_bin_end": float(right),
+                    "rank_bin_mid": float((left + right) / 2.0),
+                    "total_count": total,
+                    "positive_count": positives,
+                    "background_count": background,
+                    "positive_fraction_within_bin": positive_fraction,
+                    "overall_positive_fraction": overall_fraction,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _write_rank_positive_fraction_by_bin(
+    joined_frames,
+    *,
+    out_path,
+    table_path,
+    fdr_threshold,
+    abs_logfc_threshold,
+    rank_type,
+    n_bins=DEFAULT_RANK_FRACTION_BINS,
+):
+    plot_data = _rank_class_plot_data(
+        joined_frames,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        rank_type=rank_type,
     )
+    if plot_data is None:
+        return False
+    fraction_df = _rank_positive_fraction_rows(plot_data, rank_type=rank_type, n_bins=n_bins)
+    if fraction_df.empty:
+        return False
+    table_path.parent.mkdir(parents=True, exist_ok=True)
+    fraction_df.to_csv(table_path, sep="\t", index=False)
+
+    fig, ax = plt.subplots(figsize=(9.2, 5.8))
+    ev._style_axes(ax, grid_axis="both")
+    plotted = False
+    for tool_id in plot_data["tool_ids"]:
+        sub = fraction_df[fraction_df["tool_id"] == tool_id].copy()
+        y_values = sub["positive_fraction_within_bin"].astype(float)
+        if not np.isfinite(y_values).any():
+            continue
+        plotted = True
+        color = ev._tool_color(tool_id)
+        ax.plot(sub["rank_bin_mid"], y_values, marker="o", linewidth=2.4, color=color, label=ev._tool_label(tool_id))
+        baseline = float(sub["overall_positive_fraction"].dropna().iloc[0])
+        if np.isfinite(baseline):
+            ax.hlines(baseline, xmin=0.0, xmax=1.0, colors=color, linestyles="dotted", linewidth=1.0, alpha=0.65)
+    if not plotted:
+        plt.close(fig)
+        return False
+
+    meta = _rank_distribution_metadata(rank_type)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(bottom=0)
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0))
+    ax.set_xlabel(f"{meta['axis_label']} (0 = weakest, 1 = strongest)", fontsize=ev.PLOT_AXIS_LABEL_SIZE)
+    ax.set_ylabel("GT positives within bin", fontsize=ev.PLOT_AXIS_LABEL_SIZE)
+    ev._add_figure_heading(
+        fig,
+        title=f"{rank_type.capitalize()} rank bins: fraction of genes that are GT positive",
+        subtitle=(
+            "Each point is GT positives / all scored genes in a rank bin; "
+            "dotted lines show each predictor's overall GT-positive rate."
+        ),
+    )
+    ax.legend(frameon=False, fontsize=ev.PLOT_LEGEND_SIZE, loc="upper left", bbox_to_anchor=(1.02, 1.0))
+    fig.subplots_adjust(top=0.82, bottom=0.16, left=0.11, right=0.78)
     ev._save_figure(fig, out_path)
     return True
 
@@ -470,14 +515,7 @@ def _add_recovery_endpoint_labels(ax, label_items, *, x_value, y_min, y_max, per
             color=item["color"],
             annotation_clip=False,
             clip_on=False,
-            arrowprops={
-                "arrowstyle": "-",
-                "color": item["color"],
-                "linewidth": 0.75,
-                "alpha": 0.8,
-                "shrinkA": 2,
-                "shrinkB": 2,
-            },
+            arrowprops={"arrowstyle": "-", "color": item["color"], "linewidth": 0.75, "alpha": 0.8, "shrinkA": 2, "shrinkB": 2},
         )
 
 
@@ -496,11 +534,7 @@ def _plot_positive_recovery_by_prediction_count(
     rank_specs = ev._rank_distribution_specs(combined, rank_types=("local", "global", "score"))
     if excluded_tool_ids:
         excluded_tool_ids = {str(tool_id) for tool_id in excluded_tool_ids}
-        rank_specs = [
-            (tool_id, column, column_type)
-            for tool_id, column, column_type in rank_specs
-            if str(tool_id) not in excluded_tool_ids
-        ]
+        rank_specs = [(tool_id, column, column_type) for tool_id, column, column_type in rank_specs if str(tool_id) not in excluded_tool_ids]
     if not rank_specs:
         return False
 
@@ -515,16 +549,8 @@ def _plot_positive_recovery_by_prediction_count(
         return False
 
     work = ev._annotate_ground_truth(work)
-    work["is_positive"] = ev._positive_mask(
-        work,
-        fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
-    ).astype(int)
-    groups = (
-        list(work.groupby(dataset_col, sort=True))
-        if dataset_col
-        else [("all_datasets", work)]
-    )
+    work["is_positive"] = ev._positive_mask(work, fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold).astype(int)
+    groups = list(work.groupby(dataset_col, sort=True)) if dataset_col else [("all_datasets", work)]
 
     max_predictions = int(max_predictions)
     if max_predictions <= 0:
@@ -546,11 +572,7 @@ def _plot_positive_recovery_by_prediction_count(
             if scored.empty:
                 continue
             scored["rank_value"] = values.loc[scored.index].astype(float)
-            scored = scored.sort_values(
-                ["rank_value", "gene_id"],
-                ascending=[False, True],
-                kind="mergesort",
-            )
+            scored = scored.sort_values(["rank_value", "gene_id"], ascending=[False, True], kind="mergesort")
             hits = scored["is_positive"].to_numpy(dtype=int)
             if hits.size == 0:
                 continue
@@ -569,22 +591,9 @@ def _plot_positive_recovery_by_prediction_count(
             continue
         plotted = True
         color = ev._tool_color(tool_id)
-        ax.plot(
-            x_values,
-            mean_curve,
-            linewidth=2.8,
-            color=color,
-            label=ev._tool_label(tool_id),
-        )
+        ax.plot(x_values, mean_curve, linewidth=2.8, color=color, label=ev._tool_label(tool_id))
         if endpoint_labels:
-            endpoint_items.append(
-                {
-                    "label": ev._tool_label(tool_id),
-                    "value": float(mean_curve[-1]),
-                    "y": float(mean_curve[-1]),
-                    "color": color,
-                }
-            )
+            endpoint_items.append({"label": ev._tool_label(tool_id), "value": float(mean_curve[-1]), "y": float(mean_curve[-1]), "color": color})
 
     if not plotted:
         plt.close(fig)
@@ -593,11 +602,7 @@ def _plot_positive_recovery_by_prediction_count(
     ax.set_xlim(1, max_predictions)
     if normalized:
         max_endpoint = max((item["y"] for item in endpoint_items), default=0.0)
-        y_max = (
-            1.02
-            if not excluded_tool_ids
-            else _recovery_fraction_y_max(max_endpoint)
-        )
+        y_max = 1.02 if not excluded_tool_ids else _recovery_fraction_y_max(max_endpoint)
         ax.set_ylim(0, y_max)
         percent_decimals = _recovery_percent_decimals(y_max)
         ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0, decimals=percent_decimals))
@@ -605,31 +610,16 @@ def _plot_positive_recovery_by_prediction_count(
         ax.set_ylim(bottom=0)
         percent_decimals = 0
     ax.set_xlabel("Predicted targets per dataset", fontsize=ev.PLOT_AXIS_LABEL_SIZE)
-    ax.set_ylabel(
-        "Mean GT-positive recovery fraction" if normalized else "Mean GT positives recovered",
-        fontsize=ev.PLOT_AXIS_LABEL_SIZE,
-    )
+    ax.set_ylabel("Mean GT-positive recovery fraction" if normalized else "Mean GT positives recovered", fontsize=ev.PLOT_AXIS_LABEL_SIZE)
     if normalized:
         title = "GT-positive recovery fraction by prediction count"
-        subtitle = (
-            "Each curve shows the mean fraction of GT positives recovered; "
-            f"endpoint labels show recovery at {max_predictions} predictions."
-        )
+        subtitle = "Each curve shows the mean fraction of GT positives recovered; " f"endpoint labels show recovery at {max_predictions} predictions."
     else:
         title = "GT-positive recovery by prediction count"
-        subtitle = (
-            "Each curve shows cumulative mean GT-positive genes recovered as top-ranked predictions are admitted per dataset."
-        )
+        subtitle = "Each curve shows cumulative mean GT-positive genes recovered as top-ranked predictions are admitted per dataset."
     ev._add_figure_heading(fig, title=title, subtitle=subtitle)
     if endpoint_labels:
-        _add_recovery_endpoint_labels(
-            ax,
-            endpoint_items,
-            x_value=max_predictions,
-            y_min=ax.get_ylim()[0],
-            y_max=ax.get_ylim()[1],
-            percent_decimals=percent_decimals,
-        )
+        _add_recovery_endpoint_labels(ax, endpoint_items, x_value=max_predictions, y_min=ax.get_ylim()[0], y_max=ax.get_ylim()[1], percent_decimals=percent_decimals)
     else:
         ax.legend(frameon=False, fontsize=ev.PLOT_LEGEND_SIZE, loc="upper left", bbox_to_anchor=(1.02, 1.0))
     ev._save_figure(fig, out_path)
@@ -658,16 +648,9 @@ def write_cross_dataset_summaries(
         path.mkdir(parents=True, exist_ok=True)
     metrics_df = pd.DataFrame(metric_rows)
     if metrics_df.empty:
-        return {
-            "tables": {},
-            "plots": {},
-        }
+        return {"tables": {}, "plots": {}}
     metrics_df = _publication_metrics_df(metrics_df)
-    real_tool_ids = [
-        tool_id
-        for tool_id in metrics_df["tool_id"].drop_duplicates().tolist()
-        if _is_real_plot_tool(tool_id)
-    ]
+    real_tool_ids = [tool_id for tool_id in metrics_df["tool_id"].drop_duplicates().tolist() if _is_real_plot_tool(tool_id)]
     ev._set_tool_colors(real_tool_ids)
 
     metric_names = ["coverage", "positive_coverage", "aps", "pr_auc", "spearman", "auroc"]
@@ -681,55 +664,44 @@ def write_cross_dataset_summaries(
     distribution_paths = {}
     for metric_name in metric_names:
         metric_path = metric_plots_dir / f"cross_dataset_{metric_name}_distribution.png"
-        wrote_distribution = _plot_cross_dataset_metric_distribution(
-            metrics_df,
-            metric_name=metric_name,
-            out_path=metric_path,
-        )
+        wrote_distribution = _plot_cross_dataset_metric_distribution(metrics_df, metric_name=metric_name, out_path=metric_path)
         if wrote_distribution:
             distribution_paths[f"cross_dataset_{metric_name}_distribution"] = str(metric_path)
             ev._emit_log(logger, f"  Wrote cross-dataset {metric_name} distribution: {metric_path}")
 
     rank_distribution_paths = {}
+    rank_fraction_table_paths = {}
     if joined_frames:
         for rank_type, plot_key, filename, count_plot_key, count_filename in (
-            (
-                "local",
-                "positive_background_local_rank_distributions",
-                "positive_background_local_rank_distributions.png",
-                "positive_background_local_rank_counts",
-                "positive_background_local_rank_counts.png",
-            ),
-            (
-                "global",
-                "positive_background_global_rank_distributions",
-                "positive_background_global_rank_distributions.png",
-                "positive_background_global_rank_counts",
-                "positive_background_global_rank_counts.png",
-            ),
+            ("local", "positive_background_local_rank_distributions", "positive_background_local_rank_distributions.png", "positive_background_local_rank_counts", "positive_background_local_rank_counts.png"),
+            ("global", "positive_background_global_rank_distributions", "positive_background_global_rank_distributions.png", "positive_background_global_rank_counts", "positive_background_global_rank_counts.png"),
         ):
             rank_distribution_path = rank_plots_dir / filename
-            wrote_rank_distribution = _plot_rank_class_distributions(
-                joined_frames,
-                out_path=rank_distribution_path,
-                fdr_threshold=fdr_threshold,
-                abs_logfc_threshold=abs_logfc_threshold,
-                rank_type=rank_type,
-            )
+            wrote_rank_distribution = _plot_rank_class_distributions(joined_frames, out_path=rank_distribution_path, fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold, rank_type=rank_type)
             if wrote_rank_distribution:
                 rank_distribution_paths[plot_key] = str(rank_distribution_path)
                 ev._emit_log(logger, f"  Wrote {rank_type} rank distribution plot: {rank_distribution_path}")
             rank_count_path = rank_plots_dir / count_filename
-            wrote_rank_count = _plot_rank_class_count_distributions(
+            wrote_rank_count = _plot_rank_class_count_distributions(joined_frames, out_path=rank_count_path, fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold, rank_type=rank_type)
+            if wrote_rank_count:
+                rank_distribution_paths[count_plot_key] = str(rank_count_path)
+                ev._emit_log(logger, f"  Wrote {rank_type} rank count plot: {rank_count_path}")
+
+            fraction_key = f"{rank_type}_rank_positive_fraction_within_bin"
+            fraction_plot_path = rank_plots_dir / f"{fraction_key}.png"
+            fraction_table_path = tables_dir / f"{fraction_key}.tsv"
+            wrote_fraction = _write_rank_positive_fraction_by_bin(
                 joined_frames,
-                out_path=rank_count_path,
+                out_path=fraction_plot_path,
+                table_path=fraction_table_path,
                 fdr_threshold=fdr_threshold,
                 abs_logfc_threshold=abs_logfc_threshold,
                 rank_type=rank_type,
             )
-            if wrote_rank_count:
-                rank_distribution_paths[count_plot_key] = str(rank_count_path)
-                ev._emit_log(logger, f"  Wrote {rank_type} rank count plot: {rank_count_path}")
+            if wrote_fraction:
+                rank_distribution_paths[fraction_key] = str(fraction_plot_path)
+                rank_fraction_table_paths[fraction_key] = str(fraction_table_path)
+                ev._emit_log(logger, f"  Wrote {rank_type} rank positive-fraction plot: {fraction_plot_path}")
         normalized_recovery_path = rank_plots_dir / "positive_recovery_fraction_by_prediction_count.png"
         wrote_normalized_recovery = _plot_positive_recovery_by_prediction_count(
             joined_frames,
@@ -741,20 +713,10 @@ def write_cross_dataset_summaries(
             excluded_tool_ids=CONTROL_PLOT_TOOL_IDS,
         )
         if wrote_normalized_recovery:
-            rank_distribution_paths["positive_recovery_fraction_by_prediction_count"] = str(
-                normalized_recovery_path
-            )
-            ev._emit_log(
-                logger,
-                f"  Wrote normalized positive recovery plot: {normalized_recovery_path}",
-            )
+            rank_distribution_paths["positive_recovery_fraction_by_prediction_count"] = str(normalized_recovery_path)
+            ev._emit_log(logger, f"  Wrote normalized positive recovery plot: {normalized_recovery_path}")
 
     return {
-        "tables": {
-            "cross_dataset_predictor_summary": str(summary_path),
-        },
-        "plots": {
-            **distribution_paths,
-            **rank_distribution_paths,
-        },
+        "tables": {"cross_dataset_predictor_summary": str(summary_path), **rank_fraction_table_paths},
+        "plots": {**distribution_paths, **rank_distribution_paths},
     }
