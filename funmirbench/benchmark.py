@@ -35,7 +35,7 @@ from funmirbench.evaluate import (
     evaluate_joined_dataframe,
 )
 from funmirbench.experiment_store import sync_zenodo_experiments
-from funmirbench.join import build_joined
+from funmirbench.join import build_joined, load_predictor_score_cache
 from funmirbench.logger import parse_log_level, setup_logging
 from funmirbench.predictor_combinations import write_predictor_combination_outputs
 from funmirbench.protein_coding import (
@@ -324,6 +324,13 @@ def run_benchmark(config_path):
     common_prediction_summaries = []
     logger.info(f"Experiments: {len(experiments)}")
     logger.info(f"Predictors:  {tool_ids}")
+    logger.info("Loading predictor score files once for this run...")
+    predictor_cache = load_predictor_score_cache(
+        tool_ids,
+        predictions,
+        root,
+        logger=logger.info,
+    )
 
     for meta in experiments:
         logger.info(f"Dataset: {meta.id} | {meta.miRNA} | {meta.cell_line}")
@@ -339,6 +346,7 @@ def run_benchmark(config_path):
             predictions,
             root,
             protein_coding_gene_ids=protein_coding_gene_ids,
+            predictor_cache=predictor_cache,
             logger=logger.info,
         )
         joined_path = dataset_dir / "joined.tsv"
