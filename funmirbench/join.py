@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Collection
 
@@ -15,6 +16,17 @@ from funmirbench.gene_ids import strip_ensembl_version
 
 
 PREDICTOR_CHUNK_SIZE = 1_000_000
+
+
+@dataclass(frozen=True)
+class LoadedPredictor:
+    tool_id: str
+    path: Path
+    score_direction: str
+    rows_read: int
+    rank_map: dict[float, float]
+    scores: pd.DataFrame
+    has_dataset_id: bool
 
 
 def _emit_log(logger, message: str) -> None:
@@ -161,6 +173,127 @@ def _read_relevant_tool_scores(
     return relevant, rank_map, rows_read
 
 
+def load_predictor_scores(
+    tool_id: str,
+    tool_meta: dict,
+    root: Path,
+    *,
+    logger=None,
+) -> LoadedPredictor:
+    start = time.perf_counter()
+    path = resolve_predictor_output_path(tool_meta["predictor_output_path"], root)
+    score_direction = str(
+        tool_meta.get("score_direction", "higher_is_stronger") or "higher_is_stronger"
+    )
+
+    header = pd.read_csv(path, sep="\t", nrows=0)
+    columns = [str(c).strip() for c in header.columns]
+    column_lookup = {str(c).strip(): c for c in header.columns}
+    required = ("Ensembl_ID", "miRNA_Name", "Score")
+    missing = [col for col in required if col not in columns]
+    if missing:
+        raise ValueError(f"{path} missing required columns: {missing}")
+
+    has_dataset_id = "Dataset_ID" in columns
+    usecols = [column_lookup[col] for col in required]
+    if has_dataset_id:
+        usecols.append(column_lookup["Dataset_ID"])
+
+    chunks = []
+    score_values = []
+    rows_read = 0
+    reader = pd.read_csv(path, sep="\t", usecols=usecols, chunksize=PREDICTOR_CHUNK_SIZE)
+    for chunk in reader:
+        chunk.columns = [str(c).strip() for c in chunk.columns]
+        rows_read += len(chunk)
+        normalized_score = _normalize_scores(
+            chunk["Score"],
+            score_direction=score_direction,
+            tool_id=tool_id,
+        )
+        score_values.append(normalized_score.dropna())
+
+        selected = pd.DataFrame(
+            {
+                "Ensembl_ID": chunk["Ensembl_ID"].map(_strip_ensembl_version),
+                "miRNA_Name": chunk["miRNA_Name"].astype(str),
+                "Score": normalized_score.astype(float),
+            }
+        )
+        if has_dataset_id:
+            selected["Dataset_ID"] = chunk["Dataset_ID"].astype(str)
+        chunks.append(selected)
+
+    all_scores = pd.concat(score_values, ignore_index=True) if score_values else pd.Series(dtype=float)
+    rank_map = _global_rank_percentile_map(all_scores)
+    if chunks:
+        scores = pd.concat(chunks, ignore_index=True)
+    else:
+        columns = ["Ensembl_ID", "miRNA_Name", "Score"]
+        if has_dataset_id:
+            columns.append("Dataset_ID")
+        scores = pd.DataFrame(columns=columns)
+    _emit_log(
+        logger,
+        (
+            f"Loaded predictor | {tool_id} | file_rows={rows_read:,} | "
+            f"unique_scores={len(rank_map):,} | {_elapsed(start):.2f}s"
+        ),
+    )
+    return LoadedPredictor(
+        tool_id=tool_id,
+        path=path,
+        score_direction=score_direction,
+        rows_read=rows_read,
+        rank_map=rank_map,
+        scores=scores,
+        has_dataset_id=has_dataset_id,
+    )
+
+
+def load_predictor_score_cache(
+    tool_ids,
+    predictions,
+    root,
+    *,
+    logger=None,
+) -> dict[str, LoadedPredictor]:
+    return {
+        tool_id: load_predictor_scores(tool_id, predictions[tool_id], root, logger=logger)
+        for tool_id in tool_ids
+    }
+
+
+def _select_loaded_tool_scores(
+    loaded: LoadedPredictor,
+    *,
+    dataset_id: str,
+    mirna: str,
+    col_name: str,
+    rank_col_name: str,
+    min_score: float | None,
+) -> pd.DataFrame:
+    scores = loaded.scores
+    mask = scores["miRNA_Name"].astype(str) == str(mirna)
+    if loaded.has_dataset_id:
+        mask &= scores["Dataset_ID"].astype(str) == str(dataset_id)
+    if min_score is not None:
+        mask &= scores["Score"] >= float(min_score)
+
+    if not bool(mask.any()):
+        return pd.DataFrame(columns=["gene_id", col_name, rank_col_name])
+
+    df = scores.loc[mask, ["Ensembl_ID", "Score"]].copy()
+    df[rank_col_name] = df["Score"].map(loaded.rank_map)
+    df = df.rename(columns={"Ensembl_ID": "gene_id"})
+    if df["gene_id"].duplicated().any():
+        keep_idx = df.groupby("gene_id")["Score"].idxmax()
+        df = df.loc[keep_idx, ["gene_id", "Score", rank_col_name]].reset_index(drop=True)
+    else:
+        df = df[["gene_id", "Score", rank_col_name]].copy()
+    return df.rename(columns={"Score": col_name})
+
+
 def load_tool_scores(
     tool_id: str,
     tool_meta: dict,
@@ -211,6 +344,7 @@ def build_joined(
     min_score: float | None = None,
     *,
     protein_coding_gene_ids: Collection[str] | None = None,
+    predictor_cache: dict[str, LoadedPredictor] | None = None,
     logger=None,
 ):
     total_start = time.perf_counter()
@@ -224,17 +358,36 @@ def build_joined(
         if tool_id not in predictions:
             raise ValueError(f"Unknown tool {tool_id!r}. Known: {sorted(predictions)}")
         tool_start = time.perf_counter()
-        scores, predictor_output_path = load_tool_scores(
-            tool_id,
-            predictions[tool_id],
-            root,
-            meta.id,
-            meta.miRNA,
-            f"score_{tool_id}",
-            f"global_rank_{tool_id}",
-            min_score=min_score,
-            logger=logger,
-        )
+        if predictor_cache is not None and tool_id in predictor_cache:
+            loaded = predictor_cache[tool_id]
+            scores = _select_loaded_tool_scores(
+                loaded,
+                dataset_id=meta.id,
+                mirna=meta.miRNA,
+                col_name=f"score_{tool_id}",
+                rank_col_name=f"global_rank_{tool_id}",
+                min_score=min_score,
+            )
+            predictor_output_path = loaded.path
+            _emit_log(
+                logger,
+                (
+                    f"    Join timing | {tool_id} | cached_file_rows={loaded.rows_read:,} | "
+                    f"matched_rows={len(scores):,} | unique_scores={len(loaded.rank_map):,}"
+                ),
+            )
+        else:
+            scores, predictor_output_path = load_tool_scores(
+                tool_id,
+                predictions[tool_id],
+                root,
+                meta.id,
+                meta.miRNA,
+                f"score_{tool_id}",
+                f"global_rank_{tool_id}",
+                min_score=min_score,
+                logger=logger,
+            )
         joined = joined.merge(scores, on="gene_id", how="left")
         paths[tool_id] = str(predictor_output_path)
         scored = int(joined[f"score_{tool_id}"].notna().sum())
