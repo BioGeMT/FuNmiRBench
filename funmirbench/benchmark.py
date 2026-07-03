@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import logging
 import pathlib
@@ -84,6 +85,12 @@ def _optional_bool(value, default=False):
         if normalized in {"0", "false", "no", "n", "off"}:
             return False
     raise ValueError(f"Expected a boolean value, got {value!r}")
+
+
+def _optional_int(value, default=None):
+    if value is None:
+        return default
+    return int(value)
 
 
 def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
@@ -198,6 +205,118 @@ def _finalize_run_bundle(
     }
 
 
+def _run_dataset_benchmark(
+    *,
+    meta,
+    dataset_dir,
+    tool_ids,
+    predictions,
+    root,
+    protein_coding_gene_ids,
+    predictor_cache,
+    fdr_threshold,
+    abs_logfc_threshold,
+    predictor_top_fraction,
+    write_top_prediction_cdfs,
+    report_min_common_coverage,
+    tool_labels,
+):
+    logger.info(f"Dataset: {meta.id} | {meta.miRNA} | {meta.cell_line}")
+    if dataset_dir.exists():
+        shutil.rmtree(dataset_dir)
+    (dataset_dir / "plots").mkdir(parents=True, exist_ok=True)
+    (dataset_dir / "reports").mkdir(parents=True, exist_ok=True)
+    logger.info(f"  Joining predictions for {meta.id}...")
+    joined, predictor_output_paths = build_joined(
+        meta,
+        tool_ids,
+        predictions,
+        root,
+        protein_coding_gene_ids=protein_coding_gene_ids,
+        predictor_cache=predictor_cache,
+        logger=logger.info,
+    )
+    joined_path = dataset_dir / "joined.tsv"
+    joined.to_csv(joined_path, sep="\t", index=False)
+    logger.info(f"  Wrote joined table: {joined_path}")
+
+    logger.info(f"  Evaluating metrics and plots for {meta.id}...")
+    evaluation = evaluate_joined_dataframe(
+        joined,
+        plots_dir=dataset_dir / "plots",
+        reports_dir=dataset_dir / "reports",
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        predictor_top_fraction=predictor_top_fraction,
+        dataset_id=meta.id,
+        mirna=meta.miRNA,
+        cell_line=meta.cell_line,
+        perturbation=meta.perturbation,
+        geo_accession=meta.geo_accession,
+        de_table_path=str(meta.full_path),
+        joined_tsv=joined_path,
+        predictor_output_paths=predictor_output_paths,
+        tool_labels=tool_labels,
+        write_top_prediction_cdfs=write_top_prediction_cdfs,
+        logger=logger.info,
+    )
+    write_common_comparison_plots(
+        joined,
+        evaluation=evaluation,
+        dataset_metric_rows=evaluation["metric_rows"],
+        plots_dir=dataset_dir / "plots",
+        dataset_id=meta.id,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        perturbation=meta.perturbation,
+        min_common_coverage=report_min_common_coverage,
+        logger=logger.info,
+    )
+    common_summary_path, common_prediction_summary = write_common_prediction_summary(
+        joined,
+        dataset_dir / "reports",
+        dataset_id=meta.id,
+        tool_ids=tool_ids,
+        report_min_common_coverage=report_min_common_coverage,
+    )
+    write_predictor_reports(
+        reports_dir=dataset_dir / "reports",
+        plots_dir=dataset_dir / "plots",
+        dataset_id=meta.id,
+        mirna=meta.miRNA,
+        cell_line=meta.cell_line,
+        perturbation=meta.perturbation,
+        geo_accession=meta.geo_accession,
+        de_table_path=str(meta.full_path),
+        predictor_output_paths=predictor_output_paths,
+        metric_rows=evaluation["metric_rows"],
+        skipped_tool_rows=evaluation.get("skipped_tool_rows", []),
+        tool_labels=tool_labels,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+        common_prediction_summary=common_prediction_summary,
+    )
+    logger.info(f"  Finished {meta.id}")
+    return {
+        "joined": joined.copy(),
+        "metric_rows": evaluation["metric_rows"],
+        "common_prediction_summary": common_prediction_summary,
+        "dataset_output": {
+            "dataset_id": meta.id,
+            "mirna": meta.miRNA,
+            "cell_line": meta.cell_line,
+            "perturbation": meta.perturbation,
+            "geo_accession": meta.geo_accession,
+            "de_table_path": str(meta.full_path),
+            "joined_tsv": str(joined_path),
+            "dataset_dir": str(dataset_dir),
+            "predictor_output_paths": predictor_output_paths,
+            "plots": evaluation["plots"],
+            "common_prediction_summary_tsv": str(common_summary_path),
+        },
+    }
+
+
 def run_benchmark(config_path):
     config_path = config_path.expanduser().resolve()
     logger.info(f"Config: {config_path}")
@@ -219,6 +338,12 @@ def run_benchmark(config_path):
         eval_cfg.get("report_min_common_coverage", eval_cfg.get("publication_min_common_coverage", 0.10))
     )
     protein_coding_only = _optional_bool(eval_cfg.get("protein_coding_only"), True)
+    dataset_workers = _optional_int(
+        eval_cfg.get("dataset_workers", eval_cfg.get("parallel_dataset_workers")),
+        1,
+    )
+    if dataset_workers < 1:
+        raise ValueError("evaluation.dataset_workers must be at least 1.")
 
     logger.info("Loading predictors...")
     predictions = load_predictions(
@@ -318,102 +443,49 @@ def run_benchmark(config_path):
         logger=logger.info,
     )
 
-    for meta in experiments:
-        logger.info(f"Dataset: {meta.id} | {meta.miRNA} | {meta.cell_line}")
-        dataset_dir = main_layout["datasets_dir"] / meta.id
-        if dataset_dir.exists():
-            shutil.rmtree(dataset_dir)
-        (dataset_dir / "plots").mkdir(parents=True, exist_ok=True)
-        (dataset_dir / "reports").mkdir(parents=True, exist_ok=True)
-        logger.info(f"  Joining predictions for {meta.id}...")
-        joined, predictor_output_paths = build_joined(
-            meta,
-            tool_ids,
-            predictions,
-            root,
+    worker_count = min(dataset_workers, len(experiments))
+    logger.info(f"Dataset workers: {worker_count}")
+
+    def run_one_dataset(meta):
+        return _run_dataset_benchmark(
+            meta=meta,
+            dataset_dir=main_layout["datasets_dir"] / meta.id,
+            tool_ids=tool_ids,
+            predictions=predictions,
+            root=root,
             protein_coding_gene_ids=protein_coding_gene_ids,
             predictor_cache=predictor_cache,
-            logger=logger.info,
-        )
-        joined_path = dataset_dir / "joined.tsv"
-        joined.to_csv(joined_path, sep="\t", index=False)
-        logger.info(f"  Wrote joined table: {joined_path}")
-
-        logger.info(f"  Evaluating metrics and plots for {meta.id}...")
-        evaluation = evaluate_joined_dataframe(
-            joined,
-            plots_dir=dataset_dir / "plots",
-            reports_dir=dataset_dir / "reports",
             fdr_threshold=fdr_threshold,
             abs_logfc_threshold=abs_logfc_threshold,
             predictor_top_fraction=predictor_top_fraction,
-            dataset_id=meta.id,
-            mirna=meta.miRNA,
-            cell_line=meta.cell_line,
-            perturbation=meta.perturbation,
-            geo_accession=meta.geo_accession,
-            de_table_path=str(meta.full_path),
-            joined_tsv=joined_path,
-            predictor_output_paths=predictor_output_paths,
-            tool_labels=tool_labels,
             write_top_prediction_cdfs=write_top_prediction_cdfs,
-            logger=logger.info,
-        )
-        write_common_comparison_plots(
-            joined,
-            evaluation=evaluation,
-            dataset_metric_rows=evaluation["metric_rows"],
-            plots_dir=dataset_dir / "plots",
-            dataset_id=meta.id,
-            fdr_threshold=fdr_threshold,
-            abs_logfc_threshold=abs_logfc_threshold,
-            perturbation=meta.perturbation,
-            min_common_coverage=report_min_common_coverage,
-            logger=logger.info,
-        )
-        common_summary_path, common_prediction_summary = write_common_prediction_summary(
-            joined,
-            dataset_dir / "reports",
-            dataset_id=meta.id,
-            tool_ids=tool_ids,
             report_min_common_coverage=report_min_common_coverage,
-        )
-        common_prediction_summaries.append(common_prediction_summary)
-        write_predictor_reports(
-            reports_dir=dataset_dir / "reports",
-            plots_dir=dataset_dir / "plots",
-            dataset_id=meta.id,
-            mirna=meta.miRNA,
-            cell_line=meta.cell_line,
-            perturbation=meta.perturbation,
-            geo_accession=meta.geo_accession,
-            de_table_path=str(meta.full_path),
-            predictor_output_paths=predictor_output_paths,
-            metric_rows=evaluation["metric_rows"],
-            skipped_tool_rows=evaluation.get("skipped_tool_rows", []),
             tool_labels=tool_labels,
-            fdr_threshold=fdr_threshold,
-            abs_logfc_threshold=abs_logfc_threshold,
-            common_prediction_summary=common_prediction_summary,
         )
-        joined_frames.append(joined.copy())
-        metric_rows.extend(evaluation["metric_rows"])
-        dataset_outputs.append(
-            {
-                "dataset_id": meta.id,
-                "mirna": meta.miRNA,
-                "cell_line": meta.cell_line,
-                "perturbation": meta.perturbation,
-                "geo_accession": meta.geo_accession,
-                "de_table_path": str(meta.full_path),
-                "joined_tsv": str(joined_path),
-                "dataset_dir": str(dataset_dir),
-                "predictor_output_paths": predictor_output_paths,
-                "plots": evaluation["plots"],
-                "common_prediction_summary_tsv": str(common_summary_path),
+
+    dataset_results = [None] * len(experiments)
+    if worker_count == 1:
+        for index, meta in enumerate(experiments):
+            dataset_results[index] = run_one_dataset(meta)
+    else:
+        logger.info(f"Processing datasets concurrently with {worker_count} thread workers.")
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {
+                executor.submit(run_one_dataset, meta): (index, meta.id)
+                for index, meta in enumerate(experiments)
             }
-        )
-        logger.info(f"  Finished {meta.id}")
+            for future in as_completed(futures):
+                index, dataset_id = futures[future]
+                try:
+                    dataset_results[index] = future.result()
+                except Exception as exc:
+                    raise RuntimeError(f"Dataset worker failed for {dataset_id}") from exc
+
+    for result in dataset_results:
+        joined_frames.append(result["joined"])
+        metric_rows.extend(result["metric_rows"])
+        common_prediction_summaries.append(result["common_prediction_summary"])
+        dataset_outputs.append(result["dataset_output"])
 
     logger.info("Writing metric tables...")
     logger.info("Writing cross-dataset summaries...")
