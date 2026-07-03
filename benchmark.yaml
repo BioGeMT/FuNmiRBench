@@ -34,5 +34,8 @@ evaluation:
   protein_coding_gtf: data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz
   protein_coding_gene_cache: data/resources/ensembl/protein_coding_gene_ids.txt
   figure_dpi: 600
+  # Process independent dataset outputs concurrently after predictor files are loaded.
+  # Increase for faster full runs when memory allows; default is serial execution.
+  # dataset_workers: 4
 
 out_dir: results/
