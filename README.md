@@ -103,6 +103,15 @@ Supported inputs:
 - count matrix: counts matrix + control columns + treated columns -> DESeq2
 - reads: local FASTQs + local reference files + explicit sample groups -> `FastQC + fastp + STAR + featureCounts + DESeq2`
 
+RNA-seq pipeline summary:
+
+- `count_matrix` mode validates the configured count matrix and runs DESeq2 directly on the selected
+  control and treated columns.
+- `reads` mode runs read QC/trimming, aligns reads to the configured reference with STAR, counts
+  genes with featureCounts, then runs the same DESeq2 step.
+- DE outputs preserve the original method-level `PValue` and `FDR` values. Benchmarking derives
+  `benchmark_FDR` and `plot_FDR` internally without modifying those RNA-seq outputs.
+
 This path expects the `funmirbench-experiments` environment from `pipelines/experiments/environment.yml` to be
 active so `fastqc`, `fastp`, `STAR`, `featureCounts`, and `Rscript` are available on `PATH`.
 
@@ -154,6 +163,24 @@ Each run writes:
 - `data/experiments/processed/<dataset_id>.tsv`
 - `pipelines/experiments/runs/<timestamp>_<dataset_id>/candidate_metadata.tsv`
 - `pipelines/experiments/runs/<timestamp>_<dataset_id>/run_manifest.json`
+
+The processed DE TSV keeps `PValue` and `FDR` unchanged from the DE method, including missing
+adjusted p-values and exact zero values. During benchmarking, rows with `PValue` but no adjusted
+p-value get `benchmark_FDR = 1`, so they remain non-significant background genes. Rows with both
+`PValue` and `FDR` missing remain excluded from FDR-thresholded evaluation. Rows with `FDR = 0`
+use the smallest positive floating-point value for `plot_FDR`, computed with `np.nextafter(0, 1)`,
+for finite `-log10` plotting while keeping `benchmark_FDR = 0`.
+
+Benchmark DE tables use a canonical schema independent of the DE method:
+
+- `gene_id`: Ensembl gene identifier
+- `logFC`: signed log fold change
+- `FDR`: adjusted p-value or q-value used for FDR-thresholded evaluation
+- `PValue`: optional raw p-value used to classify rows with missing adjusted p-values
+
+Common native headers are normalized when benchmark tables are read. For example, `log2FoldChange`
+maps to `logFC`, `padj`, `adj.P.Val`, and `qvalue` map to `FDR`, and `pvalue` or `P.Value` map to
+`PValue`.
 
 The reads example uses a reproduced dataset id, `GSE93717_OE_miR_941_deseq2`, so syncing it creates
 a separate variant instead of overwriting the curated `GSE93717_OE_miR_941` registry row.

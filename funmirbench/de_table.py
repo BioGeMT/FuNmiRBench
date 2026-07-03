@@ -1,11 +1,49 @@
-"""DE table reading and gene ID detection."""
+"""DE table reading, gene ID detection, and benchmark FDR derivations."""
 
 import re
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 _ENSEMBL = re.compile(r"^ENS[A-Z]*G\d+", re.IGNORECASE)
+FDR_PLOT_FLOOR = np.nextafter(0, 1)
+FDR_DERIVED_COLUMNS = (
+    "plot_FDR",
+    "benchmark_FDR",
+)
+DE_COLUMN_ALIASES = {
+    "log2foldchange": "logFC",
+    "log2_fold_change": "logFC",
+    "log_fold_change": "logFC",
+    "padj": "FDR",
+    "adj_p_val": "FDR",
+    "adj_p_value": "FDR",
+    "adjusted_p_value": "FDR",
+    "qvalue": "FDR",
+    "q_value": "FDR",
+    "pvalue": "PValue",
+    "p_value": "PValue",
+    "p_val": "PValue",
+}
+
+
+def _column_key(column) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(column).strip().lower()).strip("_")
+
+
+def normalize_de_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize common DE-result column aliases to the benchmark schema."""
+    rename = {}
+    present = {str(column) for column in df.columns}
+    for column in df.columns:
+        canonical = DE_COLUMN_ALIASES.get(_column_key(column))
+        if canonical and canonical not in present:
+            rename[column] = canonical
+            present.add(canonical)
+    if not rename:
+        return df
+    return df.rename(columns=rename)
 
 
 def find_gene_id_column(df):
@@ -42,6 +80,30 @@ def extract_gene_ids(df):
     return df[col].dropna().astype(str).tolist()
 
 
+def add_fdr_derived_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Add benchmark-safe FDR columns without changing original FDR/PValue."""
+    out = df.copy()
+    if "FDR" not in out.columns:
+        return out
+
+    fdr = pd.to_numeric(out["FDR"], errors="coerce")
+    if "PValue" in out.columns:
+        pvalue = pd.to_numeric(out["PValue"], errors="coerce")
+    else:
+        pvalue = pd.Series(float("nan"), index=out.index)
+
+    fdr_for_plot = fdr.copy()
+    fdr_for_plot.loc[fdr.isna()] = 1.0
+    fdr_for_plot.loc[fdr.eq(0.0)] = FDR_PLOT_FLOOR
+
+    fdr_for_eval = fdr.copy()
+    fdr_for_eval.loc[fdr.isna() & pvalue.notna()] = 1.0
+
+    out["plot_FDR"] = fdr_for_plot
+    out["benchmark_FDR"] = fdr_for_eval
+    return out
+
+
 def read_de_table(path: Path) -> pd.DataFrame:
     """Read a DE table TSV, normalizing malformed gene ID headers."""
     df = pd.read_csv(path, sep="\t")
@@ -56,4 +118,5 @@ def read_de_table(path: Path) -> pd.DataFrame:
         and float(pd.Series(df.index.astype(str)).str.match(_ENSEMBL).mean()) >= 0.5
     ):
         df = df.reset_index().rename(columns={"index": "gene_id"})
-    return df
+    df = normalize_de_columns(df)
+    return add_fdr_derived_columns(df)

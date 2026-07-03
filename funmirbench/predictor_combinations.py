@@ -19,6 +19,7 @@ from sklearn.metrics import auc, average_precision_score, precision_recall_curve
 
 from funmirbench.evaluate import (
     NEUTRAL_COLOR,
+    FDR_AUXILIARY_COLUMNS,
     PLOT_AXIS_LABEL_SIZE,
     PLOT_LEGEND_SIZE,
     SCORE_PREFIX,
@@ -138,7 +139,7 @@ def _prepare_combo_frame(joined, combo, *, fdr_threshold, abs_logfc_threshold):
     if missing:
         return None
     keep_cols = ["gene_id", "logFC", "FDR", *score_cols]
-    for optional in ("dataset_id", "mirna", "perturbation", "PValue"):
+    for optional in ("dataset_id", "mirna", "perturbation", *FDR_AUXILIARY_COLUMNS):
         if optional in joined.columns:
             keep_cols.append(optional)
     work = joined[keep_cols].copy()
@@ -239,7 +240,7 @@ def _evaluate_top_fraction_intersection_dataset(
         return None
 
     keep_cols = ["gene_id", "logFC", "FDR", *score_cols]
-    for optional in ("dataset_id", "mirna", "perturbation", "PValue"):
+    for optional in ("dataset_id", "mirna", "perturbation", *FDR_AUXILIARY_COLUMNS):
         if optional in joined.columns:
             keep_cols.append(optional)
     work = joined[keep_cols].copy()
