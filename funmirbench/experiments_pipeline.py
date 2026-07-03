@@ -373,7 +373,7 @@ def run_de_from_counts(
     required = {"gene_id", "logFC", "FDR"}
     if not required.issubset(de_df.columns):
         raise ValueError(
-            f"DESeq2 output is missing required columns. Expected at least {sorted(required)}, "
+            f"DE output is missing required benchmark columns. Expected at least {sorted(required)}, "
             f"found {sorted(de_df.columns)}"
         )
 

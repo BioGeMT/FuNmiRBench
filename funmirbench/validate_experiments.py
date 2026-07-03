@@ -232,7 +232,7 @@ def _validate_de_table(
     fdr = None
     valid_fdr = None
     if fdr_threshold is not None:
-        fdr_source = de["FDR_for_eval"] if "FDR_for_eval" in de.columns else de["FDR"]
+        fdr_source = de["benchmark_FDR"] if "benchmark_FDR" in de.columns else de["FDR"]
         fdr, valid_fdr = _finite_numeric(fdr_source)
 
     if issues:

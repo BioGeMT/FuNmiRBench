@@ -74,26 +74,11 @@ dds <- dds[rowSums(counts(dds)) > 0, ]
 dds <- DESeq(dds)
 res <- results(dds, contrast = c("condition", "treated", "control"))
 
-fdr_status <- rep("valid_FDR", length(res$padj))
-fdr_status[is.na(res$padj) & !is.na(res$pvalue)] <- "independent_filtering_NA"
-fdr_status[is.na(res$padj) & is.na(res$pvalue)] <- "cooks_or_unusable_NA"
-fdr_status[!is.na(res$padj) & res$padj == 0] <- "zero_FDR"
-
-fdr_for_plot <- res$padj
-fdr_for_plot[is.na(res$padj)] <- 1
-fdr_for_plot[!is.na(res$padj) & res$padj == 0] <- 1e-300
-
-fdr_for_eval <- res$padj
-fdr_for_eval[is.na(res$padj) & !is.na(res$pvalue)] <- 1
-
 out <- data.frame(
   gene_id = sub("\\.[0-9]+$", "", rownames(res)),
   logFC = res$log2FoldChange,
   PValue = res$pvalue,
   FDR = res$padj,
-  FDR_status = fdr_status,
-  FDR_for_plot = fdr_for_plot,
-  FDR_for_eval = fdr_for_eval,
   stringsAsFactors = FALSE
 )
 out <- out[order(out$PValue, na.last = TRUE), ]

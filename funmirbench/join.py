@@ -85,9 +85,8 @@ def load_experiment_table(
     keep = ["gene_id", "logFC", "FDR"]
     for optional in (
         "PValue",
-        "FDR_status",
-        "FDR_for_plot",
-        "FDR_for_eval",
+        "plot_FDR",
+        "benchmark_FDR",
     ):
         if optional in de.columns:
             keep.append(optional)
