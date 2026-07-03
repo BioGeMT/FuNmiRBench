@@ -58,6 +58,7 @@ def evaluate_joined_dataframe(
     predictor_correlation_tsv = None
     comparisons = []
     coverage_by_tool = {}
+    scored_frames_by_tool = {}
     evaluated_score_cols = []
     evaluated_tool_ids = []
     evaluated_local_rank_cols = []
@@ -234,6 +235,7 @@ def evaluate_joined_dataframe(
             "coverage": coverage_info["coverage"],
         })
         coverage_by_tool[tool_id] = coverage_info["coverage"]
+        scored_frames_by_tool[tool_id] = scored
         evaluated_score_cols.append(score_col)
         evaluated_tool_ids.append(tool_id)
         evaluated_local_rank_cols.append(local_rank_col)
@@ -329,13 +331,7 @@ def evaluate_joined_dataframe(
         try:
             own_scored_comparisons = []
             for score_col, tool_id, comparison in zip(plot_score_cols, plot_tool_ids, plot_comparisons):
-                scored, _ = _prepare_scored_frame(
-                    joined,
-                    score_col=score_col,
-                    fdr_threshold=fdr_threshold,
-                    abs_logfc_threshold=abs_logfc_threshold,
-                    perturbation=perturbation,
-                )
+                scored = scored_frames_by_tool[tool_id]
                 own_scored_comparisons.append(
                     {
                         "tool_id": tool_id,
