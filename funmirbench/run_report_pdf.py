@@ -396,6 +396,10 @@ def _plot_items(combined_outputs):
                 "Local Rank Counts",
                 "Binned gene counts by dataset-local rank.",
             ),
+            "local_rank_positive_fraction_within_bin": (
+                "Local Rank Enrichment",
+                "GT-positive fraction across dataset-local rank bins.",
+            ),
             "positive_background_global_rank_distributions": (
                 "Global Rank Distributions",
                 "GT positives and background genes by predictor-file rank.",
@@ -403,6 +407,10 @@ def _plot_items(combined_outputs):
             "positive_background_global_rank_counts": (
                 "Global Rank Counts",
                 "Binned gene counts by predictor-file rank.",
+            ),
+            "global_rank_positive_fraction_within_bin": (
+                "Global Rank Enrichment",
+                "GT-positive fraction across predictor-file rank bins.",
             ),
             "positive_recovery_fraction_by_prediction_count": (
                 "GT-Positive Recovery by Prediction Count",
@@ -495,6 +503,35 @@ def _draw_cross_dataset_distribution_pages(pdf, combined_outputs):
             pending_plot_items = []
     if pending_plot_items:
         _draw_plot_pair_page(pdf, pending_plot_items)
+    return drawn_keys
+
+
+def _draw_rank_enrichment_recovery_pages(pdf, combined_outputs):
+    items_by_key = {key: (title, caption, path) for key, title, caption, path in _plot_items(combined_outputs)}
+    first_page_keys = [
+        "local_rank_positive_fraction_within_bin",
+        "global_rank_positive_fraction_within_bin",
+    ]
+    recovery_key = "positive_recovery_fraction_by_prediction_count"
+    drawn_keys = set()
+
+    first_page_items = []
+    for key in first_page_keys:
+        item = items_by_key.get(key)
+        if item is None:
+            continue
+        title, caption, path = item
+        first_page_items.append((key, title, caption, path))
+        drawn_keys.add(key)
+    if first_page_items:
+        _draw_plot_pair_page(pdf, first_page_items)
+
+    item = items_by_key.get(recovery_key)
+    if item is not None:
+        title, caption, path = item
+        _draw_plot_pair_page(pdf, [(recovery_key, title, caption, path)])
+        drawn_keys.add(recovery_key)
+
     return drawn_keys
 
 
@@ -685,6 +722,7 @@ def write_publication_run_pdf_report(
         _save_page(pdf, fig)
 
         drawn_cross_dataset_keys = _draw_cross_dataset_distribution_pages(pdf, combined_outputs)
+        drawn_rank_enrichment_keys = _draw_rank_enrichment_recovery_pages(pdf, combined_outputs)
 
         fig, ax = _new_page()
         _header(ax, "Cross-Dataset Predictor Summary", "Coverage-aware interpretation of mean performance across selected datasets.")
@@ -721,6 +759,8 @@ def write_publication_run_pdf_report(
         pending_plot_items = []
         for key, title, caption, path in _plot_items(combined_outputs):
             if key in drawn_cross_dataset_keys:
+                continue
+            if key in drawn_rank_enrichment_keys:
                 continue
             if key in paired_rank_keys:
                 continue
