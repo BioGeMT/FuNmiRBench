@@ -39,7 +39,6 @@ EXPECTED_COMBINED_PLOTS = {
     "positive_background_global_rank_distributions",
     "positive_background_global_rank_counts",
     "positive_recovery_fraction_by_prediction_count",
-    "predictor_combination_expanded_frontier",
 }
 DEFAULT_MIN_COVERAGE_FOR_HEADLINE = 0.10
 

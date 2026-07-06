@@ -375,12 +375,7 @@ def _plot_items(combined_outputs):
         "spearman": "Spearman",
         "auroc": "AUROC",
     }
-    descriptions = {
-        "predictor_combination_expanded_frontier": (
-            "Predictor-Combination Frontier",
-            "Mean positive coverage versus mean APS.",
-        ),
-    }
+    descriptions = {}
     for metric_name, metric_label in metric_labels.items():
         descriptions[f"cross_dataset_{metric_name}_distribution"] = (
             f"Cross-Dataset {metric_label} Distribution",
@@ -583,7 +578,6 @@ def _draw_dataset_inventory_pages(pdf, dataset_outputs):
             ax,
             "Included figure families",
             [
-                "Combination plots compare predictors and rank-mean combinations.",
                 "Common-prediction tables report predictor overlap.",
                 "Rank pages pair distributions with binned count views.",
                 "Rank-count panels use log-scaled y-axes.",
@@ -623,10 +617,9 @@ def _draw_dataset_inventory_pages(pdf, dataset_outputs):
         ax,
         "Included figure families",
         [
-            "Combination plots compare predictors and rank-mean combinations.",
-            "Common-prediction tables report predictor overlap.",
-            "Rank pages pair distributions with binned count views.",
-            "Rank-count panels use log-scaled y-axes.",
+                "Common-prediction tables report predictor overlap.",
+                "Rank pages pair distributions with binned count views.",
+                "Rank-count panels use log-scaled y-axes.",
             "Dataset reports include heatmaps, CDFs, and predictor diagnostics.",
         ],
         x=0.06,

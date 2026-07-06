@@ -379,7 +379,7 @@ def write_run_readme(
             "- `datasets/<dataset_id>/reports/`: per-dataset Markdown/PDF reports and correlation TSVs",
             "- `tables/per_experiment/`: metric tables across datasets, one row per experiment",
             "- `tables/combined/`: cross-dataset predictor summary table",
-            "- `plots/combined/metrics/`, `plots/combined/ranks/`, `plots/combined/combinations/`: cross-dataset comparison plots grouped by theme",
+            "- `plots/combined/metrics/`, `plots/combined/ranks/`: cross-dataset comparison plots grouped by theme",
             "- `summary.json`: machine-readable run summary",
             "",
             "## Datasets",
@@ -442,9 +442,6 @@ def write_run_readme(
         ),
         "positive_recovery_fraction_by_prediction_count": (
             "GT-positive recovery fraction with endpoint labels"
-        ),
-        "predictor_combination_expanded_frontier": (
-            "coverage/APS frontier for predictors and their combinations"
         ),
     }
     for key, path in relative_combined_outputs.get("plots", {}).items():
@@ -734,7 +731,6 @@ def write_run_pdf_report(
             "positive_background_global_rank_distributions.png: whether positives rank above background on the predictor-global rank scale",
             "positive_background_global_rank_counts.png: binned predictor-global counts for positives and background genes on a log scale",
             "positive_recovery_fraction_by_prediction_count.png: GT-positive recovery fraction with endpoint labels",
-            "predictor_combination_expanded_frontier.png: essential coverage/APS candidates for the best singles and combinations",
         ]
         if len(dataset_df) <= 12:
             fig, ax = new_page()
@@ -839,10 +835,6 @@ def write_run_pdf_report(
             "positive_recovery_fraction_by_prediction_count": (
                 "GT-positive recovery fraction by prediction count",
                 "Cumulative curves showing the mean fraction of GT-positive genes recovered; endpoint labels show recovery at 300 predictions per dataset.",
-            ),
-            "predictor_combination_expanded_frontier": (
-                "Predictor-combination essential candidates",
-                "Coverage-versus-APS comparison of the best single predictors and best combinations; the full summary is printed in the preceding table and saved as TSV.",
             ),
         })
         for key, (title, caption) in plot_descriptions.items():

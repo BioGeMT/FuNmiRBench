@@ -328,7 +328,7 @@ Inside each run folder you get:
 - `datasets/<dataset_id>/reports/`: per-dataset Markdown/PDF reports and correlation TSVs
 - `tables/per_experiment/`: per-experiment metric tables
 - `tables/combined/`: cross-dataset predictor summary table
-- `plots/combined/metrics/`, `plots/combined/ranks/`, `plots/combined/combinations/`: cross-dataset comparison plots grouped by theme
+- `plots/combined/metrics/`, `plots/combined/ranks/`: cross-dataset comparison plots grouped by theme
 - `summary.json`: run summary
 
 When 2 or more predictors are selected, each dataset gets:

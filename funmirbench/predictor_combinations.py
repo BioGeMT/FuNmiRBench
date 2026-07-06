@@ -1,36 +1,24 @@
 """Predictor-combination analysis for benchmark reports.
 
 This module tests whether combining predictors improves over individual
-predictors. It writes the coverage-versus-APS frontier and the supporting
-combination summary table.
+predictors. It writes the supporting combination summary table.
 """
 
 from __future__ import annotations
 
 import itertools
 import pathlib
-import textwrap
 
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
-from matplotlib.lines import Line2D
 from sklearn.metrics import auc, average_precision_score, precision_recall_curve, roc_auc_score
 
 from funmirbench.evaluate import (
-    NEUTRAL_COLOR,
     FDR_AUXILIARY_COLUMNS,
-    PLOT_AXIS_LABEL_SIZE,
-    PLOT_LEGEND_SIZE,
     SCORE_PREFIX,
-    _add_figure_heading,
     _annotate_ground_truth,
     _filter_usable_gt_rows,
     _positive_mask,
     _rank_scale_scores,
-    _save_figure,
-    _style_axes,
-    _tool_label,
     _top_fraction_mask,
 )
 
@@ -39,9 +27,6 @@ EXCLUDED_COMBINATION_TOOL_IDS = set()
 DEFAULT_MIN_DATASET_COVERAGE = 0.01
 DEFAULT_MAX_COMBINATION_SIZE = None
 DEFAULT_PREDICTOR_TOP_FRACTION = 0.10
-SINGLE_PREDICTOR_COLOR = "#111827"
-ORIGINAL_SINGLE_PREDICTOR_COLOR = "#1F77B4"
-ORIGINAL_COMBINATION_COLOR = "#FF7F0E"
 COMBINATION_SUMMARY_COLUMNS = [
     "combination_id",
     "tool_ids",
@@ -381,359 +366,6 @@ def compute_predictor_combination_summary(
     ).reset_index(drop=True)
 
 
-def _pareto_frontier_mask(df, *, x_col="positive_coverage_mean", y_col="aps_mean"):
-    values = df[[x_col, y_col]].astype(float)
-    mask = []
-    for idx, row in values.iterrows():
-        dominated = False
-        for jdx, other in values.iterrows():
-            if idx == jdx:
-                continue
-            if (
-                other[x_col] >= row[x_col]
-                and other[y_col] >= row[y_col]
-                and (other[x_col] > row[x_col] or other[y_col] > row[y_col])
-            ):
-                dominated = True
-                break
-        mask.append(not dominated)
-    return pd.Series(mask, index=df.index)
-
-
-def _short_tool_label(tool_id):
-    label = _tool_label(tool_id)
-    replacements = {
-        "TargetScan v8": "TargetScan",
-        "Random (3000 per dataset)": "Random 3000",
-        "mirdb mirtarget": "miRDB",
-    }
-    return replacements.get(label, label.replace("_", " "))
-
-
-def _combination_label(combination_id):
-    return " + ".join(_short_tool_label(part) for part in str(combination_id).split("+"))
-
-
-def _wrapped_combination_label(combination_id, *, width=28):
-    return "\n".join(
-        textwrap.wrap(
-            _combination_label(combination_id),
-            width=width,
-            break_long_words=False,
-            break_on_hyphens=False,
-        )
-    )
-
-
-def _has_control_predictor(tool_ids):
-    return any(
-        tool_id in EXCLUDED_COMBINATION_TOOL_IDS
-        for tool_id in str(tool_ids).split(",")
-    )
-
-
-def _essential_candidate_rows(work):
-    if work.empty:
-        return work
-    label_by_index = {}
-    groups = [
-        ("Best single APS", work[work["combination_size"] == 1], "aps_mean"),
-        (
-            "Best single coverage",
-            work[work["combination_size"] == 1],
-            "positive_coverage_mean",
-        ),
-        ("Best combo APS", work[work["combination_size"] > 1], "aps_mean"),
-        (
-            "Best combo coverage",
-            work[work["combination_size"] > 1],
-            "positive_coverage_mean",
-        ),
-    ]
-    for label, subset, metric in groups:
-        if subset.empty:
-            continue
-        idx = subset[metric].astype(float).idxmax()
-        label_by_index[idx] = f"{label}; {label_by_index[idx]}" if idx in label_by_index else label
-    essential = work.loc[list(label_by_index)].copy()
-    essential["plot_label"] = essential.index.map(label_by_index)
-    return essential.sort_values(
-        ["combination_size", "aps_mean", "positive_coverage_mean"],
-        ascending=[True, False, False],
-    )
-
-
-def write_predictor_combination_frontier_plot(
-    summary_df,
-    out_path,
-    *,
-    title="Predictor-combination performance frontier",
-):
-    fig, ax = plt.subplots(figsize=(9.2, 6.0))
-    _style_axes(ax, grid_axis="both")
-    if summary_df.empty:
-        ax.text(0.5, 0.5, "No predictor combinations available", ha="center", va="center")
-        _save_figure(fig, out_path)
-        return out_path
-
-    work = summary_df.copy()
-    if work.empty:
-        ax.text(0.5, 0.5, "No predictor combinations available", ha="center", va="center")
-        _save_figure(fig, out_path)
-        return out_path
-
-    work["is_frontier"] = _pareto_frontier_mask(work)
-    markers = {1: "o", 2: "s", 3: "^"}
-    labels = {1: "single predictor", 2: "pair", 3: "triple"}
-    for size in sorted(work["combination_size"].unique()):
-        subset = work[work["combination_size"] == size]
-        ax.scatter(
-            subset["positive_coverage_mean"],
-            subset["aps_mean"],
-            s=np.where(subset["is_frontier"], 120, 62),
-            marker=markers.get(int(size), "D"),
-            color=ORIGINAL_SINGLE_PREDICTOR_COLOR if int(size) == 1 else ORIGINAL_COMBINATION_COLOR,
-            alpha=np.where(subset["is_frontier"], 0.95, 0.45),
-            edgecolor="black",
-            linewidth=0.85,
-            label=labels.get(int(size), f"size {size}"),
-        )
-    frontier = work[work["is_frontier"]].sort_values("positive_coverage_mean")
-    if len(frontier) > 1:
-        ax.plot(
-            frontier["positive_coverage_mean"],
-            frontier["aps_mean"],
-            color=NEUTRAL_COLOR,
-            linewidth=1.9,
-            linestyle="--",
-            label="Pareto frontier",
-        )
-
-    essential = _essential_candidate_rows(work)
-    label_rows = essential.drop_duplicates("combination_id").head(4)
-    fallback_offsets = [(8, 10), (8, -22), (-108, 12), (-108, -24)]
-    for fallback_offset, (_, row) in zip(fallback_offsets, label_rows.iterrows()):
-        ax.annotate(
-            _combination_label(row["combination_id"]),
-            (row["positive_coverage_mean"], row["aps_mean"]),
-            xytext=fallback_offset,
-            textcoords="offset points",
-            fontsize=9.2,
-            color="#22303C",
-            arrowprops={
-                "arrowstyle": "-",
-                "color": NEUTRAL_COLOR,
-                "linewidth": 0.9,
-                "shrinkA": 3,
-                "shrinkB": 4,
-            },
-            bbox={
-                "boxstyle": "round,pad=0.12",
-                "facecolor": "white",
-                "edgecolor": "none",
-                "alpha": 0.80,
-            },
-        )
-    ax.set_xlabel("Mean positive coverage", fontsize=PLOT_AXIS_LABEL_SIZE)
-    ax.set_ylabel("Mean APS", fontsize=PLOT_AXIS_LABEL_SIZE)
-    ax.set_xlim(0, min(1.02, max(0.15, float(work["positive_coverage_mean"].max()) * 1.18)))
-    ax.set_ylim(0, min(1.02, max(0.2, float(work["aps_mean"].max()) * 1.22)))
-    _add_figure_heading(
-        fig,
-        title=title,
-        subtitle="Labels mark only essential single-predictor and combination candidates; full results are in the TSV table.",
-    )
-    ax.legend(frameon=False, fontsize=PLOT_LEGEND_SIZE, loc="lower right")
-    _save_figure(fig, out_path)
-    return out_path
-
-
-def write_predictor_combination_expanded_frontier_plot(
-    summary_df,
-    out_path,
-    *,
-    title="Predictor-combination essential candidates",
-):
-    fig, ax = plt.subplots(figsize=(8.2, 5.8))
-    _style_axes(ax, grid_axis="both")
-    if summary_df.empty:
-        ax.text(0.5, 0.5, "No predictor combinations available", ha="center", va="center")
-        _save_figure(fig, out_path)
-        return out_path
-
-    work = summary_df.replace([np.inf, -np.inf], np.nan).dropna(
-        subset=["positive_coverage_mean", "aps_mean"]
-    ).copy()
-    if work.empty:
-        ax.text(0.5, 0.5, "No predictor combinations available", ha="center", va="center")
-        _save_figure(fig, out_path)
-        return out_path
-
-    if "contains_control_predictor" not in work.columns:
-        work["contains_control_predictor"] = work["tool_ids"].map(_has_control_predictor)
-    work = work[~work["contains_control_predictor"].astype(bool)].copy()
-    if work.empty:
-        ax.text(0.5, 0.5, "No predictor combinations available", ha="center", va="center")
-        _save_figure(fig, out_path)
-        return out_path
-
-    essential = _essential_candidate_rows(work)
-    singles = essential[essential["combination_size"] == 1]
-    combinations = essential[essential["combination_size"] > 1]
-    if not singles.empty:
-        ax.scatter(
-            singles["positive_coverage_mean"],
-            singles["aps_mean"],
-            s=88,
-            marker="o",
-            color=SINGLE_PREDICTOR_COLOR,
-            alpha=0.96,
-            edgecolor="white",
-            linewidth=0.85,
-            label="best single predictor",
-            zorder=4,
-        )
-    if not combinations.empty:
-        ax.scatter(
-            combinations["positive_coverage_mean"],
-            combinations["aps_mean"],
-            s=96,
-            marker="s",
-            color=ORIGINAL_COMBINATION_COLOR,
-            alpha=0.94,
-            edgecolor="white",
-            linewidth=0.85,
-            label="best combination",
-            zorder=4,
-        )
-
-    label_layouts = {
-        "Best single APS": {
-            "xytext": (30, 50),
-            "ha": "left",
-            "va": "bottom",
-            "text_color": "white",
-            "box_face": SINGLE_PREDICTOR_COLOR,
-            "box_edge": SINGLE_PREDICTOR_COLOR,
-            "line_color": SINGLE_PREDICTOR_COLOR,
-        },
-        "Best single coverage": {
-            "xytext": (-30, 50),
-            "ha": "right",
-            "va": "bottom",
-            "text_color": "white",
-            "box_face": SINGLE_PREDICTOR_COLOR,
-            "box_edge": SINGLE_PREDICTOR_COLOR,
-            "line_color": SINGLE_PREDICTOR_COLOR,
-        },
-        "Best combo APS": {
-            "xytext": (30, -50),
-            "ha": "left",
-            "va": "top",
-            "text_color": "#7C2D12",
-            "box_face": "#FFF7ED",
-            "box_edge": ORIGINAL_COMBINATION_COLOR,
-            "line_color": ORIGINAL_COMBINATION_COLOR,
-        },
-        "Best combo coverage": {
-            "xytext": (-30, -50),
-            "ha": "right",
-            "va": "top",
-            "text_color": "#7C2D12",
-            "box_face": "#FFF7ED",
-            "box_edge": ORIGINAL_COMBINATION_COLOR,
-            "line_color": ORIGINAL_COMBINATION_COLOR,
-        },
-    }
-    for _, row in essential.iterrows():
-        plot_label = str(row["plot_label"])
-        layout = next(
-            (
-                label_layout
-                for label, label_layout in label_layouts.items()
-                if label in plot_label
-            ),
-            {
-                "xytext": (28, 28),
-                "ha": "left",
-                "va": "bottom",
-                "text_color": "#22303C",
-                "box_face": "white",
-                "box_edge": "none",
-                "line_color": NEUTRAL_COLOR,
-            },
-        )
-        ax.annotate(
-            f"{plot_label}\n{_wrapped_combination_label(row['combination_id'])}",
-            (row["positive_coverage_mean"], row["aps_mean"]),
-            xytext=layout["xytext"],
-            textcoords="offset points",
-            fontsize=9.4,
-            color=layout["text_color"],
-            ha=layout["ha"],
-            va=layout["va"],
-            annotation_clip=False,
-            arrowprops={
-                "arrowstyle": "-",
-                "color": layout["line_color"],
-                "linewidth": 1.05,
-                "shrinkA": 4,
-                "shrinkB": 5,
-                "connectionstyle": "arc3,rad=0.0",
-            },
-            bbox={
-                "boxstyle": "round,pad=0.18",
-                "facecolor": layout["box_face"],
-                "edgecolor": layout["box_edge"],
-                "linewidth": 0.8,
-                "alpha": 0.94,
-            },
-        )
-    ax.set_xlabel("Mean positive coverage", fontsize=PLOT_AXIS_LABEL_SIZE)
-    ax.set_ylabel("Mean APS", fontsize=PLOT_AXIS_LABEL_SIZE)
-    axis_work = essential if not essential.empty else work
-    ax.set_xlim(0, min(1.02, max(0.15, float(axis_work["positive_coverage_mean"].max()) * 1.26)))
-    ax.set_ylim(0, min(1.02, max(0.2, float(axis_work["aps_mean"].max()) * 1.24)))
-    _add_figure_heading(
-        fig,
-        title=title,
-        subtitle="Only the best single predictors and best combinations are shown; the full summary is in the TSV table.",
-    )
-    legend_handles = [
-        Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="none",
-            markerfacecolor=SINGLE_PREDICTOR_COLOR,
-            markeredgecolor="white",
-            markersize=8,
-            label="single predictor",
-        ),
-        Line2D(
-            [0],
-            [0],
-            marker="s",
-            color="none",
-            markerfacecolor=ORIGINAL_COMBINATION_COLOR,
-            markeredgecolor="white",
-            markersize=8,
-            label="combination",
-        ),
-    ]
-    ax.legend(
-        handles=legend_handles,
-        frameon=False,
-        fontsize=PLOT_LEGEND_SIZE,
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.12),
-        ncol=2,
-        borderaxespad=0.0,
-    )
-    _save_figure(fig, out_path)
-    return out_path
-
-
 def write_predictor_combination_outputs(
     joined_frames,
     out_tables_dir,
@@ -747,9 +379,8 @@ def write_predictor_combination_outputs(
     logger=None,
 ):
     out_tables_dir = pathlib.Path(out_tables_dir)
-    out_plots_dir = pathlib.Path(out_plots_dir) / "combinations"
+    del out_plots_dir
     out_tables_dir.mkdir(parents=True, exist_ok=True)
-    out_plots_dir.mkdir(parents=True, exist_ok=True)
     expanded_summary_df = compute_predictor_combination_summary(
         joined_frames,
         tool_ids=tool_ids,
@@ -761,14 +392,9 @@ def write_predictor_combination_outputs(
     )
     table_path = out_tables_dir / "predictor_combination_summary.tsv"
     expanded_summary_df.to_csv(table_path, sep="\t", index=False)
-    expanded_plot_path = out_plots_dir / "predictor_combination_expanded_frontier.png"
-    write_predictor_combination_expanded_frontier_plot(expanded_summary_df, expanded_plot_path)
     if logger is not None:
         logger(f"Wrote predictor-combination summary: {table_path}")
-        logger(f"Wrote expanded predictor-combination frontier: {expanded_plot_path}")
     return {
         "tables": {"predictor_combination_summary": str(table_path)},
-        "plots": {
-            "predictor_combination_expanded_frontier": str(expanded_plot_path),
-        },
+        "plots": {},
     }
