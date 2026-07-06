@@ -39,7 +39,6 @@ DEFAULT_TOOL_LABELS = {
     "miraw": "miRAW",
 }
 
-
 def _rank_scale_scores(scores: pd.Series) -> pd.Series:
     values = pd.to_numeric(scores, errors="coerce")
     ranks = values.rank(method="dense", ascending=True)
