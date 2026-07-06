@@ -32,7 +32,7 @@ TOOL_LABELS = {
     "mirbind2": "miRBind2",
     "miraw": "miRAW",
 }
-MAIN_METRICS = ["coverage", "positive_coverage", "aps", "auroc"]
+MAIN_METRICS = ["coverage", "positive_coverage", "aps", "pr_auc", "auroc", "spearman"]
 SUPPLEMENTARY_METRICS = ["coverage", "positive_coverage", "aps", "pr_auc", "auroc", "spearman"]
 METRIC_LABELS = {
     "coverage": "Coverage",
@@ -178,14 +178,21 @@ def plot_metric_distribution(ax, metric_rows: pd.DataFrame, metric: str):
     ax.set_title(METRIC_LABELS[metric])
     ax.set_xticks(range(1, len(labels) + 1))
     ax.set_xticklabels(labels, rotation=20, ha="right")
-    ax.set_ylim(0, 1.02)
+    if metric in {"coverage", "positive_coverage", "aps", "pr_auc", "auroc"}:
+        ax.set_ylim(0, 1.02)
+    else:
+        values = np.concatenate([arr for arr in data if arr.size]) if any(arr.size for arr in data) else np.array([0.0])
+        lower = min(-0.05, float(np.nanmin(values)) - 0.02)
+        upper = max(0.05, float(np.nanmax(values)) + 0.02)
+        ax.set_ylim(lower, upper)
+        ax.axhline(0.0, color="#606A75", linewidth=0.8, alpha=0.7)
     if metric in {"coverage", "positive_coverage"}:
         ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0))
     style_axes(ax)
 
 
 def plot_figure1(metric_rows: pd.DataFrame, figures_dir: pathlib.Path):
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8.2))
+    fig, axes = plt.subplots(2, 3, figsize=(16, 8.2))
     for ax, metric in zip(axes.ravel(), MAIN_METRICS):
         plot_metric_distribution(ax, metric_rows, metric)
     fig.suptitle("Cross-dataset predictor distributions", fontsize=15, y=1.0)
@@ -367,23 +374,26 @@ def plot_figure_all(
     targetscan: pd.DataFrame,
     figures_dir: pathlib.Path,
 ):
-    fig = plt.figure(figsize=(18, 16.5))
-    grid = fig.add_gridspec(3, 4, height_ratios=[1.05, 1.0, 1.0], hspace=0.50, wspace=0.34)
+    fig = plt.figure(figsize=(18, 20.0))
+    grid = fig.add_gridspec(4, 6, height_ratios=[1.0, 1.0, 1.05, 1.0], hspace=0.52, wspace=0.40)
 
-    for metric, label, slot in zip(MAIN_METRICS, "ABCD", range(4)):
-        ax = fig.add_subplot(grid[0, slot])
+    panel_labels = "ABCDEFGHIJK"
+    for index, metric in enumerate(MAIN_METRICS):
+        row = index // 3
+        start_col = (index % 3) * 2
+        ax = fig.add_subplot(grid[row, start_col:start_col + 2])
         plot_metric_distribution(ax, metric_rows, metric)
-        ax.text(-0.16, 1.10, label, transform=ax.transAxes, fontsize=14, fontweight="bold", va="top")
+        ax.text(-0.16, 1.10, panel_labels[index], transform=ax.transAxes, fontsize=14, fontweight="bold", va="top")
 
-    ax_local = fig.add_subplot(grid[1, 0])
+    ax_local = fig.add_subplot(grid[2, 0:2])
     plot_fraction(ax_local, local, title="Local rank enrichment", xlabel="Local normalized rank bin")
-    ax_local.text(-0.16, 1.10, "E", transform=ax_local.transAxes, fontsize=14, fontweight="bold", va="top")
+    ax_local.text(-0.16, 1.10, "G", transform=ax_local.transAxes, fontsize=14, fontweight="bold", va="top")
 
-    ax_global = fig.add_subplot(grid[1, 1])
+    ax_global = fig.add_subplot(grid[2, 2:4])
     plot_fraction(ax_global, global_, title="Global rank enrichment", xlabel="Global normalized rank bin")
-    ax_global.text(-0.16, 1.10, "F", transform=ax_global.transAxes, fontsize=14, fontweight="bold", va="top")
+    ax_global.text(-0.16, 1.10, "H", transform=ax_global.transAxes, fontsize=14, fontweight="bold", va="top")
 
-    ax_recovery = fig.add_subplot(grid[1, 2:])
+    ax_recovery = fig.add_subplot(grid[2, 4:6])
     for tool_id in TOOL_IDS:
         sub = recovery[recovery["tool_id"] == tool_id]
         ax_recovery.plot(
@@ -399,10 +409,10 @@ def plot_figure_all(
     ax_recovery.set_ylim(bottom=0)
     style_axes(ax_recovery, grid_axis="both")
     ax_recovery.legend(frameon=False, fontsize=9)
-    ax_recovery.text(-0.08, 1.10, "G", transform=ax_recovery.transAxes, fontsize=14, fontweight="bold", va="top")
+    ax_recovery.text(-0.16, 1.10, "I", transform=ax_recovery.transAxes, fontsize=14, fontweight="bold", va="top")
 
-    ax_targetscan_enrichment = fig.add_subplot(grid[2, 0:2])
-    ax_targetscan_coverage = fig.add_subplot(grid[2, 2:4])
+    ax_targetscan_enrichment = fig.add_subplot(grid[3, 0:3])
+    ax_targetscan_coverage = fig.add_subplot(grid[3, 3:6])
     for tool_id in TOOL_IDS:
         sub = targetscan[targetscan["tool_id"] == tool_id].sort_values("rank_bin_mid")
         ax_targetscan_enrichment.plot(
@@ -426,7 +436,7 @@ def plot_figure_all(
     ax_targetscan_enrichment.set_ylabel("GT positives among scored genes (%)")
     ax_targetscan_enrichment.set_ylim(bottom=0)
     style_axes(ax_targetscan_enrichment, grid_axis="both")
-    ax_targetscan_enrichment.text(-0.08, 1.10, "H", transform=ax_targetscan_enrichment.transAxes, fontsize=14, fontweight="bold", va="top")
+    ax_targetscan_enrichment.text(-0.08, 1.10, "J", transform=ax_targetscan_enrichment.transAxes, fontsize=14, fontweight="bold", va="top")
 
     ax_targetscan_coverage.set_title("Predictor coverage across TargetScan bins")
     ax_targetscan_coverage.set_xlabel("TargetScan local rank bin (0 = weakest, 1 = strongest)")
@@ -434,7 +444,7 @@ def plot_figure_all(
     ax_targetscan_coverage.set_ylim(0, 105)
     style_axes(ax_targetscan_coverage, grid_axis="both")
     ax_targetscan_coverage.legend(frameon=False, fontsize=9, loc="upper left", bbox_to_anchor=(1.01, 1.0))
-    ax_targetscan_coverage.text(-0.08, 1.10, "I", transform=ax_targetscan_coverage.transAxes, fontsize=14, fontweight="bold", va="top")
+    ax_targetscan_coverage.text(-0.08, 1.10, "K", transform=ax_targetscan_coverage.transAxes, fontsize=14, fontweight="bold", va="top")
 
     fig.suptitle("FuNmiRBench manuscript figure panels", fontsize=17, y=0.995)
     return save_figure(fig, figures_dir / "figure_all_manuscript_panels.png")
