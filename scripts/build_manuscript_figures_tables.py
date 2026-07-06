@@ -1,10 +1,8 @@
 """Build manuscript figures and tables from a FuNmiRBench report directory.
 
-The branch `trial/manuscript-figures-tables` is intended to stay focused on
-post-processing final benchmark reports into manuscript assets. This script does
-not rerun the benchmark. It reads an existing report directory containing
-`tables/*_per_experiment.tsv` files and per-dataset `joined.tsv` files, then
-writes manuscript-ready PNG/SVG figures and TSV tables.
+This post-processing script creates only the manuscript assets we currently plan
+to include: three main figures, one main summary table, and one supplementary
+per-dataset metrics table. It does not rerun the benchmark.
 
 Example
 -------
@@ -31,12 +29,15 @@ TOOL_LABELS = {
     "mirbind2": "miRBind2",
     "miraw": "miRAW",
 }
-METRICS = ["coverage", "positive_coverage", "aps", "auroc"]
+MAIN_METRICS = ["coverage", "positive_coverage", "aps", "auroc"]
+SUPPLEMENTARY_METRICS = ["coverage", "positive_coverage", "aps", "pr_auc", "auroc", "spearman"]
 METRIC_LABELS = {
     "coverage": "Coverage",
     "positive_coverage": "Positive coverage",
     "aps": "APS",
+    "pr_auc": "PR-AUC",
     "auroc": "AUROC",
+    "spearman": "Spearman",
 }
 
 
@@ -76,45 +77,60 @@ def joined_paths(report_dir: pathlib.Path) -> list[pathlib.Path]:
     return paths
 
 
-def metric_rows(report_dir: pathlib.Path) -> pd.DataFrame:
-    rows = []
-    for metric in METRICS:
-        table = pd.read_csv(find_table(report_dir, f"{metric}_per_experiment.tsv"), sep="\t")
-        id_cols = [col for col in table.columns if col not in TOOL_IDS]
-        available_tools = [tool_id for tool_id in TOOL_IDS if tool_id in table.columns]
-        long = table.melt(id_vars=id_cols, value_vars=available_tools, var_name="tool_id", value_name="value")
-        long["metric"] = metric
-        long["value"] = pd.to_numeric(long["value"], errors="coerce")
-        rows.append(long.dropna(subset=["value"])[["tool_id", "metric", "value"]])
-    return pd.concat(rows, ignore_index=True)
+def metric_table_long(report_dir: pathlib.Path, metric: str) -> pd.DataFrame:
+    table = pd.read_csv(find_table(report_dir, f"{metric}_per_experiment.tsv"), sep="\t")
+    id_cols = [col for col in table.columns if col not in TOOL_IDS]
+    available_tools = [tool_id for tool_id in TOOL_IDS if tool_id in table.columns]
+    long = table.melt(id_vars=id_cols, value_vars=available_tools, var_name="tool_id", value_name=metric)
+    long[metric] = pd.to_numeric(long[metric], errors="coerce")
+    return long
 
 
-def write_summary_tables(metrics: pd.DataFrame, tables_dir: pathlib.Path) -> dict[str, pathlib.Path]:
+def load_per_dataset_metrics(report_dir: pathlib.Path) -> pd.DataFrame:
+    merged = None
+    key_cols = None
+    for metric in SUPPLEMENTARY_METRICS:
+        try:
+            long = metric_table_long(report_dir, metric)
+        except FileNotFoundError:
+            continue
+        id_cols = [col for col in long.columns if col not in {"tool_id", metric}]
+        keys = [*id_cols, "tool_id"]
+        if merged is None:
+            merged = long
+            key_cols = keys
+        else:
+            merged = merged.merge(long[keys + [metric]], on=key_cols, how="outer")
+    if merged is None:
+        raise FileNotFoundError("No per-experiment metric tables were found.")
+    merged.insert(merged.columns.get_loc("tool_id") + 1, "predictor", merged["tool_id"].map(TOOL_LABELS).fillna(merged["tool_id"]))
+    return merged
+
+
+def metric_rows_for_plots(per_dataset: pd.DataFrame) -> pd.DataFrame:
+    id_cols = [col for col in per_dataset.columns if col not in set(SUPPLEMENTARY_METRICS)]
+    long = per_dataset.melt(id_vars=id_cols, value_vars=[m for m in MAIN_METRICS if m in per_dataset.columns], var_name="metric", value_name="value")
+    long["value"] = pd.to_numeric(long["value"], errors="coerce")
+    return long.dropna(subset=["value"])
+
+
+def write_tables(per_dataset: pd.DataFrame, tables_dir: pathlib.Path) -> dict[str, pathlib.Path]:
     tables_dir.mkdir(parents=True, exist_ok=True)
-    summary = metrics.groupby(["tool_id", "metric"])["value"].agg(["count", "mean", "median", "std", "min", "max"]).reset_index()
-    wide = summary.pivot(index="tool_id", columns="metric")
-    wide.columns = [f"{metric}_{stat}" for stat, metric in wide.columns]
-    wide = wide.reset_index()
-    wide.insert(1, "predictor", wide["tool_id"].map(TOOL_LABELS).fillna(wide["tool_id"]))
+    supp = tables_dir / "table_s1_per_dataset_predictor_metrics.tsv"
+    per_dataset.to_csv(supp, sep="\t", index=False)
 
-    detailed = tables_dir / "table_s1_detailed_cross_dataset_predictor_summary.tsv"
-    wide.to_csv(detailed, sep="\t", index=False)
-
-    keep = ["tool_id", "predictor"]
-    for metric in METRICS:
-        for stat in ("mean", "median"):
-            col = f"{metric}_{stat}"
-            if col in wide.columns:
-                keep.append(col)
+    metric_cols = [m for m in MAIN_METRICS if m in per_dataset.columns]
+    summary = per_dataset.groupby(["tool_id", "predictor"])[metric_cols].agg(["mean", "median"]).reset_index()
+    summary.columns = ["_".join(col).rstrip("_") if isinstance(col, tuple) else col for col in summary.columns]
     table1 = tables_dir / "table1_cross_dataset_predictor_summary.tsv"
-    wide[keep].to_csv(table1, sep="\t", index=False)
-    return {"table1": table1, "table_s1": detailed}
+    summary.to_csv(table1, sep="\t", index=False)
+    return {"table1": table1, "table_s1": supp}
 
 
-def plot_figure1(metrics: pd.DataFrame, figures_dir: pathlib.Path):
+def plot_figure1(metric_rows: pd.DataFrame, figures_dir: pathlib.Path):
     fig, axes = plt.subplots(2, 2, figsize=(12, 8.2))
-    for ax, metric in zip(axes.ravel(), METRICS):
-        sub = metrics[metrics["metric"] == metric]
+    for ax, metric in zip(axes.ravel(), MAIN_METRICS):
+        sub = metric_rows[metric_rows["metric"] == metric]
         data = [sub.loc[sub["tool_id"] == tool_id, "value"].dropna().to_numpy(float) for tool_id in TOOL_IDS]
         labels = [TOOL_LABELS[tool_id] for tool_id in TOOL_IDS]
         ax.boxplot(data, patch_artist=True, showfliers=False)
@@ -178,39 +194,24 @@ def usable_joined(frame: pd.DataFrame, *, fdr: float, effect_threshold: float) -
 
 
 def rank_fraction_table(report_dir: pathlib.Path, *, rank_type: str, bins: int, fdr: float, effect_threshold: float) -> pd.DataFrame:
-    rows = []
     edges = np.linspace(0, 1, bins + 1)
-    all_tool_rows = []
+    stacked = []
     for path in joined_paths(report_dir):
         frame = usable_joined(pd.read_csv(path, sep="\t"), fdr=fdr, effect_threshold=effect_threshold)
         for tool_id in TOOL_IDS:
             ranks = rank_values(frame, tool_id, rank_type)
-            if ranks is None:
-                continue
-            tmp = pd.DataFrame({"tool_id": tool_id, "rank": ranks, "is_positive": frame["is_positive"]}).dropna(subset=["rank"])
-            all_tool_rows.append(tmp)
-    all_rows = pd.concat(all_tool_rows, ignore_index=True)
+            if ranks is not None:
+                stacked.append(pd.DataFrame({"tool_id": tool_id, "rank": ranks, "is_positive": frame["is_positive"]}).dropna(subset=["rank"]))
+    data = pd.concat(stacked, ignore_index=True)
+    rows = []
     for tool_id in TOOL_IDS:
-        sub = all_rows[all_rows["tool_id"] == tool_id]
-        overall = float(sub["is_positive"].mean()) if len(sub) else np.nan
+        sub = data[data["tool_id"] == tool_id]
         for i, (left, right) in enumerate(zip(edges[:-1], edges[1:])):
             mask = (sub["rank"] >= left) & ((sub["rank"] <= right) if i == bins - 1 else (sub["rank"] < right))
             in_bin = sub.loc[mask]
             total = int(len(in_bin))
             positives = int(in_bin["is_positive"].sum())
-            rows.append({
-                "rank_type": rank_type,
-                "tool_id": tool_id,
-                "predictor": TOOL_LABELS[tool_id],
-                "rank_bin_start": left,
-                "rank_bin_end": right,
-                "rank_bin_mid": (left + right) / 2,
-                "total_count": total,
-                "positive_count": positives,
-                "background_count": total - positives,
-                "positive_fraction_within_bin": positives / total if total else np.nan,
-                "overall_positive_fraction": overall,
-            })
+            rows.append({"tool_id": tool_id, "predictor": TOOL_LABELS[tool_id], "rank_bin_mid": (left + right) / 2, "total_count": total, "positive_count": positives, "positive_fraction_within_bin": positives / total if total else np.nan})
     return pd.DataFrame(rows)
 
 
@@ -279,7 +280,6 @@ def plot_figure2(local: pd.DataFrame, global_: pd.DataFrame, recovery: pd.DataFr
 
 def centered_table(report_dir: pathlib.Path, *, anchor_tool: str, fdr: float, effect_threshold: float, bins: int = 10) -> pd.DataFrame:
     edges = np.linspace(0, 1, bins + 1)
-    rows = []
     stacked = []
     for path in joined_paths(report_dir):
         frame = usable_joined(pd.read_csv(path, sep="\t"), fdr=fdr, effect_threshold=effect_threshold)
@@ -293,6 +293,7 @@ def centered_table(report_dir: pathlib.Path, *, anchor_tool: str, fdr: float, ef
             scored = ranks.notna() if ranks is not None else pd.Series(False, index=frame.index)
             stacked.append(pd.DataFrame({"tool_id": tool_id, "anchor_rank": anchor, "is_positive": frame["is_positive"], "scored": scored.astype(bool)}))
     data = pd.concat(stacked, ignore_index=True)
+    rows = []
     for tool_id in TOOL_IDS:
         sub = data[data["tool_id"] == tool_id]
         for i, (left, right) in enumerate(zip(edges[:-1], edges[1:])):
@@ -302,43 +303,28 @@ def centered_table(report_dir: pathlib.Path, *, anchor_tool: str, fdr: float, ef
             total = int(len(in_bin))
             scored_count = int(len(scored))
             positives = int(scored["is_positive"].sum())
-            rows.append({
-                "anchor_tool": anchor_tool,
-                "anchor_label": TOOL_LABELS[anchor_tool],
-                "tool_id": tool_id,
-                "predictor": TOOL_LABELS[tool_id],
-                "rank_bin_start": left,
-                "rank_bin_end": right,
-                "rank_bin_mid": (left + right) / 2,
-                "anchor_bin_total": total,
-                "predictor_scored_count": scored_count,
-                "positive_count": positives,
-                "background_count": scored_count - positives,
-                "coverage_fraction": scored_count / total if total else np.nan,
-                "positive_fraction_within_scored": positives / scored_count if scored_count else np.nan,
-            })
+            rows.append({"tool_id": tool_id, "predictor": TOOL_LABELS[tool_id], "rank_bin_mid": (left + right) / 2, "anchor_bin_total": total, "predictor_scored_count": scored_count, "coverage_fraction": scored_count / total if total else np.nan, "positive_fraction_within_scored": positives / scored_count if scored_count else np.nan})
     return pd.DataFrame(rows)
 
 
-def plot_centered(table: pd.DataFrame, figures_dir: pathlib.Path, filename: str):
-    anchor_label = table["anchor_label"].iloc[0]
+def plot_figure3(table: pd.DataFrame, figures_dir: pathlib.Path):
     fig, axes = plt.subplots(2, 1, figsize=(9.8, 9.6), sharex=True)
     for tool_id in TOOL_IDS:
         sub = table[table["tool_id"] == tool_id].sort_values("rank_bin_mid")
         axes[0].plot(sub["rank_bin_mid"], sub["positive_fraction_within_scored"] * 100, marker="o", linewidth=2, label=TOOL_LABELS[tool_id])
         axes[1].plot(sub["rank_bin_mid"], sub["coverage_fraction"] * 100, marker="o", linewidth=2, label=TOOL_LABELS[tool_id])
-    axes[0].set_title(f"{anchor_label}-centered GT-positive enrichment")
+    axes[0].set_title("TargetScan-centered GT-positive enrichment")
     axes[0].set_ylabel("GT positives among scored genes (%)")
     axes[0].set_ylim(bottom=0)
     style_axes(axes[0], grid_axis="both")
     axes[0].legend(frameon=False, fontsize=9, loc="upper left", bbox_to_anchor=(1.02, 1.0))
-    axes[1].set_title(f"Predictor coverage across {anchor_label} bins")
-    axes[1].set_xlabel(f"{anchor_label} local rank bin (0 = weakest, 1 = strongest)")
+    axes[1].set_title("Predictor coverage across TargetScan bins")
+    axes[1].set_xlabel("TargetScan local rank bin (0 = weakest, 1 = strongest)")
     axes[1].set_ylabel("Genes in bin scored by predictor (%)")
     axes[1].set_ylim(0, 105)
     style_axes(axes[1], grid_axis="both")
     fig.tight_layout()
-    return save_figure(fig, figures_dir / filename)
+    return save_figure(fig, figures_dir / "figure3_targetscan_centered.png")
 
 
 def build_assets(report_dir: pathlib.Path, out_dir: pathlib.Path, *, fdr: float, effect_threshold: float):
@@ -346,28 +332,20 @@ def build_assets(report_dir: pathlib.Path, out_dir: pathlib.Path, *, fdr: float,
     tables_dir = out_dir / "tables"
     figures_dir.mkdir(parents=True, exist_ok=True)
     tables_dir.mkdir(parents=True, exist_ok=True)
-
     outputs = {}
-    metrics = metric_rows(report_dir)
-    metrics.to_csv(tables_dir / "per_experiment_metric_rows.tsv", sep="\t", index=False)
-    outputs.update(write_summary_tables(metrics, tables_dir))
-    outputs["figure1"] = plot_figure1(metrics, figures_dir)
+
+    per_dataset = load_per_dataset_metrics(report_dir)
+    metrics_long = metric_rows_for_plots(per_dataset)
+    outputs.update(write_tables(per_dataset, tables_dir))
+    outputs["figure1"] = plot_figure1(metrics_long, figures_dir)
 
     local = rank_fraction_table(report_dir, rank_type="local", bins=10, fdr=fdr, effect_threshold=effect_threshold)
     global_ = rank_fraction_table(report_dir, rank_type="global", bins=5, fdr=fdr, effect_threshold=effect_threshold)
     recovery = recovery_table(report_dir, fdr=fdr, effect_threshold=effect_threshold)
-    local.to_csv(tables_dir / "table_s4_local_rank_bins.tsv", sep="\t", index=False)
-    global_.to_csv(tables_dir / "table_s5_global_rank_bins.tsv", sep="\t", index=False)
-    recovery.to_csv(tables_dir / "table_s6_recovery_curves.tsv", sep="\t", index=False)
     outputs["figure2"] = plot_figure2(local, global_, recovery, figures_dir)
 
     targetscan = centered_table(report_dir, anchor_tool="targetscan", fdr=fdr, effect_threshold=effect_threshold)
-    targetscan.to_csv(tables_dir / "table_s2_targetscan_centered_bins.tsv", sep="\t", index=False)
-    outputs["figure3"] = plot_centered(targetscan, figures_dir, "figure3_targetscan_centered.png")
-
-    mirdb = centered_table(report_dir, anchor_tool="mirdb_mirtarget", fdr=fdr, effect_threshold=effect_threshold)
-    mirdb.to_csv(tables_dir / "table_s3_mirdb_centered_bins.tsv", sep="\t", index=False)
-    outputs["supplementary_mirdb"] = plot_centered(mirdb, figures_dir, "supplementary_mirdb_centered.png")
+    outputs["figure3"] = plot_figure3(targetscan, figures_dir)
     return outputs
 
 
