@@ -714,9 +714,6 @@ def write_publication_run_pdf_report(
         )
         _save_page(pdf, fig)
 
-        drawn_cross_dataset_keys = _draw_cross_dataset_distribution_pages(pdf, combined_outputs)
-        drawn_rank_enrichment_keys = _draw_rank_enrichment_recovery_pages(pdf, combined_outputs)
-
         fig, ax = _new_page()
         _header(ax, "Cross-Dataset Predictor Summary", "Coverage-aware interpretation of mean performance across selected datasets.")
         if summary_df is not None and not summary_df.empty:
@@ -742,6 +739,9 @@ def write_publication_run_pdf_report(
         _save_page(pdf, fig)
 
         _draw_dataset_inventory_pages(pdf, dataset_outputs)
+
+        drawn_cross_dataset_keys = _draw_cross_dataset_distribution_pages(pdf, combined_outputs)
+        drawn_rank_enrichment_keys = _draw_rank_enrichment_recovery_pages(pdf, combined_outputs)
 
         _draw_common_prediction_page(pdf, combined_outputs)
 
