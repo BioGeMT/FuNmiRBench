@@ -36,6 +36,6 @@ evaluation:
   figure_dpi: 600
   # Process independent dataset outputs concurrently after predictor files are loaded.
   # Increase for faster full runs when memory allows; default is serial execution.
-  # dataset_workers: 4
+  dataset_workers: 4
 
 out_dir: results/
