@@ -8,6 +8,7 @@ import json
 import logging
 import pathlib
 import shutil
+import threading
 
 import yaml
 
@@ -54,6 +55,7 @@ from funmirbench.validate_experiments import (
 
 
 logger = logging.getLogger(__name__)
+PLOT_REPORT_LOCK = threading.Lock()
 
 
 def parse_args():
@@ -241,61 +243,62 @@ def _run_dataset_benchmark(
     logger.info(f"  Wrote joined table: {joined_path}")
 
     logger.info(f"  Evaluating metrics and plots for {meta.id}...")
-    evaluation = evaluate_joined_dataframe(
-        joined,
-        plots_dir=dataset_dir / "plots",
-        reports_dir=dataset_dir / "reports",
-        fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
-        predictor_top_fraction=predictor_top_fraction,
-        dataset_id=meta.id,
-        mirna=meta.miRNA,
-        cell_line=meta.cell_line,
-        perturbation=meta.perturbation,
-        geo_accession=meta.geo_accession,
-        de_table_path=str(meta.full_path),
-        joined_tsv=joined_path,
-        predictor_output_paths=predictor_output_paths,
-        tool_labels=tool_labels,
-        write_top_prediction_cdfs=write_top_prediction_cdfs,
-        logger=logger.info,
-    )
-    write_common_comparison_plots(
-        joined,
-        evaluation=evaluation,
-        dataset_metric_rows=evaluation["metric_rows"],
-        plots_dir=dataset_dir / "plots",
-        dataset_id=meta.id,
-        fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
-        perturbation=meta.perturbation,
-        min_common_coverage=report_min_common_coverage,
-        logger=logger.info,
-    )
-    common_summary_path, common_prediction_summary = write_common_prediction_summary(
-        joined,
-        dataset_dir / "reports",
-        dataset_id=meta.id,
-        tool_ids=tool_ids,
-        report_min_common_coverage=report_min_common_coverage,
-    )
-    write_predictor_reports(
-        reports_dir=dataset_dir / "reports",
-        plots_dir=dataset_dir / "plots",
-        dataset_id=meta.id,
-        mirna=meta.miRNA,
-        cell_line=meta.cell_line,
-        perturbation=meta.perturbation,
-        geo_accession=meta.geo_accession,
-        de_table_path=str(meta.full_path),
-        predictor_output_paths=predictor_output_paths,
-        metric_rows=evaluation["metric_rows"],
-        skipped_tool_rows=evaluation.get("skipped_tool_rows", []),
-        tool_labels=tool_labels,
-        fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
-        common_prediction_summary=common_prediction_summary,
-    )
+    with PLOT_REPORT_LOCK:
+        evaluation = evaluate_joined_dataframe(
+            joined,
+            plots_dir=dataset_dir / "plots",
+            reports_dir=dataset_dir / "reports",
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
+            predictor_top_fraction=predictor_top_fraction,
+            dataset_id=meta.id,
+            mirna=meta.miRNA,
+            cell_line=meta.cell_line,
+            perturbation=meta.perturbation,
+            geo_accession=meta.geo_accession,
+            de_table_path=str(meta.full_path),
+            joined_tsv=joined_path,
+            predictor_output_paths=predictor_output_paths,
+            tool_labels=tool_labels,
+            write_top_prediction_cdfs=write_top_prediction_cdfs,
+            logger=logger.info,
+        )
+        write_common_comparison_plots(
+            joined,
+            evaluation=evaluation,
+            dataset_metric_rows=evaluation["metric_rows"],
+            plots_dir=dataset_dir / "plots",
+            dataset_id=meta.id,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
+            perturbation=meta.perturbation,
+            min_common_coverage=report_min_common_coverage,
+            logger=logger.info,
+        )
+        common_summary_path, common_prediction_summary = write_common_prediction_summary(
+            joined,
+            dataset_dir / "reports",
+            dataset_id=meta.id,
+            tool_ids=tool_ids,
+            report_min_common_coverage=report_min_common_coverage,
+        )
+        write_predictor_reports(
+            reports_dir=dataset_dir / "reports",
+            plots_dir=dataset_dir / "plots",
+            dataset_id=meta.id,
+            mirna=meta.miRNA,
+            cell_line=meta.cell_line,
+            perturbation=meta.perturbation,
+            geo_accession=meta.geo_accession,
+            de_table_path=str(meta.full_path),
+            predictor_output_paths=predictor_output_paths,
+            metric_rows=evaluation["metric_rows"],
+            skipped_tool_rows=evaluation.get("skipped_tool_rows", []),
+            tool_labels=tool_labels,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
+            common_prediction_summary=common_prediction_summary,
+        )
     logger.info(f"  Finished {meta.id}")
     return {
         "joined": joined.copy(),

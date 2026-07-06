@@ -44,8 +44,10 @@ def _expected_effect_from_logfc(frame: pd.DataFrame) -> pd.Series:
         return logfc.abs()
     perturbation = frame["perturbation"].astype(str).str.upper().fillna("")
     effect = logfc.abs().copy()
-    effect.loc[perturbation.eq("OE")] = -logfc.loc[perturbation.eq("OE")]
-    effect.loc[perturbation.isin(["KO", "KD"])] = logfc.loc[perturbation.isin(["KO", "KD"])]
+    oe = perturbation.isin(["OE", "OVEREXPRESSION"])
+    kdko = perturbation.isin(["KO", "KD", "KNOCKOUT", "KNOCKDOWN"])
+    effect.loc[oe] = -logfc.loc[oe]
+    effect.loc[kdko] = logfc.loc[kdko]
     return effect
 
 
