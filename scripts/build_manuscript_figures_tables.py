@@ -1,8 +1,9 @@
 """Build manuscript figures and tables from a FuNmiRBench report directory.
 
-This post-processing script creates only the manuscript assets we currently plan
-to include: three main figures, one main summary table, and one supplementary
-per-dataset metrics table. It does not rerun the benchmark.
+This post-processing script creates the manuscript assets we currently plan to
+include: standalone main figures, a combined all-panel figure, one main summary
+table, and one supplementary per-dataset metrics table. It does not rerun the
+benchmark.
 
 Example
 -------
@@ -149,32 +150,44 @@ def write_tables(per_dataset: pd.DataFrame, tables_dir: pathlib.Path) -> dict[st
     return {"table1": table1, "table_s1": supp}
 
 
+def plot_metric_distribution(ax, metric_rows: pd.DataFrame, metric: str):
+    sub = metric_rows[metric_rows["metric"] == metric]
+    data = [sub.loc[sub["tool_id"] == tool_id, "value"].dropna().to_numpy(float) for tool_id in TOOL_IDS]
+    labels = [TOOL_LABELS[tool_id] for tool_id in TOOL_IDS]
+    box = ax.boxplot(data, patch_artist=True, showfliers=False)
+    for patch, tool_id in zip(box["boxes"], TOOL_IDS):
+        color = tool_color(tool_id)
+        patch.set_facecolor(color)
+        patch.set_edgecolor(color)
+        patch.set_alpha(0.28)
+    for median in box["medians"]:
+        median.set_color("#22303C")
+        median.set_linewidth(1.4)
+    for idx, (tool_id, values) in enumerate(zip(TOOL_IDS, data), start=1):
+        if values.size:
+            jitter = np.linspace(-0.08, 0.08, values.size) if values.size > 1 else np.array([0.0])
+            ax.scatter(
+                np.full(values.size, idx) + jitter,
+                values,
+                s=18,
+                alpha=0.72,
+                color=tool_color(tool_id),
+                edgecolors="white",
+                linewidths=0.3,
+            )
+    ax.set_title(METRIC_LABELS[metric])
+    ax.set_xticks(range(1, len(labels) + 1))
+    ax.set_xticklabels(labels, rotation=20, ha="right")
+    ax.set_ylim(0, 1.02)
+    if metric in {"coverage", "positive_coverage"}:
+        ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0))
+    style_axes(ax)
+
+
 def plot_figure1(metric_rows: pd.DataFrame, figures_dir: pathlib.Path):
     fig, axes = plt.subplots(2, 2, figsize=(12, 8.2))
     for ax, metric in zip(axes.ravel(), MAIN_METRICS):
-        sub = metric_rows[metric_rows["metric"] == metric]
-        data = [sub.loc[sub["tool_id"] == tool_id, "value"].dropna().to_numpy(float) for tool_id in TOOL_IDS]
-        labels = [TOOL_LABELS[tool_id] for tool_id in TOOL_IDS]
-        box = ax.boxplot(data, patch_artist=True, showfliers=False)
-        for patch, tool_id in zip(box["boxes"], TOOL_IDS):
-            color = tool_color(tool_id)
-            patch.set_facecolor(color)
-            patch.set_edgecolor(color)
-            patch.set_alpha(0.28)
-        for median in box["medians"]:
-            median.set_color("#22303C")
-            median.set_linewidth(1.4)
-        for idx, (tool_id, values) in enumerate(zip(TOOL_IDS, data), start=1):
-            if values.size:
-                jitter = np.linspace(-0.08, 0.08, values.size) if values.size > 1 else np.array([0.0])
-                ax.scatter(np.full(values.size, idx) + jitter, values, s=18, alpha=0.72, color=tool_color(tool_id), edgecolors="white", linewidths=0.3)
-        ax.set_title(METRIC_LABELS[metric])
-        ax.set_xticks(range(1, len(labels) + 1))
-        ax.set_xticklabels(labels, rotation=20, ha="right")
-        ax.set_ylim(0, 1.02)
-        if metric in {"coverage", "positive_coverage"}:
-            ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0))
-        style_axes(ax)
+        plot_metric_distribution(ax, metric_rows, metric)
     fig.suptitle("Cross-dataset predictor distributions", fontsize=15, y=1.0)
     fig.tight_layout()
     return save_figure(fig, figures_dir / "figure1_cross_dataset_distributions.png")
@@ -346,6 +359,87 @@ def plot_figure3(table: pd.DataFrame, figures_dir: pathlib.Path):
     return save_figure(fig, figures_dir / "figure3_targetscan_centered.png")
 
 
+def plot_figure_all(
+    metric_rows: pd.DataFrame,
+    local: pd.DataFrame,
+    global_: pd.DataFrame,
+    recovery: pd.DataFrame,
+    targetscan: pd.DataFrame,
+    figures_dir: pathlib.Path,
+):
+    fig = plt.figure(figsize=(18, 16.5))
+    grid = fig.add_gridspec(3, 4, height_ratios=[1.05, 1.0, 1.0], hspace=0.50, wspace=0.34)
+
+    for metric, label, slot in zip(MAIN_METRICS, "ABCD", range(4)):
+        ax = fig.add_subplot(grid[0, slot])
+        plot_metric_distribution(ax, metric_rows, metric)
+        ax.text(-0.16, 1.10, label, transform=ax.transAxes, fontsize=14, fontweight="bold", va="top")
+
+    ax_local = fig.add_subplot(grid[1, 0])
+    plot_fraction(ax_local, local, title="Local rank enrichment", xlabel="Local normalized rank bin")
+    ax_local.text(-0.16, 1.10, "E", transform=ax_local.transAxes, fontsize=14, fontweight="bold", va="top")
+
+    ax_global = fig.add_subplot(grid[1, 1])
+    plot_fraction(ax_global, global_, title="Global rank enrichment", xlabel="Global normalized rank bin")
+    ax_global.text(-0.16, 1.10, "F", transform=ax_global.transAxes, fontsize=14, fontweight="bold", va="top")
+
+    ax_recovery = fig.add_subplot(grid[1, 2:])
+    for tool_id in TOOL_IDS:
+        sub = recovery[recovery["tool_id"] == tool_id]
+        ax_recovery.plot(
+            sub["prediction_count"],
+            sub["recovery_fraction"] * 100,
+            linewidth=2,
+            color=tool_color(tool_id),
+            label=TOOL_LABELS[tool_id],
+        )
+    ax_recovery.set_title("GT-positive recovery")
+    ax_recovery.set_xlabel("Predicted targets per dataset")
+    ax_recovery.set_ylabel("Mean GT-positive recovery (%)")
+    ax_recovery.set_ylim(bottom=0)
+    style_axes(ax_recovery, grid_axis="both")
+    ax_recovery.legend(frameon=False, fontsize=9)
+    ax_recovery.text(-0.08, 1.10, "G", transform=ax_recovery.transAxes, fontsize=14, fontweight="bold", va="top")
+
+    ax_targetscan_enrichment = fig.add_subplot(grid[2, 0:2])
+    ax_targetscan_coverage = fig.add_subplot(grid[2, 2:4])
+    for tool_id in TOOL_IDS:
+        sub = targetscan[targetscan["tool_id"] == tool_id].sort_values("rank_bin_mid")
+        ax_targetscan_enrichment.plot(
+            sub["rank_bin_mid"],
+            sub["positive_fraction_within_scored"] * 100,
+            marker="o",
+            linewidth=2,
+            color=tool_color(tool_id),
+            label=TOOL_LABELS[tool_id],
+        )
+        ax_targetscan_coverage.plot(
+            sub["rank_bin_mid"],
+            sub["coverage_fraction"] * 100,
+            marker="o",
+            linewidth=2,
+            color=tool_color(tool_id),
+            label=TOOL_LABELS[tool_id],
+        )
+    ax_targetscan_enrichment.set_title("TargetScan-centered GT-positive enrichment")
+    ax_targetscan_enrichment.set_xlabel("TargetScan local rank bin (0 = weakest, 1 = strongest)")
+    ax_targetscan_enrichment.set_ylabel("GT positives among scored genes (%)")
+    ax_targetscan_enrichment.set_ylim(bottom=0)
+    style_axes(ax_targetscan_enrichment, grid_axis="both")
+    ax_targetscan_enrichment.text(-0.08, 1.10, "H", transform=ax_targetscan_enrichment.transAxes, fontsize=14, fontweight="bold", va="top")
+
+    ax_targetscan_coverage.set_title("Predictor coverage across TargetScan bins")
+    ax_targetscan_coverage.set_xlabel("TargetScan local rank bin (0 = weakest, 1 = strongest)")
+    ax_targetscan_coverage.set_ylabel("Genes in bin scored by predictor (%)")
+    ax_targetscan_coverage.set_ylim(0, 105)
+    style_axes(ax_targetscan_coverage, grid_axis="both")
+    ax_targetscan_coverage.legend(frameon=False, fontsize=9, loc="upper left", bbox_to_anchor=(1.01, 1.0))
+    ax_targetscan_coverage.text(-0.08, 1.10, "I", transform=ax_targetscan_coverage.transAxes, fontsize=14, fontweight="bold", va="top")
+
+    fig.suptitle("FuNmiRBench manuscript figure panels", fontsize=17, y=0.995)
+    return save_figure(fig, figures_dir / "figure_all_manuscript_panels.png")
+
+
 def build_assets(report_dir: pathlib.Path, out_dir: pathlib.Path, *, fdr: float, effect_threshold: float):
     figures_dir = out_dir / "figures"
     tables_dir = out_dir / "tables"
@@ -365,6 +459,7 @@ def build_assets(report_dir: pathlib.Path, out_dir: pathlib.Path, *, fdr: float,
 
     targetscan = centered_table(report_dir, anchor_tool="targetscan", fdr=fdr, effect_threshold=effect_threshold)
     outputs["figure3"] = plot_figure3(targetscan, figures_dir)
+    outputs["figure_all"] = plot_figure_all(metrics_long, local, global_, recovery, targetscan, figures_dir)
     return outputs
 
 

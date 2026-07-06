@@ -471,6 +471,33 @@ def _draw_rank_pair_page(pdf, combined_outputs, *, rank_type):
     return {density_key, count_key}
 
 
+def _draw_cross_dataset_distribution_pages(pdf, combined_outputs):
+    metric_keys = [
+        "cross_dataset_coverage_distribution",
+        "cross_dataset_positive_coverage_distribution",
+        "cross_dataset_aps_distribution",
+        "cross_dataset_pr_auc_distribution",
+        "cross_dataset_spearman_distribution",
+        "cross_dataset_auroc_distribution",
+    ]
+    drawn_keys = set()
+    pending_plot_items = []
+    items_by_key = {key: (title, caption, path) for key, title, caption, path in _plot_items(combined_outputs)}
+    for key in metric_keys:
+        item = items_by_key.get(key)
+        if item is None:
+            continue
+        title, caption, path = item
+        pending_plot_items.append((key, title, caption, path))
+        drawn_keys.add(key)
+        if len(pending_plot_items) == 2:
+            _draw_plot_pair_page(pdf, pending_plot_items)
+            pending_plot_items = []
+    if pending_plot_items:
+        _draw_plot_pair_page(pdf, pending_plot_items)
+    return drawn_keys
+
+
 def _run_subtitle(dataset_count, predictor_count, config_path):
     return (
         f"{dataset_count} datasets, {predictor_count} predictors, "
@@ -657,6 +684,8 @@ def write_publication_run_pdf_report(
         )
         _save_page(pdf, fig)
 
+        drawn_cross_dataset_keys = _draw_cross_dataset_distribution_pages(pdf, combined_outputs)
+
         fig, ax = _new_page()
         _header(ax, "Cross-Dataset Predictor Summary", "Coverage-aware interpretation of mean performance across selected datasets.")
         if summary_df is not None and not summary_df.empty:
@@ -691,6 +720,8 @@ def write_publication_run_pdf_report(
 
         pending_plot_items = []
         for key, title, caption, path in _plot_items(combined_outputs):
+            if key in drawn_cross_dataset_keys:
+                continue
             if key in paired_rank_keys:
                 continue
             pending_plot_items.append((key, title, caption, path))
