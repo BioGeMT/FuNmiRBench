@@ -37,7 +37,7 @@ from funmirbench.evaluate import (
     evaluate_joined_dataframe,
 )
 from funmirbench.experiment_store import sync_zenodo_experiments
-from funmirbench.join import build_joined, load_predictor_score_cache
+from funmirbench.join import build_joined, load_experiment_table, load_predictor_score_cache
 from funmirbench.logger import parse_log_level, setup_logging
 from funmirbench.predictor_combinations import write_predictor_combination_outputs
 from funmirbench.protein_coding import (
@@ -103,6 +103,77 @@ def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
     for stale_report in reports_dir.glob(f"{dataset_id}__*"):
         if stale_report.is_file():
             stale_report.unlink()
+
+
+def _post_filter_experiment_class_counts(
+    meta,
+    *,
+    protein_coding_gene_ids,
+    fdr_threshold,
+    abs_logfc_threshold,
+):
+    filtered = load_experiment_table(
+        meta,
+        protein_coding_gene_ids=protein_coding_gene_ids,
+    )
+    keep_cols = ["logFC", "FDR"]
+    for optional in ("dataset_id", "perturbation", *evaluate_module.FDR_AUXILIARY_COLUMNS):
+        if optional in filtered.columns:
+            keep_cols.append(optional)
+    usable = evaluate_module._filter_usable_gt_rows(
+        filtered[keep_cols],
+        fdr_threshold=fdr_threshold,
+    )
+    if usable.empty:
+        return len(filtered), 0, 0, 0
+    annotated = evaluate_module._annotate_ground_truth(
+        usable,
+        perturbation=meta.perturbation,
+    )
+    positive_mask = evaluate_module._positive_mask(
+        annotated,
+        fdr_threshold=fdr_threshold,
+        abs_logfc_threshold=abs_logfc_threshold,
+    )
+    positives = int(positive_mask.sum())
+    usable_count = int(len(annotated))
+    return len(filtered), usable_count, positives, usable_count - positives
+
+
+def _exclude_post_filter_invalid_experiments(
+    experiments,
+    *,
+    protein_coding_gene_ids,
+    fdr_threshold,
+    abs_logfc_threshold,
+):
+    if protein_coding_gene_ids is None:
+        return experiments
+    kept = []
+    for meta in experiments:
+        row_count, usable_count, positives, negatives = _post_filter_experiment_class_counts(
+            meta,
+            protein_coding_gene_ids=protein_coding_gene_ids,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
+        )
+        if usable_count <= 0 or positives <= 0 or negatives <= 0:
+            logger.warning(
+                (
+                    "Excluding %s after protein-coding filter: "
+                    "rows=%d usable=%d positives=%d negatives=%d"
+                ),
+                meta.id,
+                row_count,
+                usable_count,
+                positives,
+                negatives,
+            )
+            continue
+        kept.append(meta)
+    if not kept:
+        raise ValueError("No datasets remain after protein-coding post-filter validation.")
+    return kept
 
 
 def _finalize_run_bundle(
@@ -422,6 +493,13 @@ def run_benchmark(config_path):
         )
         protein_coding_filter["gene_count"] = len(protein_coding_gene_ids)
         logger.info("Protein-coding gene set contains %d genes.", len(protein_coding_gene_ids))
+        experiments = _exclude_post_filter_invalid_experiments(
+            experiments,
+            protein_coding_gene_ids=protein_coding_gene_ids,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=abs_logfc_threshold,
+        )
+        logger.info("Experiments after protein-coding validation: %d", len(experiments))
 
     evaluate_module.FIGURE_DPI = int(eval_cfg.get("figure_dpi", eval_cfg.get("publication_figure_dpi", 450)))
     out_root = (root / config.get("out_dir", "results")).resolve()

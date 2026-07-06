@@ -27,6 +27,8 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import PercentFormatter
 
+import funmirbench.evaluate as ev
+
 
 DEFAULT_TOOL_IDS = ("targetscan", "mirdb_mirtarget", "microt_cnn", "mirbind2", "miraw")
 DEFAULT_TOOL_LABELS = {
@@ -36,19 +38,6 @@ DEFAULT_TOOL_LABELS = {
     "mirbind2": "miRBind2",
     "miraw": "miRAW",
 }
-
-
-def _expected_effect_from_logfc(frame: pd.DataFrame) -> pd.Series:
-    logfc = pd.to_numeric(frame["logFC"], errors="coerce")
-    if "perturbation" not in frame.columns:
-        return logfc.abs()
-    perturbation = frame["perturbation"].astype(str).str.upper().fillna("")
-    effect = logfc.abs().copy()
-    oe = perturbation.isin(["OE", "OVEREXPRESSION"])
-    kdko = perturbation.isin(["KO", "KD", "KNOCKOUT", "KNOCKDOWN"])
-    effect.loc[oe] = -logfc.loc[oe]
-    effect.loc[kdko] = logfc.loc[kdko]
-    return effect
 
 
 def _rank_scale_scores(scores: pd.Series) -> pd.Series:
@@ -83,21 +72,24 @@ def _load_rank_rows(
         frame = pd.read_csv(joined_path, sep="\t")
         if not {"logFC", "FDR"}.issubset(frame.columns):
             continue
-        frame["logFC_num"] = pd.to_numeric(frame["logFC"], errors="coerce")
-        frame["FDR_num"] = pd.to_numeric(frame["FDR"], errors="coerce")
-        usable = (
-            frame["logFC_num"].notna()
-            & frame["FDR_num"].notna()
-            & (frame["FDR_num"] > 0.0)
-            & (frame["FDR_num"] <= 1.0)
-        )
-        work = frame.loc[usable].copy()
+        keep_cols = ["logFC", "FDR"]
+        for optional in ("dataset_id", "perturbation", *ev.FDR_AUXILIARY_COLUMNS):
+            if optional in frame.columns:
+                keep_cols.append(optional)
+        rank_score_cols = []
+        for tool_id in tool_ids:
+            for column in (f"{rank_type}_rank_{tool_id}", f"score_{tool_id}"):
+                if column in frame.columns:
+                    rank_score_cols.append(column)
+        keep_cols = list(dict.fromkeys([*keep_cols, *rank_score_cols]))
+        work = ev._filter_usable_gt_rows(frame[keep_cols], fdr_threshold=fdr_threshold)
         if work.empty:
             continue
-        work["expected_effect"] = _expected_effect_from_logfc(work)
-        work["is_positive"] = (
-            (work["FDR_num"] < float(fdr_threshold))
-            & (work["expected_effect"] > float(effect_threshold))
+        work = ev._annotate_ground_truth(work)
+        work["is_positive"] = ev._positive_mask(
+            work,
+            fdr_threshold=fdr_threshold,
+            abs_logfc_threshold=effect_threshold,
         )
         for tool_id in tool_ids:
             rank_col = f"{rank_type}_rank_{tool_id}"
