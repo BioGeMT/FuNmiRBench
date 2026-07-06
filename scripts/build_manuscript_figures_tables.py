@@ -39,6 +39,26 @@ METRIC_LABELS = {
     "auroc": "AUROC",
     "spearman": "Spearman",
 }
+TOOL_PALETTE = [
+    "#1F77B4",
+    "#FF7F0E",
+    "#2CA02C",
+    "#D62728",
+    "#9467BD",
+    "#8C564B",
+    "#E377C2",
+    "#7F7F7F",
+    "#BCBD22",
+    "#17BECF",
+]
+
+
+def tool_color(tool_id: str, tool_ids=TOOL_IDS) -> str:
+    try:
+        index = list(tool_ids).index(tool_id)
+    except ValueError:
+        index = sum(ord(char) for char in str(tool_id))
+    return TOOL_PALETTE[index % len(TOOL_PALETTE)]
 
 
 def style_axes(ax, *, grid_axis="y"):
@@ -133,11 +153,19 @@ def plot_figure1(metric_rows: pd.DataFrame, figures_dir: pathlib.Path):
         sub = metric_rows[metric_rows["metric"] == metric]
         data = [sub.loc[sub["tool_id"] == tool_id, "value"].dropna().to_numpy(float) for tool_id in TOOL_IDS]
         labels = [TOOL_LABELS[tool_id] for tool_id in TOOL_IDS]
-        ax.boxplot(data, patch_artist=True, showfliers=False)
-        for idx, values in enumerate(data, start=1):
+        box = ax.boxplot(data, patch_artist=True, showfliers=False)
+        for patch, tool_id in zip(box["boxes"], TOOL_IDS):
+            color = tool_color(tool_id)
+            patch.set_facecolor(color)
+            patch.set_edgecolor(color)
+            patch.set_alpha(0.28)
+        for median in box["medians"]:
+            median.set_color("#22303C")
+            median.set_linewidth(1.4)
+        for idx, (tool_id, values) in enumerate(zip(TOOL_IDS, data), start=1):
             if values.size:
                 jitter = np.linspace(-0.08, 0.08, values.size) if values.size > 1 else np.array([0.0])
-                ax.scatter(np.full(values.size, idx) + jitter, values, s=18, alpha=0.65, edgecolors="white", linewidths=0.3)
+                ax.scatter(np.full(values.size, idx) + jitter, values, s=18, alpha=0.72, color=tool_color(tool_id), edgecolors="white", linewidths=0.3)
         ax.set_title(METRIC_LABELS[metric])
         ax.set_xticks(range(1, len(labels) + 1))
         ax.set_xticklabels(labels, rotation=20, ha="right")
@@ -251,7 +279,7 @@ def recovery_table(report_dir: pathlib.Path, *, fdr: float, effect_threshold: fl
 def plot_fraction(ax, table: pd.DataFrame, *, title: str, xlabel: str):
     for tool_id in TOOL_IDS:
         sub = table[table["tool_id"] == tool_id].sort_values("rank_bin_mid")
-        ax.plot(sub["rank_bin_mid"], sub["positive_fraction_within_bin"] * 100, marker="o", linewidth=2, label=TOOL_LABELS[tool_id])
+        ax.plot(sub["rank_bin_mid"], sub["positive_fraction_within_bin"] * 100, marker="o", linewidth=2, color=tool_color(tool_id), label=TOOL_LABELS[tool_id])
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel("GT positives within bin (%)")
@@ -266,7 +294,7 @@ def plot_figure2(local: pd.DataFrame, global_: pd.DataFrame, recovery: pd.DataFr
     plot_fraction(axes[1], global_, title="Global rank enrichment", xlabel="Global normalized rank bin")
     for tool_id in TOOL_IDS:
         sub = recovery[recovery["tool_id"] == tool_id]
-        axes[2].plot(sub["prediction_count"], sub["recovery_fraction"] * 100, linewidth=2, label=TOOL_LABELS[tool_id])
+        axes[2].plot(sub["prediction_count"], sub["recovery_fraction"] * 100, linewidth=2, color=tool_color(tool_id), label=TOOL_LABELS[tool_id])
     axes[2].set_title("GT-positive recovery")
     axes[2].set_xlabel("Predicted targets per dataset")
     axes[2].set_ylabel("Mean GT-positive recovery (%)")
@@ -311,8 +339,8 @@ def plot_figure3(table: pd.DataFrame, figures_dir: pathlib.Path):
     fig, axes = plt.subplots(2, 1, figsize=(9.8, 9.6), sharex=True)
     for tool_id in TOOL_IDS:
         sub = table[table["tool_id"] == tool_id].sort_values("rank_bin_mid")
-        axes[0].plot(sub["rank_bin_mid"], sub["positive_fraction_within_scored"] * 100, marker="o", linewidth=2, label=TOOL_LABELS[tool_id])
-        axes[1].plot(sub["rank_bin_mid"], sub["coverage_fraction"] * 100, marker="o", linewidth=2, label=TOOL_LABELS[tool_id])
+        axes[0].plot(sub["rank_bin_mid"], sub["positive_fraction_within_scored"] * 100, marker="o", linewidth=2, color=tool_color(tool_id), label=TOOL_LABELS[tool_id])
+        axes[1].plot(sub["rank_bin_mid"], sub["coverage_fraction"] * 100, marker="o", linewidth=2, color=tool_color(tool_id), label=TOOL_LABELS[tool_id])
     axes[0].set_title("TargetScan-centered GT-positive enrichment")
     axes[0].set_ylabel("GT positives among scored genes (%)")
     axes[0].set_ylim(bottom=0)
