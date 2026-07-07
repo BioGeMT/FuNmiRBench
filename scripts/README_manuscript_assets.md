@@ -24,6 +24,12 @@ Run the corrected reference-centered Figure 3 builder:
 python scripts/build_figure3_targetscan_centered.py --report-dir results/20260706_132519 --out-dir manuscript_assets
 ```
 
+Run the exploratory gene-level predictability analysis:
+
+```bash
+python scripts/build_gene_predictability.py --report-dir results/20260706_132519 --out-dir manuscript_assets --min-positive-occurrences 2
+```
+
 Optional thresholds can be provided with `--fdr-threshold 0.05` and `--effect-threshold 1.0`.
 
 ## Main manuscript outputs
@@ -42,19 +48,29 @@ Figure 2 is now a three-panel local-rank figure:
 
 The global-rank enrichment panel is no longer part of the main Figure 2. Use the top-500 wrapper when the recovery panel should extend to 500 admitted predictions per dataset.
 
-Figure 3 is a reference-rank analysis with TargetScan-centered and miRDB-centered rows in the same figure. For each reference predictor, the builder recomputes the reference local rank within each dataset from the reference score using average ranks for ties, bins reference-scored miRNA-gene pairs, and then calculates enrichment and cross-predictor coverage inside those same reference-defined bins. The active reference predictor is drawn as a black dashed line and plotted last so the reference remains visible.
+Figure 3 is a reference-rank analysis with TargetScan-centered and miRDB-centered rows in the same figure. For each reference predictor, the builder recomputes the reference local rank within each dataset from the reference score using average ranks for ties, bins reference-scored miRNA-gene pairs, and then calculates enrichment and cross-predictor coverage inside those same reference-defined bins. The active reference predictor keeps its predictor color and is drawn as a dashed line.
 
 Tables:
 
 - `tables/table1_cross_dataset_predictor_summary.tsv`
 
-## Supplementary output
+## Supplementary and exploratory outputs
 
 Tables:
 
 - `tables/table_s1_per_dataset_predictor_metrics.tsv`
 - `tables/table_s2_local_rank_background_positive_summary.tsv`
 - `tables/figure3_reference_centered_summary.tsv`
+- `tables/gene_predictability_rank_occurrences.tsv`
+- `tables/gene_predictability_by_predictor.tsv`
+- `tables/gene_predictability_overall.tsv`
+
+Exploratory figures:
+
+- `figures/gene_predictability_scatter.png` and `.svg`
+- `figures/gene_predictability_heatmap.png` and `.svg`
+
+The gene-level predictability analysis asks whether some genes are recurrently easier to prioritize as GT-positive miRNA targets. It aggregates local ranks by gene and predictor across datasets, focusing on occurrences where the gene is GT-positive for the perturbed miRNA.
 
 ## Input assumptions
 
