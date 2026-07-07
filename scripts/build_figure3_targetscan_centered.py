@@ -41,11 +41,11 @@ TOOL_LABELS = {
 }
 REFERENCE_TOOLS = ["targetscan", "mirdb_mirtarget"]
 TOOL_COLORS = {
-    "targetscan": "#000000",
+    "targetscan": "#9467BD",
     "mirdb_mirtarget": "#FF7F0E",
     "microt_cnn": "#2CA02C",
     "mirbind2": "#D62728",
-    "miraw": "#9467BD",
+    "miraw": "#1F77B4",
 }
 
 
@@ -171,11 +171,12 @@ def reference_centered_table(
 
 
 def reference_line_style(tool_id: str, reference_tool: str) -> dict:
+    """Use stable predictor colors; highlight the active reference by dash style."""
     if tool_id == reference_tool:
         return {
-            "color": "#000000",
+            "color": TOOL_COLORS[tool_id],
             "linestyle": "--",
-            "linewidth": 2.4,
+            "linewidth": 2.6,
             "marker": "o",
             "markersize": 5.5,
             "zorder": 10,
