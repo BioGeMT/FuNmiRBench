@@ -30,6 +30,14 @@ Figures:
 - `figures/figure2_rank_enrichment_recovery.png` and `.svg`
 - `figures/figure3_targetscan_centered.png` and `.svg`
 
+Figure 2 is now a three-panel local-rank figure:
+
+- local rank-bin enrichment
+- local rank distributions for background versus GT-positive miRNA-gene pairs
+- fixed-budget GT-positive recovery
+
+The global-rank enrichment panel is no longer part of the main Figure 2.
+
 Tables:
 
 - `tables/table1_cross_dataset_predictor_summary.tsv`
@@ -39,6 +47,7 @@ Tables:
 Tables:
 
 - `tables/table_s1_per_dataset_predictor_metrics.tsv`
+- `tables/table_s2_local_rank_background_positive_summary.tsv`
 
 ## Input assumptions
 
