@@ -12,6 +12,14 @@ python scripts/build_manuscript_figures_tables.py \
   --out-dir manuscript_assets
 ```
 
+To generate the manuscript assets with the Figure 2 recovery curve extended to **top 500 predictions per dataset**, use:
+
+```bash
+python scripts/build_manuscript_figures_tables_top500.py \
+  --report-dir results/20260706_132519 \
+  --out-dir manuscript_assets
+```
+
 Optional thresholds:
 
 ```bash
@@ -36,7 +44,7 @@ Figure 2 is now a three-panel local-rank figure:
 - local rank distributions for background versus GT-positive miRNA-gene pairs
 - fixed-budget GT-positive recovery
 
-The global-rank enrichment panel is no longer part of the main Figure 2.
+The global-rank enrichment panel is no longer part of the main Figure 2. Use the top-500 wrapper when the recovery panel should extend to 500 admitted predictions per dataset.
 
 Tables:
 
