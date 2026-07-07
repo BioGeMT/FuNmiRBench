@@ -20,6 +20,8 @@ import pathlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 from matplotlib.ticker import PercentFormatter
 
 import funmirbench.evaluate as ev
@@ -42,26 +44,18 @@ METRIC_LABELS = {
     "auroc": "AUROC",
     "spearman": "Spearman",
 }
-TOOL_PALETTE = [
-    "#1F77B4",
-    "#FF7F0E",
-    "#2CA02C",
-    "#D62728",
-    "#9467BD",
-    "#8C564B",
-    "#E377C2",
-    "#7F7F7F",
-    "#BCBD22",
-    "#17BECF",
-]
+TOOL_COLORS = {
+    "targetscan": "#9467BD",
+    "mirdb_mirtarget": "#FF7F0E",
+    "microt_cnn": "#1F77B4",
+    "mirbind2": "#D62728",
+    "miraw": "#2CA02C",
+}
+BACKGROUND_COLOR = "#C9CED6"
 
 
-def tool_color(tool_id: str, tool_ids=TOOL_IDS) -> str:
-    try:
-        index = list(tool_ids).index(tool_id)
-    except ValueError:
-        index = sum(ord(char) for char in str(tool_id))
-    return TOOL_PALETTE[index % len(TOOL_PALETTE)]
+def tool_color(tool_id: str) -> str:
+    return TOOL_COLORS.get(tool_id, "#7F7F7F")
 
 
 def style_axes(ax, *, grid_axis="y"):
@@ -201,14 +195,15 @@ def plot_figure1(metric_rows: pd.DataFrame, figures_dir: pathlib.Path):
 
 
 def dense_rank_scale(values: pd.Series) -> pd.Series:
+    """Normalize ranks to 0-1 within a scored set using average ranks for ties."""
     values = pd.to_numeric(values, errors="coerce")
-    ranks = values.rank(method="dense", ascending=True)
-    max_rank = ranks.max(skipna=True)
-    if pd.isna(max_rank):
+    ranks = values.rank(method="average", ascending=True)
+    count = int(values.notna().sum())
+    if count <= 0:
         return pd.Series(np.nan, index=values.index)
-    if float(max_rank) <= 1.0:
+    if count == 1:
         return pd.Series(1.0, index=values.index, dtype=float)
-    return (ranks - 1.0) / (float(max_rank) - 1.0)
+    return (ranks - 1.0) / (float(count) - 1.0)
 
 
 def rank_values(frame: pd.DataFrame, tool_id: str, rank_type: str) -> pd.Series | None:
@@ -254,6 +249,44 @@ def rank_fraction_table(report_dir: pathlib.Path, *, rank_type: str, bins: int, 
     return pd.DataFrame(rows)
 
 
+def local_rank_distribution_data(report_dir: pathlib.Path, *, fdr: float, effect_threshold: float) -> tuple[dict[tuple[str, str], np.ndarray], pd.DataFrame]:
+    ranks_by_group: dict[tuple[str, str], list[np.ndarray]] = {}
+    for tool_id in TOOL_IDS:
+        ranks_by_group[(tool_id, "Background")] = []
+        ranks_by_group[(tool_id, "GT positives")] = []
+
+    for path in joined_paths(report_dir):
+        frame = usable_joined(pd.read_csv(path, sep="\t"), fdr=fdr, effect_threshold=effect_threshold)
+        for tool_id in TOOL_IDS:
+            ranks = rank_values(frame, tool_id, "local")
+            if ranks is None:
+                continue
+            tmp = pd.DataFrame({"rank": ranks, "is_positive": frame["is_positive"].astype(bool)}).dropna(subset=["rank"])
+            if tmp.empty:
+                continue
+            ranks_by_group[(tool_id, "Background")].append(tmp.loc[~tmp["is_positive"], "rank"].to_numpy(float))
+            ranks_by_group[(tool_id, "GT positives")].append(tmp.loc[tmp["is_positive"], "rank"].to_numpy(float))
+
+    arrays: dict[tuple[str, str], np.ndarray] = {}
+    rows = []
+    for tool_id in TOOL_IDS:
+        for label in ("Background", "GT positives"):
+            pieces = ranks_by_group[(tool_id, label)]
+            values = np.concatenate(pieces) if pieces else np.array([], dtype=float)
+            arrays[(tool_id, label)] = values
+            rows.append({
+                "tool_id": tool_id,
+                "predictor": TOOL_LABELS[tool_id],
+                "class": label,
+                "n_pairs": int(values.size),
+                "median_local_rank": float(np.nanmedian(values)) if values.size else np.nan,
+                "mean_local_rank": float(np.nanmean(values)) if values.size else np.nan,
+                "q25": float(np.nanquantile(values, 0.25)) if values.size else np.nan,
+                "q75": float(np.nanquantile(values, 0.75)) if values.size else np.nan,
+            })
+    return arrays, pd.DataFrame(rows)
+
+
 def recovery_table(report_dir: pathlib.Path, *, fdr: float, effect_threshold: float, max_predictions: int = 300) -> pd.DataFrame:
     curves = {tool_id: [] for tool_id in TOOL_IDS}
     for path in joined_paths(report_dir):
@@ -293,27 +326,92 @@ def plot_fraction(ax, table: pd.DataFrame, *, title: str, xlabel: str):
         ax.plot(sub["rank_bin_mid"], sub["positive_fraction_within_bin"] * 100, marker="o", linewidth=2, color=tool_color(tool_id), label=TOOL_LABELS[tool_id])
     ax.set_title(title)
     ax.set_xlabel(xlabel)
-    ax.set_ylabel("GT positives within bin (%)")
+    ax.set_ylabel("GT-positive pairs within bin (%)")
     ax.set_xlim(0, 1)
     ax.set_ylim(bottom=0)
     style_axes(ax, grid_axis="both")
 
 
-def plot_figure2(local: pd.DataFrame, global_: pd.DataFrame, recovery: pd.DataFrame, figures_dir: pathlib.Path):
-    fig, axes = plt.subplots(1, 3, figsize=(16.5, 4.9))
-    plot_fraction(axes[0], local, title="Local rank enrichment", xlabel="Local normalized rank bin")
-    plot_fraction(axes[1], global_, title="Global rank enrichment", xlabel="Global normalized rank bin")
+def plot_local_rank_violin(ax, local_rank_arrays: dict[tuple[str, str], np.ndarray], *, seed: int = 42):
+    rng = np.random.default_rng(seed)
+    positions = []
+    violin_data = []
+    facecolors = []
+    for i, tool_id in enumerate(TOOL_IDS, start=1):
+        positions.extend([i - 0.18, i + 0.18])
+        for label in ("Background", "GT positives"):
+            values = local_rank_arrays[(tool_id, label)]
+            max_points = 4000 if label == "Background" else 2000
+            if values.size > max_points:
+                values = rng.choice(values, size=max_points, replace=False)
+            violin_data.append(values)
+            facecolors.append(BACKGROUND_COLOR if label == "Background" else tool_color(tool_id))
+    parts = ax.violinplot(violin_data, positions=positions, widths=0.28, showmeans=False, showmedians=False, showextrema=False, points=100)
+    for body, color in zip(parts["bodies"], facecolors):
+        body.set_facecolor(color)
+        body.set_edgecolor(color)
+        body.set_alpha(0.60)
+
+    for i, tool_id in enumerate(TOOL_IDS, start=1):
+        for pos, label in ((i - 0.18, "Background"), (i + 0.18, "GT positives")):
+            values = local_rank_arrays[(tool_id, label)]
+            if values.size == 0:
+                continue
+            q1 = np.nanquantile(values, 0.25)
+            median = np.nanmedian(values)
+            q3 = np.nanquantile(values, 0.75)
+            ax.vlines(pos, q1, q3, color="black", linewidth=1.8, zorder=3)
+            ax.hlines(median, pos - 0.095, pos + 0.095, color="black", linewidth=2.0, zorder=4)
+    ax.set_xlim(0.4, len(TOOL_IDS) + 0.6)
+    ax.set_ylim(0, 1.02)
+    ax.set_xticks(range(1, len(TOOL_IDS) + 1))
+    ax.set_xticklabels([TOOL_LABELS[tool_id] for tool_id in TOOL_IDS], rotation=18, ha="right")
+    ax.set_title("Local-rank distributions")
+    ax.set_ylabel("Local normalized rank\n(0 = weakest, 1 = strongest)")
+    style_axes(ax, grid_axis="y")
+
+
+def plot_recovery(ax, recovery: pd.DataFrame):
     for tool_id in TOOL_IDS:
         sub = recovery[recovery["tool_id"] == tool_id]
-        axes[2].plot(sub["prediction_count"], sub["recovery_fraction"] * 100, linewidth=2, color=tool_color(tool_id), label=TOOL_LABELS[tool_id])
-    axes[2].set_title("GT-positive recovery")
-    axes[2].set_xlabel("Predicted targets per dataset")
-    axes[2].set_ylabel("Mean GT-positive recovery (%)")
-    axes[2].set_ylim(bottom=0)
-    style_axes(axes[2], grid_axis="both")
-    axes[2].legend(frameon=False, fontsize=9)
-    fig.suptitle("Functional target enrichment and recovery across predictor ranks", fontsize=15, y=1.02)
-    fig.tight_layout()
+        ax.plot(sub["prediction_count"], sub["recovery_fraction"] * 100, linewidth=2, color=tool_color(tool_id), label=TOOL_LABELS[tool_id])
+    ax.set_title("GT-positive recovery")
+    ax.set_xlabel("Predicted targets per dataset")
+    ax.set_ylabel("Mean GT-positive recovery (%)")
+    ax.set_ylim(bottom=0)
+    style_axes(ax, grid_axis="both")
+
+
+def plot_figure2(local: pd.DataFrame, local_rank_arrays: dict[tuple[str, str], np.ndarray], recovery: pd.DataFrame, figures_dir: pathlib.Path):
+    fig = plt.figure(figsize=(15.5, 9.4))
+    grid = fig.add_gridspec(2, 2, height_ratios=[1.0, 0.95], width_ratios=[1.15, 1.0], hspace=0.43, wspace=0.30)
+    ax_local = fig.add_subplot(grid[0, 0])
+    ax_violin = fig.add_subplot(grid[0, 1])
+    ax_recovery = fig.add_subplot(grid[1, 0])
+    ax_legend = fig.add_subplot(grid[1, 1])
+
+    plot_fraction(ax_local, local, title="Local rank enrichment", xlabel="Local normalized rank bin")
+    plot_local_rank_violin(ax_violin, local_rank_arrays)
+    plot_recovery(ax_recovery, recovery)
+
+    for ax, label in ((ax_local, "A"), (ax_violin, "B"), (ax_recovery, "C")):
+        ax.text(-0.13, 1.10, label, transform=ax.transAxes, fontsize=14, fontweight="bold", va="top")
+
+    ax_legend.axis("off")
+    predictor_handles = [
+        Line2D([0], [0], color=tool_color(tool_id), lw=2.5, marker="o", label=TOOL_LABELS[tool_id])
+        for tool_id in TOOL_IDS
+    ]
+    class_handles = [
+        Patch(facecolor=BACKGROUND_COLOR, edgecolor=BACKGROUND_COLOR, alpha=0.60, label="Background pairs"),
+        Patch(facecolor="#777777", edgecolor="#777777", alpha=0.60, label="GT-positive pairs in panel B"),
+    ]
+    legend1 = ax_legend.legend(handles=predictor_handles, title="Predictor", frameon=False, loc="upper left", fontsize=10, title_fontsize=11)
+    ax_legend.add_artist(legend1)
+    ax_legend.legend(handles=class_handles, title="Violin classes", frameon=False, loc="lower left", fontsize=10, title_fontsize=11)
+
+    fig.suptitle("Functional target enrichment and recovery across local predictor ranks", fontsize=15, y=0.995)
+    fig.tight_layout(rect=[0, 0, 1, 0.975])
     return save_figure(fig, figures_dir / "figure2_rank_enrichment_recovery.png")
 
 
@@ -369,7 +467,7 @@ def plot_figure3(table: pd.DataFrame, figures_dir: pathlib.Path):
 def plot_figure_all(
     metric_rows: pd.DataFrame,
     local: pd.DataFrame,
-    global_: pd.DataFrame,
+    local_rank_arrays: dict[tuple[str, str], np.ndarray],
     recovery: pd.DataFrame,
     targetscan: pd.DataFrame,
     figures_dir: pathlib.Path,
@@ -389,25 +487,12 @@ def plot_figure_all(
     plot_fraction(ax_local, local, title="Local rank enrichment", xlabel="Local normalized rank bin")
     ax_local.text(-0.16, 1.10, "G", transform=ax_local.transAxes, fontsize=14, fontweight="bold", va="top")
 
-    ax_global = fig.add_subplot(grid[2, 2:4])
-    plot_fraction(ax_global, global_, title="Global rank enrichment", xlabel="Global normalized rank bin")
-    ax_global.text(-0.16, 1.10, "H", transform=ax_global.transAxes, fontsize=14, fontweight="bold", va="top")
+    ax_violin = fig.add_subplot(grid[2, 2:4])
+    plot_local_rank_violin(ax_violin, local_rank_arrays)
+    ax_violin.text(-0.16, 1.10, "H", transform=ax_violin.transAxes, fontsize=14, fontweight="bold", va="top")
 
     ax_recovery = fig.add_subplot(grid[2, 4:6])
-    for tool_id in TOOL_IDS:
-        sub = recovery[recovery["tool_id"] == tool_id]
-        ax_recovery.plot(
-            sub["prediction_count"],
-            sub["recovery_fraction"] * 100,
-            linewidth=2,
-            color=tool_color(tool_id),
-            label=TOOL_LABELS[tool_id],
-        )
-    ax_recovery.set_title("GT-positive recovery")
-    ax_recovery.set_xlabel("Predicted targets per dataset")
-    ax_recovery.set_ylabel("Mean GT-positive recovery (%)")
-    ax_recovery.set_ylim(bottom=0)
-    style_axes(ax_recovery, grid_axis="both")
+    plot_recovery(ax_recovery, recovery)
     ax_recovery.legend(frameon=False, fontsize=9)
     ax_recovery.text(-0.16, 1.10, "I", transform=ax_recovery.transAxes, fontsize=14, fontweight="bold", va="top")
 
@@ -463,13 +548,16 @@ def build_assets(report_dir: pathlib.Path, out_dir: pathlib.Path, *, fdr: float,
     outputs["figure1"] = plot_figure1(metrics_long, figures_dir)
 
     local = rank_fraction_table(report_dir, rank_type="local", bins=10, fdr=fdr, effect_threshold=effect_threshold)
-    global_ = rank_fraction_table(report_dir, rank_type="global", bins=5, fdr=fdr, effect_threshold=effect_threshold)
+    local_rank_arrays, local_rank_summary = local_rank_distribution_data(report_dir, fdr=fdr, effect_threshold=effect_threshold)
+    local_rank_summary_path = tables_dir / "table_s2_local_rank_background_positive_summary.tsv"
+    local_rank_summary.to_csv(local_rank_summary_path, sep="\t", index=False)
+    outputs["table_s2"] = local_rank_summary_path
     recovery = recovery_table(report_dir, fdr=fdr, effect_threshold=effect_threshold)
-    outputs["figure2"] = plot_figure2(local, global_, recovery, figures_dir)
+    outputs["figure2"] = plot_figure2(local, local_rank_arrays, recovery, figures_dir)
 
     targetscan = centered_table(report_dir, anchor_tool="targetscan", fdr=fdr, effect_threshold=effect_threshold)
     outputs["figure3"] = plot_figure3(targetscan, figures_dir)
-    outputs["figure_all"] = plot_figure_all(metrics_long, local, global_, recovery, targetscan, figures_dir)
+    outputs["figure_all"] = plot_figure_all(metrics_long, local, local_rank_arrays, recovery, targetscan, figures_dir)
     return outputs
 
 
