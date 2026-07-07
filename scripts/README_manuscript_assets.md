@@ -18,7 +18,7 @@ Run the top-500 recovery version for Figure 2:
 python scripts/build_manuscript_figures_tables_top500.py --report-dir results/20260706_132519 --out-dir manuscript_assets
 ```
 
-Run the corrected side-by-side TargetScan-centered Figure 3 builder:
+Run the corrected reference-centered Figure 3 builder:
 
 ```bash
 python scripts/build_figure3_targetscan_centered.py --report-dir results/20260706_132519 --out-dir manuscript_assets
@@ -32,7 +32,7 @@ Figures:
 
 - `figures/figure1_cross_dataset_distributions.png` and `.svg`
 - `figures/figure2_rank_enrichment_recovery.png` and `.svg`
-- `figures/figure3_targetscan_centered.png` and `.svg`
+- `figures/figure3_reference_centered.png` and `.svg`
 
 Figure 2 is now a three-panel local-rank figure:
 
@@ -42,7 +42,7 @@ Figure 2 is now a three-panel local-rank figure:
 
 The global-rank enrichment panel is no longer part of the main Figure 2. Use the top-500 wrapper when the recovery panel should extend to 500 admitted predictions per dataset.
 
-Figure 3 is a TargetScan-centered reference-rank analysis. The dedicated Figure 3 builder recomputes TargetScan local ranks within each dataset from `score_targetscan` using average ranks for ties, bins TargetScan-scored miRNA-gene pairs, and then calculates enrichment and cross-predictor coverage inside those same TargetScan-defined bins. TargetScan is drawn as a black dashed reference line and plotted last so the reference remains visible.
+Figure 3 is a reference-rank analysis with TargetScan-centered and miRDB-centered rows in the same figure. For each reference predictor, the builder recomputes the reference local rank within each dataset from the reference score using average ranks for ties, bins reference-scored miRNA-gene pairs, and then calculates enrichment and cross-predictor coverage inside those same reference-defined bins. The active reference predictor is drawn as a black dashed line and plotted last so the reference remains visible.
 
 Tables:
 
@@ -54,7 +54,7 @@ Tables:
 
 - `tables/table_s1_per_dataset_predictor_metrics.tsv`
 - `tables/table_s2_local_rank_background_positive_summary.tsv`
-- `tables/figure3_targetscan_centered_summary.tsv`
+- `tables/figure3_reference_centered_summary.tsv`
 
 ## Input assumptions
 
