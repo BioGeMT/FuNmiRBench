@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Collection
 
 import pandas as pd
 
 from funmirbench import DatasetMeta
 from funmirbench.benchmark_config import resolve_predictor_output_path
 from funmirbench.de_table import find_gene_id_column, read_de_table
+from funmirbench.gene_ids import strip_ensembl_version
 
 
 PREDICTOR_CHUNK_SIZE = 1_000_000
@@ -57,7 +59,12 @@ def _normalize_scores(scores: pd.Series, *, score_direction: str, tool_id: str) 
     return normalized
 
 
-def load_experiment_table(meta: DatasetMeta, *, logger=None) -> pd.DataFrame:
+def load_experiment_table(
+    meta: DatasetMeta,
+    *,
+    protein_coding_gene_ids: Collection[str] | None = None,
+    logger=None,
+) -> pd.DataFrame:
     start = time.perf_counter()
     de = read_de_table(meta.full_path)
     gene_src = find_gene_id_column(de)
@@ -66,7 +73,7 @@ def load_experiment_table(meta: DatasetMeta, *, logger=None) -> pd.DataFrame:
         de.insert(0, "gene_id", de.index.astype(str))
     else:
         de = de.rename(columns={gene_src: "gene_id"})
-    de["gene_id"] = de["gene_id"].astype(str)
+    de["gene_id"] = de["gene_id"].map(strip_ensembl_version)
     missing = [col for col in ("logFC", "FDR") if col not in de.columns]
     if missing:
         raise ValueError(f"{meta.full_path} missing required columns: {missing}")
@@ -81,6 +88,19 @@ def load_experiment_table(meta: DatasetMeta, *, logger=None) -> pd.DataFrame:
         if optional in de.columns:
             keep.append(optional)
     out = de[keep].copy()
+    if protein_coding_gene_ids is not None:
+        before = len(out)
+        protein_coding_gene_ids = {
+            strip_ensembl_version(gene_id)
+            for gene_id in protein_coding_gene_ids
+        }
+        out = out.loc[
+            out["gene_id"].isin(protein_coding_gene_ids)
+        ].copy()
+        _emit_log(
+            logger,
+            f"    Protein-coding filter | DE rows={before:,} -> {len(out):,}",
+        )
     out.insert(0, "mirna", meta.miRNA)
     out.insert(0, "dataset_id", meta.id)
     out.insert(2, "perturbation", meta.perturbation)
@@ -166,7 +186,7 @@ def load_tool_scores(
         min_score=min_score,
     )
     df[rank_col_name] = df["Score"].map(rank_map)
-    df["gene_id"] = df["Ensembl_ID"].astype(str)
+    df["gene_id"] = df["Ensembl_ID"].map(strip_ensembl_version)
     if df["gene_id"].duplicated().any():
         keep_idx = df.groupby("gene_id")["Score"].idxmax()
         df = df.loc[keep_idx, ["gene_id", "Score", rank_col_name]].reset_index(drop=True)
@@ -183,9 +203,22 @@ def load_tool_scores(
     return out, path
 
 
-def build_joined(meta, tool_ids, predictions, root, min_score: float | None = None, *, logger=None):
+def build_joined(
+    meta,
+    tool_ids,
+    predictions,
+    root,
+    min_score: float | None = None,
+    *,
+    protein_coding_gene_ids: Collection[str] | None = None,
+    logger=None,
+):
     total_start = time.perf_counter()
-    joined = load_experiment_table(meta, logger=logger)
+    joined = load_experiment_table(
+        meta,
+        protein_coding_gene_ids=protein_coding_gene_ids,
+        logger=logger,
+    )
     paths = {}
     for tool_id in tool_ids:
         if tool_id not in predictions:

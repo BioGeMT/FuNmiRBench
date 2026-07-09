@@ -38,6 +38,12 @@ from funmirbench.experiment_store import sync_zenodo_experiments
 from funmirbench.join import build_joined
 from funmirbench.logger import parse_log_level, setup_logging
 from funmirbench.predictor_combinations import write_predictor_combination_outputs
+from funmirbench.protein_coding import (
+    DEFAULT_CACHE_REL_PATH,
+    DEFAULT_GTF_REL_PATH,
+    ENSEMBL_RELEASE,
+    load_protein_coding_gene_ids,
+)
 from funmirbench.run_report import write_run_pdf_report
 from funmirbench.validate_experiments import (
     format_validation_failure,
@@ -66,6 +72,20 @@ def _optional_float(value, default=None):
     return float(value)
 
 
+def _optional_bool(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+    raise ValueError(f"Expected a boolean value, got {value!r}")
+
+
 def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
     dataset_plots_dir = plots_dir / dataset_id
     if dataset_plots_dir.exists():
@@ -91,6 +111,7 @@ def _finalize_run_bundle(
     fdr_threshold,
     abs_logfc_threshold,
     predictor_top_fraction,
+    protein_coding_filter,
 ):
     layout = _init_run_layout(out_dir)
     metric_tables = write_metric_tables(
@@ -136,6 +157,7 @@ def _finalize_run_bundle(
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
         predictor_top_fraction=predictor_top_fraction,
+        protein_coding_filter=protein_coding_filter,
     )
     report_path = write_run_pdf_report(
         out_dir,
@@ -160,6 +182,7 @@ def _finalize_run_bundle(
         "report_pdf": str(report_path),
         "metric_tables": metric_tables,
         "cross_dataset_outputs": combined_outputs,
+        "protein_coding_filter": protein_coding_filter,
         "datasets": dataset_outputs,
     }
     summary_path = out_dir / "summary.json"
@@ -191,10 +214,11 @@ def run_benchmark(config_path):
         eval_cfg.get("effect_threshold", eval_cfg.get("abs_logfc_threshold", 1.0))
     )
     predictor_top_fraction = float(eval_cfg.get("predictor_top_fraction", 0.10))
-    write_top_prediction_cdfs = bool(eval_cfg.get("write_top_prediction_cdfs", True))
+    write_top_prediction_cdfs = _optional_bool(eval_cfg.get("write_top_prediction_cdfs"), True)
     report_min_common_coverage = float(
         eval_cfg.get("report_min_common_coverage", eval_cfg.get("publication_min_common_coverage", 0.10))
     )
+    protein_coding_only = _optional_bool(eval_cfg.get("protein_coding_only"), True)
 
     logger.info("Loading predictors...")
     predictions = load_predictions(
@@ -239,6 +263,24 @@ def run_benchmark(config_path):
     if not experiments:
         raise ValueError("Experiment selection resolved to no datasets.")
 
+    protein_coding_gene_ids = None
+    protein_coding_filter = {
+        "enabled": protein_coding_only,
+        "ensembl_release": ENSEMBL_RELEASE,
+        "gtf_path": str(eval_cfg.get("protein_coding_gtf") or DEFAULT_GTF_REL_PATH),
+        "gene_cache": str(eval_cfg.get("protein_coding_gene_cache") or DEFAULT_CACHE_REL_PATH),
+        "gene_count": None,
+    }
+    if protein_coding_only:
+        logger.info("Protein-coding-only evaluation filter is enabled.")
+        protein_coding_gene_ids = load_protein_coding_gene_ids(
+            root=root,
+            gtf_path=eval_cfg.get("protein_coding_gtf"),
+            cache_path=eval_cfg.get("protein_coding_gene_cache"),
+        )
+        protein_coding_filter["gene_count"] = len(protein_coding_gene_ids)
+        logger.info("Protein-coding gene set contains %d genes.", len(protein_coding_gene_ids))
+
     evaluate_module.FIGURE_DPI = int(eval_cfg.get("figure_dpi", eval_cfg.get("publication_figure_dpi", 450)))
     out_root = (root / config.get("out_dir", "results")).resolve()
     out_root.mkdir(parents=True, exist_ok=True)
@@ -282,6 +324,7 @@ def run_benchmark(config_path):
             tool_ids,
             predictions,
             root,
+            protein_coding_gene_ids=protein_coding_gene_ids,
             logger=logger.info,
         )
         joined_path = dataset_dir / "joined.tsv"
@@ -380,6 +423,7 @@ def run_benchmark(config_path):
         fdr_threshold=fdr_threshold,
         abs_logfc_threshold=abs_logfc_threshold,
         predictor_top_fraction=predictor_top_fraction,
+        protein_coding_filter=protein_coding_filter,
     )
     return out_dir
 

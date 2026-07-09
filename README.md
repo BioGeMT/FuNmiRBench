@@ -216,7 +216,9 @@ want to generate, then register the resulting standardized TSV in `metadata/pred
 
 ### 4. Run The Benchmark
 
-The default benchmark config is `benchmark.yaml`.
+The default benchmark config is `benchmark.yaml`. The primary benchmark universe is
+Ensembl protein-coding genes only; FuNmiRBench filters each DE table to that universe
+before joining predictor scores.
 
 Benchmark config summary:
 
@@ -224,7 +226,7 @@ Benchmark config summary:
 - `predictions_tsv`: predictor metadata table
 - `experiments`: which experiment rows to include
 - `predictors`: which predictor rows to include
-- `evaluation`: thresholds and ranking settings
+- `evaluation`: thresholds, ranking settings, and the protein-coding benchmark universe
 - `tags`: optional labels included in the per-run output folder name
 - `out_dir`: results root directory; each benchmark run creates its own subfolder under this root
 
@@ -236,6 +238,8 @@ uv run funmirbench --config benchmark.yaml
 
 That command automatically syncs only the experiment DE tables selected by your benchmark config
 from Zenodo into the local `data/experiments/processed/18745741/` cache before joining predictions.
+On the first protein-coding run, it also downloads or reuses the Ensembl v115 GTF and caches the
+protein-coding gene set at `data/resources/ensembl/protein_coding_gene_ids.txt`.
 
 If you want to prefetch the full curated experiment cache yourself, you can also run:
 
@@ -243,16 +247,18 @@ If you want to prefetch the full curated experiment cache yourself, you can also
 uv run funmirbench-experiments-store
 ```
 
-During evaluation, each predictor is scored only on miRNA-gene pairs that exist in that
-predictor's standardized file. Missing pairs are not filled with zero for metrics. Each run writes
-coverage information to `tables/coverage_per_experiment.tsv`, and the per-predictor Markdown/PDF
-reports also record total rows, scored rows, missing rows, and coverage. For per-dataset
-heatmaps and agreement plots, FuNmiRBench uses a dataset-local tie-aware rank over the scored
-rows. For cross-dataset rank-distribution plots, it keeps a separate global tie-aware rank
-derived from each predictor's full standardized file. Predictor-agreement top fractions use an
-exact top-k selection per predictor with a deterministic tie-break instead of a quantile
-threshold. Combined PR, ROC, and GSEA comparison plots are computed on the common set of genes
-scored by all compared predictors.
+During evaluation, DE rows are first restricted to Ensembl protein-coding genes from Ensembl
+release 115. This keeps the evaluation universe aligned with mRNA target predictors and avoids
+penalizing tools for non-coding genes they are not designed to score. Each predictor is then
+scored only on miRNA-gene pairs that exist in that predictor's standardized file. Missing pairs
+are not filled with zero for metrics. Each run writes coverage information to
+`tables/per_experiment/coverage_per_experiment.tsv`, and the per-predictor Markdown/PDF reports
+also record total rows, scored rows, missing rows, and coverage. For per-dataset heatmaps and agreement plots,
+FuNmiRBench uses a dataset-local tie-aware rank over the scored rows. For cross-dataset
+rank-distribution plots, it keeps a separate global tie-aware rank derived from each predictor's
+full standardized file. Predictor-agreement top fractions use an exact top-k selection per
+predictor with a deterministic tie-break instead of a quantile threshold. Combined PR, ROC, and
+GSEA comparison plots are computed on the common set of genes scored by all compared predictors.
 
 YAML paths can be:
 
@@ -267,17 +273,20 @@ experiments_tsv: metadata/mirna_experiment_info.tsv
 predictions_tsv: metadata/predictions_info.tsv
 
 experiments:
-  id: [GSE109725_OE_miR_204_5p, GSE118315_KO_miR_124_3p, GSE210778_OE_miR_375_3p]
+  id: [GSE124411_OE_miR_150_5p_2, GSE129076_OE_miR_450a_5p_1]
 
 predictors:
   tool_id: [targetscan, mirdb_mirtarget, microt_cnn, mirbind2, miraw]
 
 evaluation:
-  fdr_threshold: 0.05
+  fdr_threshold: null
   effect_threshold: 1.0
   predictor_top_fraction: 0.10
-
-tags: [demo]
+  write_top_prediction_cdfs: true
+  report_min_common_coverage: 0.10
+  protein_coding_only: true
+  protein_coding_gtf: data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz
+  protein_coding_gene_cache: data/resources/ensembl/protein_coding_gene_ids.txt
 
 out_dir: results/
 ```
@@ -296,8 +305,8 @@ After a benchmark run, `results/` contains one new run folder named with the run
 
 - `results/20260510/`
 
-Detailed dataset, miRNA, predictor, perturbation, cell-line, and evaluation-threshold metadata is
-recorded inside the run folder.
+Detailed dataset, miRNA, predictor, perturbation, cell-line, evaluation-threshold, and
+protein-coding-universe metadata is recorded inside the run folder.
 
 Inside each run folder you get:
 
