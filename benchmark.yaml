@@ -18,7 +18,7 @@ experiments:
   # method: [RNA-seq]
   # experiment_type: [OE, KD]
 
-# The default repo config compares TargetScan, miRDB, microT-CNN, miRBind2, and miRAW.
+# The default repo config compares TargetScan, miRDB, microT-CNN, miRBind2-3UTR, and miRAW.
 predictors:
   tool_id: [targetscan, mirdb_mirtarget, microt_cnn, mirbind2, miraw]
 

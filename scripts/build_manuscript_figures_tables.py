@@ -27,7 +27,7 @@ TOOL_LABELS = {
     "targetscan": "TargetScan",
     "mirdb_mirtarget": "miRDB",
     "microt_cnn": "microT-CNN",
-    "mirbind2": "miRBind2",
+    "mirbind2": "miRBind2-3UTR",
     "miraw": "miRAW",
 }
 MAIN_METRICS = ["coverage", "positive_coverage", "aps", "auroc"]
