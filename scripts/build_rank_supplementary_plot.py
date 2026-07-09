@@ -7,8 +7,10 @@ B. Local-rank distributions: background versus GT-positive local ranks.
 C. GT-positive recovery: mean fraction of GT positives recovered as top-ranked
    predictions are admitted per dataset.
 
-The plot is intentionally focused on local predictor ranks and does not rerun the
-full benchmark. It consumes an existing FuNmiRBench report directory containing
+Local ranks are recomputed inside each dataset and predictor from raw score
+columns over scored pairs only, using average ranks for tied scores. The plot is
+intentionally focused on local predictor ranks and does not rerun the full
+benchmark. It consumes an existing FuNmiRBench report directory containing
 per-dataset joined.tsv files.
 """
 
@@ -81,24 +83,29 @@ def usable_frame(frame: pd.DataFrame, *, fdr_threshold: float, effect_threshold:
 
 
 def local_rank_values(frame: pd.DataFrame, tool_id: str) -> pd.Series | None:
-    local_col = f"local_rank_{tool_id}"
-    global_col = f"global_rank_{tool_id}"
+    """Recompute local normalized ranks from raw scores within one dataset.
+
+    Only scored miRNA-gene pairs for the predictor are ranked. Tied scores receive
+    average ranks. The returned rank is normalized to [0, 1], with 0 as the
+    weakest scored pair and 1 as the strongest scored pair.
+    """
     score_col = f"score_{tool_id}"
-    if local_col in frame.columns:
-        return pd.to_numeric(frame[local_col], errors="coerce")
-    if global_col in frame.columns:
-        return pd.to_numeric(frame[global_col], errors="coerce")
     if score_col not in frame.columns:
         return None
+
     scores = pd.to_numeric(frame[score_col], errors="coerce")
-    valid = scores.dropna()
-    if valid.empty:
-        return scores
-    min_score = float(valid.min())
-    max_score = float(valid.max())
-    if max_score == min_score:
-        return pd.Series(1.0, index=frame.index, dtype=float).where(scores.notna())
-    return (scores - min_score) / (max_score - min_score)
+    out = pd.Series(np.nan, index=frame.index, dtype=float)
+    valid = scores.notna()
+    n_scored = int(valid.sum())
+    if n_scored == 0:
+        return out
+    if n_scored == 1:
+        out.loc[valid] = 0.5
+        return out
+
+    average_rank = scores.loc[valid].rank(method="average", ascending=True)
+    out.loc[valid] = (average_rank - 1.0) / float(n_scored - 1)
+    return out
 
 
 def load_rank_table(report_dir: pathlib.Path, *, fdr_threshold: float, effect_threshold: float) -> pd.DataFrame:
