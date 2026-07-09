@@ -7,7 +7,7 @@ The current manuscript plan keeps the supplement minimal: **only the per-dataset
 ## Script
 
 ```bash
-python scripts/build_manuscript_figures_tables.py \
+uv run scripts/build_manuscript_figures_tables.py \
   --report-dir results/20260703_115539 \
   --out-dir manuscript_assets
 ```

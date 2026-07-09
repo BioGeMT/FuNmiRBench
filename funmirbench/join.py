@@ -215,7 +215,7 @@ def load_predictor_scores(
 
         selected = pd.DataFrame(
             {
-                "Ensembl_ID": chunk["Ensembl_ID"].map(_strip_ensembl_version),
+                "Ensembl_ID": chunk["Ensembl_ID"].map(strip_ensembl_version),
                 "miRNA_Name": chunk["miRNA_Name"].astype(str),
                 "Score": normalized_score.astype(float),
             }
