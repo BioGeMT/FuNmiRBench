@@ -22,6 +22,7 @@ import pandas as pd
 from matplotlib.patches import Ellipse, FancyBboxPatch
 from matplotlib.ticker import PercentFormatter
 
+from funmirbench.gene_conservation import load_utr3_conservation
 from funmirbench.gene_lengths import load_utr3_lengths
 
 TOOL_IDS = ["targetscan", "mirdb_mirtarget", "microt_cnn", "mirbind2", "miraw"]
@@ -85,7 +86,7 @@ def strip_ensembl_version(value) -> str:
 
 
 def find_repo_root(report_dir: pathlib.Path) -> pathlib.Path:
-    """Find the repository root used for cached Ensembl resources."""
+    """Find the repository root used for cached Ensembl/UCSC resources."""
     checked: set[pathlib.Path] = set()
     starts = [pathlib.Path.cwd(), report_dir.resolve()]
     for start in starts:
@@ -334,13 +335,8 @@ def plot_figure1_panel_c(report_dir: pathlib.Path, figures_dir: pathlib.Path):
     return save_figure(fig, figures_dir / "figure1_panel_c_gene_universes.png")
 
 
-def panel_d_gene_length_table(report_dir: pathlib.Path, gene_lengths: pd.DataFrame, *, membership_mode: str = "dataset_gene") -> pd.DataFrame:
-    """Build the Panel D source table from joined files and computed 3'UTR lengths.
-
-    membership_mode='dataset_gene' keeps one row per dataset-gene pair. Use
-    membership_mode='unique_gene' to collapse to one row per gene; genes that are
-    IGS in at least one dataset are marked IGS in that collapsed sensitivity mode.
-    """
+def membership_table(report_dir: pathlib.Path, *, membership_mode: str = "dataset_gene") -> pd.DataFrame:
+    """Return IGS/non-IGS membership by dataset-gene or unique gene."""
     if membership_mode not in {"dataset_gene", "unique_gene"}:
         raise ValueError("membership_mode must be 'dataset_gene' or 'unique_gene'")
     rows = []
@@ -371,10 +367,14 @@ def panel_d_gene_length_table(report_dir: pathlib.Path, gene_lengths: pd.DataFra
     if membership_mode == "unique_gene":
         membership = membership.groupby("gene_id", as_index=False)["is_igs"].any()
         membership.insert(0, "dataset_id", "unique_gene")
-    merged = membership.merge(gene_lengths, on="gene_id", how="left")
-    merged["gene_set"] = np.where(merged["is_igs"], "IGS genes", "non-IGS genes")
-    merged = merged[["dataset_id", "gene_id", "gene_set", "utr3_length_bp"]].copy()
-    return merged
+    membership["gene_set"] = np.where(membership["is_igs"], "IGS genes", "non-IGS genes")
+    return membership[["dataset_id", "gene_id", "gene_set"]]
+
+
+def panel_d_gene_length_table(report_dir: pathlib.Path, gene_lengths: pd.DataFrame, *, membership_mode: str = "dataset_gene") -> pd.DataFrame:
+    """Build the Panel D source table from joined files and computed 3'UTR lengths."""
+    merged = membership_table(report_dir, membership_mode=membership_mode).merge(gene_lengths, on="gene_id", how="left")
+    return merged[["dataset_id", "gene_id", "gene_set", "utr3_length_bp"]].copy()
 
 
 def panel_d_qc_table(panel_d: pd.DataFrame) -> pd.DataFrame:
@@ -423,29 +423,31 @@ def kde_manual(values, grid, bandwidth: float | None = None) -> np.ndarray:
     return density
 
 
-def plot_figure1_panel_d_gene_lengths(
-    panel_d: pd.DataFrame,
+def plot_mirrored_density(
+    table: pd.DataFrame,
     figures_dir: pathlib.Path,
     *,
-    out_name: str = "figure1_panel_d_gene_lengths.png",
+    value_col: str,
+    xlabel: str,
+    out_name: str,
     label_mode: str = "dataset_gene",
 ):
-    plot_data = panel_d.dropna(subset=["utr3_length_bp"]).copy()
+    plot_data = table.dropna(subset=[value_col]).copy()
     if plot_data.empty:
-        raise ValueError("No matched gene lengths available for Panel D.")
-    plot_data["utr3_length_bp"] = pd.to_numeric(plot_data["utr3_length_bp"], errors="coerce")
-    plot_data = plot_data.dropna(subset=["utr3_length_bp"])
+        raise ValueError(f"No matched values available for {out_name}.")
+    plot_data[value_col] = pd.to_numeric(plot_data[value_col], errors="coerce")
+    plot_data = plot_data.dropna(subset=[value_col])
     if plot_data["gene_set"].nunique() < 2:
-        raise ValueError("Panel D requires both IGS genes and non-IGS genes.")
+        raise ValueError(f"{out_name} requires both IGS genes and non-IGS genes.")
 
-    lower = max(0.0, float(plot_data["utr3_length_bp"].quantile(0.01)))
-    upper = float(plot_data["utr3_length_bp"].quantile(0.99))
+    lower = float(plot_data[value_col].quantile(0.01))
+    upper = float(plot_data[value_col].quantile(0.99))
     if upper <= lower:
-        lower = 0.0
-        upper = float(plot_data["utr3_length_bp"].max())
+        lower = float(plot_data[value_col].min())
+        upper = float(plot_data[value_col].max())
     grid = np.linspace(lower, upper, 500)
-    igs = plot_data.loc[plot_data["gene_set"] == "IGS genes", "utr3_length_bp"].to_numpy(float)
-    non_igs = plot_data.loc[plot_data["gene_set"] == "non-IGS genes", "utr3_length_bp"].to_numpy(float)
+    igs = plot_data.loc[plot_data["gene_set"] == "IGS genes", value_col].to_numpy(float)
+    non_igs = plot_data.loc[plot_data["gene_set"] == "non-IGS genes", value_col].to_numpy(float)
     igs_density = kde_manual(igs, grid)
     non_igs_density = kde_manual(non_igs, grid)
     max_density = max(float(igs_density.max()), float(non_igs_density.max()), 1e-12)
@@ -467,7 +469,7 @@ def plot_figure1_panel_d_gene_lengths(
     ax.axhline(0, color="#555555", linewidth=0.8)
     ax.text(lower, 0.74, top_label, ha="left", va="center", fontsize=8)
     ax.text(lower, -0.74, bottom_label, ha="left", va="center", fontsize=8)
-    ax.set_xlabel("3'UTR Length (bp)")
+    ax.set_xlabel(xlabel)
     ax.set_yticks([])
     ax.set_xlim(lower, upper)
     ax.set_ylim(-1.08, 1.08)
@@ -477,6 +479,23 @@ def plot_figure1_panel_d_gene_lengths(
     ax.legend(frameon=False, fontsize=7, loc="upper right")
     fig.tight_layout()
     return save_figure(fig, figures_dir / out_name)
+
+
+def plot_figure1_panel_d_gene_lengths(
+    panel_d: pd.DataFrame,
+    figures_dir: pathlib.Path,
+    *,
+    out_name: str = "figure1_panel_d_gene_lengths.png",
+    label_mode: str = "dataset_gene",
+):
+    return plot_mirrored_density(
+        panel_d,
+        figures_dir,
+        value_col="utr3_length_bp",
+        xlabel="3'UTR Length (bp)",
+        out_name=out_name,
+        label_mode=label_mode,
+    )
 
 
 def build_panel_d_assets(
@@ -495,6 +514,78 @@ def build_panel_d_assets(
         panel_d,
         figures_dir,
         out_name=f"figure1_panel_d_gene_lengths{name_suffix}.png",
+        label_mode=membership_mode,
+    )
+    return outputs
+
+
+def panel_e_conservation_table(report_dir: pathlib.Path, gene_conservation: pd.DataFrame, *, membership_mode: str = "dataset_gene") -> pd.DataFrame:
+    """Build the Panel E source table from joined files and computed 3'UTR conservation."""
+    cols = [col for col in ["gene_id", "mean_phyloP", "mean_phastCons", "utr3_scored_bases_phyloP", "utr3_scored_bases_phastCons"] if col in gene_conservation.columns]
+    merged = membership_table(report_dir, membership_mode=membership_mode).merge(gene_conservation[cols], on="gene_id", how="left")
+    return merged
+
+
+def panel_e_qc_table(panel_e: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for gene_set, sub in panel_e.groupby("gene_set", sort=False):
+        values = pd.to_numeric(sub["mean_phyloP"], errors="coerce")
+        matched = values.notna()
+        rows.append({
+            "gene_set": gene_set,
+            "n_rows": int(len(sub)),
+            "n_rows_with_conservation": int(matched.sum()),
+            "conservation_match_fraction": float(matched.mean()) if len(sub) else np.nan,
+            "n_unique_genes": int(sub["gene_id"].nunique()),
+            "median_mean_phyloP": float(values.dropna().median()) if matched.any() else np.nan,
+            "mean_mean_phyloP": float(values.dropna().mean()) if matched.any() else np.nan,
+        })
+    return pd.DataFrame(rows)
+
+
+def write_panel_e_tables(panel_e: pd.DataFrame, tables_dir: pathlib.Path, *, name_suffix: str = "") -> dict[str, pathlib.Path]:
+    source_path = tables_dir / f"figure1_panel_e_conservation{name_suffix}.tsv"
+    qc_path = tables_dir / f"figure1_panel_e_conservation_qc{name_suffix}.tsv"
+    key_suffix = name_suffix.lstrip("_")
+    key_prefix = "figure1_panel_e" if not key_suffix else f"figure1_panel_e_{key_suffix}"
+    panel_e.to_csv(source_path, sep="\t", index=False)
+    panel_e_qc_table(panel_e).to_csv(qc_path, sep="\t", index=False)
+    return {f"{key_prefix}_table": source_path, f"{key_prefix}_qc": qc_path}
+
+
+def plot_figure1_panel_e_conservation(
+    panel_e: pd.DataFrame,
+    figures_dir: pathlib.Path,
+    *,
+    out_name: str = "figure1_panel_e_conservation.png",
+    label_mode: str = "dataset_gene",
+):
+    return plot_mirrored_density(
+        panel_e,
+        figures_dir,
+        value_col="mean_phyloP",
+        xlabel="Mean phyloP Conservation",
+        out_name=out_name,
+        label_mode=label_mode,
+    )
+
+
+def build_panel_e_assets(
+    report_dir: pathlib.Path,
+    figures_dir: pathlib.Path,
+    tables_dir: pathlib.Path,
+    gene_conservation: pd.DataFrame,
+    *,
+    membership_mode: str,
+    name_suffix: str,
+) -> dict[str, pathlib.Path]:
+    panel_e = panel_e_conservation_table(report_dir, gene_conservation, membership_mode=membership_mode)
+    outputs = write_panel_e_tables(panel_e, tables_dir, name_suffix=name_suffix)
+    figure_key = "figure1_panel_e" if not name_suffix else f"figure1_panel_e{name_suffix}"
+    outputs[figure_key] = plot_figure1_panel_e_conservation(
+        panel_e,
+        figures_dir,
+        out_name=f"figure1_panel_e_conservation{name_suffix}.png",
         label_mode=membership_mode,
     )
     return outputs
@@ -715,6 +806,28 @@ def build_assets(
             figures_dir,
             tables_dir,
             gene_lengths,
+            membership_mode="unique_gene",
+            name_suffix="_unique_gene",
+        )
+    )
+
+    gene_conservation = load_utr3_conservation(root=repo_root)
+    outputs.update(
+        build_panel_e_assets(
+            report_dir,
+            figures_dir,
+            tables_dir,
+            gene_conservation,
+            membership_mode="dataset_gene",
+            name_suffix="",
+        )
+    )
+    outputs.update(
+        build_panel_e_assets(
+            report_dir,
+            figures_dir,
+            tables_dir,
+            gene_conservation,
             membership_mode="unique_gene",
             name_suffix="_unique_gene",
         )
