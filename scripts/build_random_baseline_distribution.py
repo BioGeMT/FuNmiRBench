@@ -26,7 +26,8 @@ TOOL_LABELS = {
     "miraw": "miRAW",
     "random_baseline": "Random baseline",
 }
-BOXPLOT_METRICS = ["coverage", "positive_coverage", "aps", "pr_auc", "auroc", "spearman"]
+SUMMARY_METRICS = ["coverage", "positive_coverage", "aps", "pr_auc", "auroc", "spearman"]
+PERFORMANCE_PANEL_METRICS = ["coverage", "positive_coverage", "top_effect_med", "pr_auc", "auroc", "spearman"]
 SUPPLEMENTARY_METRICS = ["coverage", "positive_coverage", "aps", "pr_auc", "auroc", "spearman"]
 METRIC_LABELS = {
     "coverage": "Coverage",
@@ -35,6 +36,7 @@ METRIC_LABELS = {
     "pr_auc": "PR-AUC",
     "auroc": "AUROC",
     "spearman": "Spearman",
+    "top_effect_med": "Top-100 effect median",
 }
 TOOL_PALETTE = [
     "#1F77B4",
@@ -275,10 +277,18 @@ def add_random_baseline(per_dataset: pd.DataFrame, random_rows: pd.DataFrame) ->
 
 def metric_rows_for_plots(per_dataset: pd.DataFrame) -> pd.DataFrame:
     id_cols = [col for col in per_dataset.columns if col not in set(SUPPLEMENTARY_METRICS)]
-    value_vars = [metric for metric in BOXPLOT_METRICS if metric in per_dataset.columns]
+    value_vars = [metric for metric in SUPPLEMENTARY_METRICS if metric in per_dataset.columns]
     long = per_dataset.melt(id_vars=id_cols, value_vars=value_vars, var_name="metric", value_name="value")
     long["value"] = pd.to_numeric(long["value"], errors="coerce")
     return long.dropna(subset=["value"])
+
+
+def cdf_metric_rows_for_plot(topk_effect_rows: pd.DataFrame) -> pd.DataFrame:
+    rows = topk_effect_rows.loc[:, ["dataset_id", "tool_id", "predictor", "top_k", "top_effect_med"]].copy()
+    rows = rows.rename(columns={"top_effect_med": "value"})
+    rows["metric"] = "top_effect_med"
+    rows["value"] = pd.to_numeric(rows["value"], errors="coerce")
+    return rows.dropna(subset=["value"])
 
 
 def save_figure(fig, out_path: pathlib.Path) -> pathlib.Path:
@@ -319,14 +329,20 @@ def plot_box_data(ax, data: list[np.ndarray], labels: list[str], plot_tools: lis
     ax.set_axisbelow(True)
 
 
-def plot_cross_dataset_distributions(metric_rows: pd.DataFrame, figures_dir: pathlib.Path) -> pathlib.Path:
+def _symmetric_ylim_from_data(data: list[np.ndarray], *, floor: float = 1.0) -> tuple[float, float]:
+    finite = np.concatenate([values[np.isfinite(values)] for values in data if values.size]) if any(values.size for values in data) else np.array([0.0])
+    limit = max(float(floor), float(np.nanmax(np.abs(finite))) * 1.05)
+    return -limit, limit
+
+
+def plot_cross_dataset_distributions(metric_rows: pd.DataFrame, figures_dir: pathlib.Path, *, top_k: int) -> pathlib.Path:
     plot_tools = [*TOOL_IDS, "random_baseline"]
     labels = [TOOL_LABELS[tool_id] for tool_id in plot_tools]
     fig, axes = plt.subplots(2, 3, figsize=(15.4, 8.8))
     layout = {
         "coverage": axes[0, 0],
         "positive_coverage": axes[1, 0],
-        "aps": axes[0, 1],
+        "top_effect_med": axes[0, 1],
         "pr_auc": axes[1, 1],
         "auroc": axes[0, 2],
         "spearman": axes[1, 2],
@@ -335,10 +351,15 @@ def plot_cross_dataset_distributions(metric_rows: pd.DataFrame, figures_dir: pat
         sub = metric_rows[metric_rows["metric"] == metric]
         data = [sub.loc[sub["tool_id"] == tool_id, "value"].dropna().to_numpy(float) for tool_id in plot_tools]
         plot_box_data(ax, data, labels, plot_tools)
-        ax.set_title(METRIC_LABELS[metric])
+        title = f"Top-{top_k} effect median" if metric == "top_effect_med" else METRIC_LABELS[metric]
+        ax.set_title(title)
         if metric == "spearman":
             ax.axhline(0, color="#555555", linewidth=0.8, alpha=0.8)
             ax.set_ylim(-1.02, 1.02)
+        elif metric == "top_effect_med":
+            ax.axhline(0, color="#555555", linewidth=0.8, alpha=0.8)
+            ax.set_ylim(*_symmetric_ylim_from_data(data, floor=1.0))
+            ax.set_ylabel(f"Median expected effect in top {top_k}")
         else:
             ax.set_ylim(0, 1.02)
         if metric in {"coverage", "positive_coverage"}:
@@ -348,25 +369,12 @@ def plot_cross_dataset_distributions(metric_rows: pd.DataFrame, figures_dir: pat
     return save_figure(fig, figures_dir / "figure1_cross_dataset_six_metric_boxplots_with_random_baseline.png")
 
 
-def plot_topk_effect_median_boxplot(topk_rows: pd.DataFrame, figures_dir: pathlib.Path, *, top_k: int) -> pathlib.Path:
-    plot_tools = [*TOOL_IDS, "random_baseline"]
-    labels = [TOOL_LABELS[tool_id] for tool_id in plot_tools]
-    data = [topk_rows.loc[topk_rows["tool_id"] == tool_id, "top_effect_med"].dropna().to_numpy(float) for tool_id in plot_tools]
-    fig, ax = plt.subplots(figsize=(9.8, 5.2))
-    plot_box_data(ax, data, labels, plot_tools)
-    ax.axhline(0, color="#555555", linewidth=0.8, alpha=0.8)
-    ax.set_title(f"Median perturbation-aware effect among top {top_k} predictions")
-    ax.set_ylabel(f"Median expected effect in top {top_k}")
-    fig.tight_layout()
-    return save_figure(fig, figures_dir / f"top{top_k}_effect_median_boxplot_with_random_baseline.png")
-
-
 def write_tables(per_dataset_with_random: pd.DataFrame, topk_effect_rows: pd.DataFrame, tables_dir: pathlib.Path, *, top_k: int) -> dict[str, pathlib.Path]:
     tables_dir.mkdir(parents=True, exist_ok=True)
     full_path = tables_dir / "table_s1_per_dataset_predictor_metrics_with_random_baseline.tsv"
     per_dataset_with_random.to_csv(full_path, sep="\t", index=False)
 
-    metric_cols = [metric for metric in BOXPLOT_METRICS if metric in per_dataset_with_random.columns]
+    metric_cols = [metric for metric in SUMMARY_METRICS if metric in per_dataset_with_random.columns]
     summary = per_dataset_with_random.groupby(["tool_id", "predictor"])[metric_cols].agg(["mean", "median"]).reset_index()
     summary.columns = ["_".join(col).rstrip("_") if isinstance(col, tuple) else col for col in summary.columns]
     summary_path = tables_dir / "table1_cross_dataset_predictor_summary_with_random_baseline.tsv"
@@ -412,8 +420,10 @@ def main() -> None:
     topk_effect_rows = topk_effect_summary_rows(args.report_dir, seed=args.seed, top_k=args.top_k)
 
     outputs = write_tables(combined, topk_effect_rows, tables_dir, top_k=args.top_k)
-    outputs["six_metric_boxplots"] = plot_cross_dataset_distributions(metric_rows_for_plots(combined), figures_dir)
-    outputs["topk_effect_median_boxplot"] = plot_topk_effect_median_boxplot(topk_effect_rows, figures_dir, top_k=args.top_k)
+    base_metric_rows = metric_rows_for_plots(combined)
+    top_effect_metric_rows = cdf_metric_rows_for_plot(topk_effect_rows)
+    panel_rows = pd.concat([base_metric_rows, top_effect_metric_rows], ignore_index=True)
+    outputs["six_metric_boxplots"] = plot_cross_dataset_distributions(panel_rows, figures_dir, top_k=args.top_k)
     for name, path in outputs.items():
         print(f"{name}: {path}")
 
