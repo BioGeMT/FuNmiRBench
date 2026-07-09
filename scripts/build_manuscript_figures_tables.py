@@ -19,6 +19,7 @@ import pathlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.patches import Ellipse, FancyBboxPatch
 from matplotlib.ticker import PercentFormatter
 
 TOOL_IDS = ["targetscan", "mirdb_mirtarget", "microt_cnn", "mirbind2", "miraw"]
@@ -176,6 +177,152 @@ def plot_figure1(metric_rows: pd.DataFrame, figures_dir: pathlib.Path):
     fig.suptitle("Cross-dataset predictor distributions", fontsize=15, y=1.0)
     fig.tight_layout()
     return save_figure(fig, figures_dir / "figure1_cross_dataset_distributions.png")
+
+
+def score_columns(frame: pd.DataFrame) -> list[str]:
+    return [f"score_{tool_id}" for tool_id in TOOL_IDS if f"score_{tool_id}" in frame.columns]
+
+
+def gene_universe_count_table(report_dir: pathlib.Path) -> pd.DataFrame:
+    """Summarize full-gene-set and intersection-gene-set sizes per dataset.
+
+    FGS is the full usable joined table for a dataset. IGS is the subset of those
+    genes with non-missing scores from every selected predictor. The individual
+    predictor columns count genes scored by each method inside the FGS universe.
+    """
+    rows = []
+    for path in joined_paths(report_dir):
+        frame = pd.read_csv(path, sep="\t")
+        if "dataset_id" in frame.columns and not frame.empty:
+            dataset_id = str(frame["dataset_id"].iloc[0])
+        else:
+            dataset_id = path.parent.name
+        frame = frame.copy()
+        frame["logFC_num"] = pd.to_numeric(frame.get("logFC"), errors="coerce")
+        usable = frame.loc[frame["logFC_num"].notna()].copy()
+        cols = score_columns(usable)
+        row = {
+            "dataset_id": dataset_id,
+            "fgs_gene_count": int(len(usable)),
+            "available_predictor_count": int(len(cols)),
+        }
+        if cols:
+            scored = usable[cols].notna()
+            row["igs_gene_count"] = int(scored.all(axis=1).sum())
+            row["union_scored_gene_count"] = int(scored.any(axis=1).sum())
+            for tool_id in TOOL_IDS:
+                col = f"score_{tool_id}"
+                if col in scored.columns:
+                    row[f"{tool_id}_scored_gene_count"] = int(scored[col].sum())
+        else:
+            row["igs_gene_count"] = 0
+            row["union_scored_gene_count"] = 0
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def write_gene_universe_table(report_dir: pathlib.Path, tables_dir: pathlib.Path) -> pathlib.Path:
+    table = gene_universe_count_table(report_dir)
+    out_path = tables_dir / "figure1_panel_c_gene_universe_counts.tsv"
+    table.to_csv(out_path, sep="\t", index=False)
+    return out_path
+
+
+def summarize_gene_universes(counts: pd.DataFrame) -> dict[str, int]:
+    if counts.empty:
+        return {"fgs": 0, "igs": 0, "union": 0, "datasets": 0}
+    return {
+        "fgs": int(round(pd.to_numeric(counts["fgs_gene_count"], errors="coerce").median())),
+        "igs": int(round(pd.to_numeric(counts["igs_gene_count"], errors="coerce").median())),
+        "union": int(round(pd.to_numeric(counts["union_scored_gene_count"], errors="coerce").median())),
+        "datasets": int(counts["dataset_id"].nunique()) if "dataset_id" in counts.columns else int(len(counts)),
+    }
+
+
+def plot_figure1_panel_c(report_dir: pathlib.Path, figures_dir: pathlib.Path):
+    """Draw the manuscript panel C schematic for FGS versus IGS.
+
+    The five translucent ellipses represent the gene sets scored by each
+    predictor. Their central overlap is the IGS. The full plotting field is the
+    FGS, i.e. all usable genes retained in the joined DE table, including genes
+    not scored by one or more methods.
+    """
+    summary = summarize_gene_universes(gene_universe_count_table(report_dir))
+    fig, ax = plt.subplots(figsize=(5.8, 4.4))
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 7.2)
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    fgs_box = FancyBboxPatch(
+        (0.35, 0.45),
+        9.3,
+        6.25,
+        boxstyle="round,pad=0.18,rounding_size=0.28",
+        facecolor="#F7F8FB",
+        edgecolor="#B8C4D6",
+        linewidth=1.1,
+        zorder=0,
+    )
+    ax.add_patch(fgs_box)
+    ax.text(0.65, 6.45, "FGS: full usable gene set", fontsize=11, weight="bold", ha="left", va="center")
+    ax.text(
+        0.65,
+        6.08,
+        f"median {summary['fgs']:,} genes across {summary['datasets']:,} datasets; unscored pairs kept as lowest confidence",
+        fontsize=8.7,
+        color="#44546A",
+        ha="left",
+        va="center",
+    )
+
+    ellipse_specs = [
+        ("targetscan", 3.85, 4.05, 6.3, 2.45, 0),
+        ("mirdb_mirtarget", 6.15, 4.05, 6.3, 2.45, 0),
+        ("microt_cnn", 5.00, 4.95, 2.95, 5.45, 0),
+        ("mirbind2", 3.95, 2.85, 2.95, 5.45, -52),
+        ("miraw", 6.05, 2.85, 2.95, 5.45, 52),
+    ]
+    label_positions = {
+        "targetscan": (1.25, 4.12),
+        "mirdb_mirtarget": (8.75, 4.12),
+        "microt_cnn": (5.00, 6.33),
+        "mirbind2": (2.15, 1.12),
+        "miraw": (7.85, 1.12),
+    }
+    for tool_id, x, y, width, height, angle in ellipse_specs:
+        patch = Ellipse(
+            (x, y),
+            width,
+            height,
+            angle=angle,
+            facecolor=tool_color(tool_id),
+            edgecolor=tool_color(tool_id),
+            alpha=0.34,
+            linewidth=1.1,
+            zorder=1,
+        )
+        ax.add_patch(patch)
+        lx, ly = label_positions[tool_id]
+        ax.text(lx, ly, TOOL_LABELS[tool_id], fontsize=9.2, weight="bold", ha="center", va="center", color="#25364A")
+
+    igs_box = FancyBboxPatch(
+        (3.77, 3.05),
+        2.46,
+        1.18,
+        boxstyle="round,pad=0.15,rounding_size=0.16",
+        facecolor="white",
+        edgecolor="#5B6577",
+        linewidth=1.0,
+        alpha=0.84,
+        zorder=4,
+    )
+    ax.add_patch(igs_box)
+    ax.text(5.0, 3.77, "IGS", fontsize=18, color="#D62728", style="italic", weight="bold", ha="center", va="center", zorder=5)
+    ax.text(5.0, 3.34, f"all predictors scored\nmedian {summary['igs']:,} genes", fontsize=8.7, color="#25364A", ha="center", va="center", zorder=5)
+    ax.text(5.0, 0.62, f"Union scored by at least one predictor: median {summary['union']:,} genes", fontsize=8.5, color="#44546A", ha="center", va="center")
+
+    return save_figure(fig, figures_dir / "figure1_panel_c_gene_universes.png")
 
 
 def expected_effect(frame: pd.DataFrame) -> pd.Series:
@@ -366,6 +513,8 @@ def build_assets(report_dir: pathlib.Path, out_dir: pathlib.Path, *, fdr: float,
     metrics_long = metric_rows_for_plots(per_dataset)
     outputs.update(write_tables(per_dataset, tables_dir))
     outputs["figure1"] = plot_figure1(metrics_long, figures_dir)
+    outputs["figure1_panel_c_table"] = write_gene_universe_table(report_dir, tables_dir)
+    outputs["figure1_panel_c"] = plot_figure1_panel_c(report_dir, figures_dir)
 
     local = rank_fraction_table(report_dir, rank_type="local", bins=10, fdr=fdr, effect_threshold=effect_threshold)
     global_ = rank_fraction_table(report_dir, rank_type="global", bins=5, fdr=fdr, effect_threshold=effect_threshold)
