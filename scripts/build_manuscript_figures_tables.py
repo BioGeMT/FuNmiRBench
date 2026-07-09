@@ -22,6 +22,8 @@ import pandas as pd
 from matplotlib.patches import Ellipse, FancyBboxPatch
 from matplotlib.ticker import PercentFormatter
 
+from funmirbench.gene_lengths import load_utr3_lengths
+
 TOOL_IDS = ["targetscan", "mirdb_mirtarget", "microt_cnn", "mirbind2", "miraw"]
 TOOL_LABELS = {
     "targetscan": "TargetScan",
@@ -51,25 +53,6 @@ TOOL_PALETTE = [
     "#7F7F7F",
     "#BCBD22",
     "#17BECF",
-]
-GENE_ID_ALIASES = [
-    "gene_id",
-    "Ensembl_ID",
-    "ensembl_gene_id",
-    "ensembl_id",
-    "gene",
-    "GeneID",
-]
-UTR3_LENGTH_ALIASES = [
-    "utr3_length_bp",
-    "three_prime_utr_length",
-    "three_prime_utr_length_bp",
-    "3utr_length",
-    "3utr_length_bp",
-    "utr3_len",
-    "utr3_len_bp",
-    "length_bp",
-    "length",
 ]
 
 
@@ -101,13 +84,18 @@ def strip_ensembl_version(value) -> str:
     return str(value).strip().split(".", 1)[0]
 
 
-def first_existing_column(columns, aliases, *, table_name: str) -> str:
-    normalized = {str(col).strip().lower(): col for col in columns}
-    for alias in aliases:
-        hit = normalized.get(alias.lower())
-        if hit is not None:
-            return hit
-    raise ValueError(f"Could not find any of {aliases} in {table_name}; columns={list(columns)}")
+def find_repo_root(report_dir: pathlib.Path) -> pathlib.Path:
+    """Find the repository root used for cached Ensembl resources."""
+    checked: set[pathlib.Path] = set()
+    starts = [pathlib.Path.cwd(), report_dir.resolve()]
+    for start in starts:
+        for candidate in (start, *start.parents):
+            if candidate in checked:
+                continue
+            checked.add(candidate)
+            if (candidate / "pyproject.toml").exists() and (candidate / "benchmark.yaml").exists():
+                return candidate
+    return pathlib.Path.cwd().resolve()
 
 
 def find_table(report_dir: pathlib.Path, filename: str) -> pathlib.Path:
@@ -346,25 +334,8 @@ def plot_figure1_panel_c(report_dir: pathlib.Path, figures_dir: pathlib.Path):
     return save_figure(fig, figures_dir / "figure1_panel_c_gene_universes.png")
 
 
-def load_gene_length_table(path: pathlib.Path) -> pd.DataFrame:
-    """Load a gene-length table and normalize it to gene_id/utr3_length_bp."""
-    sep = "," if path.suffix.lower() == ".csv" else "\t"
-    table = pd.read_csv(path, sep=sep)
-    gene_col = first_existing_column(table.columns, GENE_ID_ALIASES, table_name=str(path))
-    length_col = first_existing_column(table.columns, UTR3_LENGTH_ALIASES, table_name=str(path))
-    out = table[[gene_col, length_col]].copy()
-    out.columns = ["gene_id", "utr3_length_bp"]
-    out["gene_id"] = out["gene_id"].map(strip_ensembl_version)
-    out["utr3_length_bp"] = pd.to_numeric(out["utr3_length_bp"], errors="coerce")
-    out = out.dropna(subset=["gene_id", "utr3_length_bp"])
-    out = out.loc[out["utr3_length_bp"] > 0].copy()
-    if out.empty:
-        raise ValueError(f"No positive gene lengths found in {path}")
-    return out.groupby("gene_id", as_index=False)["utr3_length_bp"].max()
-
-
 def panel_d_gene_length_table(report_dir: pathlib.Path, gene_lengths: pd.DataFrame, *, membership_mode: str = "dataset_gene") -> pd.DataFrame:
-    """Build the Panel D source table from joined files and gene lengths.
+    """Build the Panel D source table from joined files and computed 3'UTR lengths.
 
     membership_mode='dataset_gene' keeps one row per dataset-gene pair. Use
     membership_mode='unique_gene' to collapse to one row per gene; genes that are
@@ -676,7 +647,6 @@ def build_assets(
     *,
     fdr: float,
     effect_threshold: float,
-    gene_lengths_tsv: pathlib.Path | None = None,
     panel_d_membership_mode: str = "dataset_gene",
 ):
     figures_dir = out_dir / "figures"
@@ -692,13 +662,11 @@ def build_assets(
     outputs["figure1_panel_c_table"] = write_gene_universe_table(report_dir, tables_dir)
     outputs["figure1_panel_c"] = plot_figure1_panel_c(report_dir, figures_dir)
 
-    if gene_lengths_tsv is not None:
-        gene_lengths = load_gene_length_table(gene_lengths_tsv)
-        panel_d = panel_d_gene_length_table(report_dir, gene_lengths, membership_mode=panel_d_membership_mode)
-        outputs.update(write_panel_d_tables(panel_d, tables_dir))
-        outputs["figure1_panel_d"] = plot_figure1_panel_d_gene_lengths(panel_d, figures_dir)
-    else:
-        print("Skipping Figure 1 panel D: pass --gene-lengths-tsv to provide 3'UTR lengths.")
+    repo_root = find_repo_root(report_dir)
+    gene_lengths = load_utr3_lengths(root=repo_root)
+    panel_d = panel_d_gene_length_table(report_dir, gene_lengths, membership_mode=panel_d_membership_mode)
+    outputs.update(write_panel_d_tables(panel_d, tables_dir))
+    outputs["figure1_panel_d"] = plot_figure1_panel_d_gene_lengths(panel_d, figures_dir)
 
     local = rank_fraction_table(report_dir, rank_type="local", bins=10, fdr=fdr, effect_threshold=effect_threshold)
     global_ = rank_fraction_table(report_dir, rank_type="global", bins=5, fdr=fdr, effect_threshold=effect_threshold)
@@ -716,7 +684,6 @@ def main():
     parser.add_argument("--out-dir", type=pathlib.Path, default=pathlib.Path("manuscript_assets"))
     parser.add_argument("--fdr-threshold", type=float, default=0.05)
     parser.add_argument("--effect-threshold", type=float, default=1.0)
-    parser.add_argument("--gene-lengths-tsv", type=pathlib.Path, default=None, help="Optional TSV/CSV with gene_id and utr3_length_bp columns for Figure 1 panel D.")
     parser.add_argument("--panel-d-membership-mode", choices=["dataset_gene", "unique_gene"], default="dataset_gene", help="Use dataset-gene rows by default, or collapse Panel D to one row per unique gene.")
     args = parser.parse_args()
     outputs = build_assets(
@@ -724,7 +691,6 @@ def main():
         args.out_dir,
         fdr=args.fdr_threshold,
         effect_threshold=args.effect_threshold,
-        gene_lengths_tsv=args.gene_lengths_tsv,
         panel_d_membership_mode=args.panel_d_membership_mode,
     )
     for name, path in outputs.items():
