@@ -22,23 +22,16 @@ uv run scripts/build_manuscript_figures_tables.py \
   --effect-threshold 1.0
 ```
 
-Optional Figure 1 panel D gene-length input:
+Panel D does not require an extra input file. The script derives 3'UTR lengths from the cached Ensembl release 115 GTF used by the benchmark (`data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz`). If the GTF is missing, the shared Ensembl-resource helper downloads it and caches `data/resources/ensembl/utr3_lengths.tsv` for future manuscript builds.
+
+Panel D uses one row per dataset-gene pair by default, because IGS membership is miRNA/dataset-specific. To collapse to one row per unique gene for a sensitivity-style version:
 
 ```bash
 uv run scripts/build_manuscript_figures_tables.py \
   --report-dir results/20260703_115539 \
-  --out-dir manuscript_assets \
-  --gene-lengths-tsv data/resources/gene_lengths/ensembl_v115_utr3_lengths.tsv
+  --out-dir manuscript_assets_unique_genes \
+  --panel-d-membership-mode unique_gene
 ```
-
-The gene-length table may be TSV or CSV and should contain a gene identifier column plus a 3'UTR length column. Preferred schema:
-
-```text
-gene_id    utr3_length_bp
-ENSG...    1234
-```
-
-Accepted gene ID aliases include `gene_id`, `Ensembl_ID`, `ensembl_gene_id`, `ensembl_id`, `gene`, and `GeneID`. Accepted length aliases include `utr3_length_bp`, `three_prime_utr_length`, `three_prime_utr_length_bp`, `3utr_length`, `3utr_length_bp`, `utr3_len`, `utr3_len_bp`, `length_bp`, and `length`.
 
 ## Main manuscript outputs
 
@@ -46,7 +39,7 @@ Figures:
 
 - `figures/figure1_cross_dataset_distributions.png` and `.svg`
 - `figures/figure1_panel_c_gene_universes.png` and `.svg`
-- `figures/figure1_panel_d_gene_lengths.png` and `.svg` when `--gene-lengths-tsv` is provided
+- `figures/figure1_panel_d_gene_lengths.png` and `.svg`
 - `figures/figure2_rank_enrichment_recovery.png` and `.svg`
 - `figures/figure3_targetscan_centered.png` and `.svg`
 
@@ -54,8 +47,8 @@ Tables:
 
 - `tables/table1_cross_dataset_predictor_summary.tsv`
 - `tables/figure1_panel_c_gene_universe_counts.tsv`
-- `tables/figure1_panel_d_gene_lengths.tsv` when `--gene-lengths-tsv` is provided
-- `tables/figure1_panel_d_gene_length_qc.tsv` when `--gene-lengths-tsv` is provided
+- `tables/figure1_panel_d_gene_lengths.tsv`
+- `tables/figure1_panel_d_gene_length_qc.tsv`
 
 ## Supplementary output
 
@@ -74,4 +67,4 @@ The GT-positive rule used by the post-processing figures is the manuscript rule:
 
 `figure1_panel_c_gene_universes` is a schematic of the predictor-scored gene-set overlap. It labels the full gene set (FGS) as the full usable joined-table universe and the intersection gene set (IGS) as genes scored by every selected predictor. The accompanying TSV stores the per-dataset FGS, IGS, union-scored, and per-predictor scored-gene counts.
 
-`figure1_panel_d_gene_lengths` is a mirrored density plot comparing 3'UTR lengths for IGS genes versus non-IGS genes. By default it uses one row per dataset-gene pair because IGS membership is miRNA/dataset-specific. For a sensitivity-style collapsed plot, pass `--panel-d-membership-mode unique_gene`.
+`figure1_panel_d_gene_lengths` is a mirrored density plot comparing computed Ensembl 3'UTR lengths for IGS genes versus non-IGS genes. The accompanying QC table reports length-match fractions, unique-gene counts, and median/mean 3'UTR lengths for both groups.
