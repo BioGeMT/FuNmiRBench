@@ -719,55 +719,6 @@ def plot_figure2(local: pd.DataFrame, global_: pd.DataFrame, recovery: pd.DataFr
     return save_figure(fig, figures_dir / "figure2_rank_enrichment_recovery.png")
 
 
-def centered_table(report_dir: pathlib.Path, *, anchor_tool: str, fdr: float, effect_threshold: float, bins: int = 10) -> pd.DataFrame:
-    edges = np.linspace(0, 1, bins + 1)
-    stacked = []
-    for path in joined_paths(report_dir):
-        frame = usable_joined(pd.read_csv(path, sep="\t"), fdr=fdr, effect_threshold=effect_threshold)
-        anchor = rank_values(frame, anchor_tool, "local")
-        if anchor is None:
-            continue
-        frame = frame.loc[anchor.notna()].copy()
-        anchor = anchor.loc[frame.index].astype(float)
-        for tool_id in TOOL_IDS:
-            ranks = rank_values(frame, tool_id, "local")
-            scored = ranks.notna() if ranks is not None else pd.Series(False, index=frame.index)
-            stacked.append(pd.DataFrame({"tool_id": tool_id, "anchor_rank": anchor, "is_positive": frame["is_positive"], "scored": scored.astype(bool)}))
-    data = pd.concat(stacked, ignore_index=True)
-    rows = []
-    for tool_id in TOOL_IDS:
-        sub = data[data["tool_id"] == tool_id]
-        for i, (left, right) in enumerate(zip(edges[:-1], edges[1:])):
-            mask = (sub["anchor_rank"] >= left) & ((sub["anchor_rank"] <= right) if i == bins - 1 else (sub["anchor_rank"] < right))
-            in_bin = sub.loc[mask]
-            scored = in_bin[in_bin["scored"]]
-            total = int(len(in_bin))
-            scored_count = int(len(scored))
-            positives = int(scored["is_positive"].sum())
-            rows.append({"tool_id": tool_id, "predictor": TOOL_LABELS[tool_id], "rank_bin_mid": (left + right) / 2, "anchor_bin_total": total, "predictor_scored_count": scored_count, "coverage_fraction": scored_count / total if total else np.nan, "positive_fraction_within_scored": positives / scored_count if scored_count else np.nan})
-    return pd.DataFrame(rows)
-
-
-def plot_figure3(table: pd.DataFrame, figures_dir: pathlib.Path):
-    fig, axes = plt.subplots(2, 1, figsize=(9.8, 9.6), sharex=True)
-    for tool_id in TOOL_IDS:
-        sub = table[table["tool_id"] == tool_id].sort_values("rank_bin_mid")
-        axes[0].plot(sub["rank_bin_mid"], sub["positive_fraction_within_scored"] * 100, marker="o", linewidth=2, color=tool_color(tool_id), label=TOOL_LABELS[tool_id])
-        axes[1].plot(sub["rank_bin_mid"], sub["coverage_fraction"] * 100, marker="o", linewidth=2, color=tool_color(tool_id), label=TOOL_LABELS[tool_id])
-    axes[0].set_title("TargetScan-centered GT-positive enrichment")
-    axes[0].set_ylabel("GT positives among scored genes (%)")
-    axes[0].set_ylim(bottom=0)
-    style_axes(axes[0], grid_axis="both")
-    axes[0].legend(frameon=False, fontsize=9, loc="upper left", bbox_to_anchor=(1.02, 1.0))
-    axes[1].set_title("Predictor coverage across TargetScan bins")
-    axes[1].set_xlabel("TargetScan local rank bin (0 = weakest, 1 = strongest)")
-    axes[1].set_ylabel("Genes in bin scored by predictor (%)")
-    axes[1].set_ylim(0, 105)
-    style_axes(axes[1], grid_axis="both")
-    fig.tight_layout()
-    return save_figure(fig, figures_dir / "figure3_targetscan_centered.png")
-
-
 def build_assets(
     report_dir: pathlib.Path,
     out_dir: pathlib.Path,
@@ -838,8 +789,6 @@ def build_assets(
     recovery = recovery_table(report_dir, fdr=fdr, effect_threshold=effect_threshold)
     outputs["figure2"] = plot_figure2(local, global_, recovery, figures_dir)
 
-    targetscan = centered_table(report_dir, anchor_tool="targetscan", fdr=fdr, effect_threshold=effect_threshold)
-    outputs["figure3"] = plot_figure3(targetscan, figures_dir)
     return outputs
 
 
