@@ -9,6 +9,7 @@ from typing import Collection
 import pandas as pd
 
 from funmirbench import DatasetMeta
+from funmirbench.benchmark_config import resolve_predictor_output_path
 from funmirbench.de_table import find_gene_id_column, read_de_table
 from funmirbench.gene_ids import strip_ensembl_version
 
@@ -79,8 +80,13 @@ def load_experiment_table(
     if de["gene_id"].duplicated().any():
         raise ValueError(f"Duplicate gene_id values found in {meta.full_path}")
     keep = ["gene_id", "logFC", "FDR"]
-    if "PValue" in de.columns:
-        keep.append("PValue")
+    for optional in (
+        "PValue",
+        "plot_FDR",
+        "benchmark_FDR",
+    ):
+        if optional in de.columns:
+            keep.append(optional)
     out = de[keep].copy()
     if protein_coding_gene_ids is not None:
         before = len(out)
@@ -168,9 +174,7 @@ def load_tool_scores(
     logger=None,
 ) -> tuple[pd.DataFrame, Path]:
     start = time.perf_counter()
-    path = Path(tool_meta["predictor_output_path"])
-    if not path.is_absolute():
-        path = root / path
+    path = resolve_predictor_output_path(tool_meta["predictor_output_path"], root)
     score_direction = str(tool_meta.get("score_direction", "higher_is_stronger") or "higher_is_stronger")
 
     df, rank_map, rows_read = _read_relevant_tool_scores(

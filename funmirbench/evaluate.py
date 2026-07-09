@@ -91,7 +91,11 @@ def evaluate_joined_dataframe(
             positives_total = 0
             positives_scored = 0
             try:
-                skip_frame = joined.loc[valid_rows, ["logFC", "FDR", score_col]].copy()
+                skip_cols = ["logFC", "FDR", score_col]
+                for optional in FDR_AUXILIARY_COLUMNS:
+                    if optional in joined.columns:
+                        skip_cols.append(optional)
+                skip_frame = joined.loc[valid_rows, skip_cols].copy()
                 skip_frame = _annotate_ground_truth(skip_frame, perturbation=perturbation)
                 positive_mask = _positive_mask(
                     skip_frame,
