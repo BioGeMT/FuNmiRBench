@@ -394,12 +394,14 @@ def panel_d_qc_table(panel_d: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def write_panel_d_tables(panel_d: pd.DataFrame, tables_dir: pathlib.Path) -> dict[str, pathlib.Path]:
-    source_path = tables_dir / "figure1_panel_d_gene_lengths.tsv"
-    qc_path = tables_dir / "figure1_panel_d_gene_length_qc.tsv"
+def write_panel_d_tables(panel_d: pd.DataFrame, tables_dir: pathlib.Path, *, name_suffix: str = "") -> dict[str, pathlib.Path]:
+    source_path = tables_dir / f"figure1_panel_d_gene_lengths{name_suffix}.tsv"
+    qc_path = tables_dir / f"figure1_panel_d_gene_length_qc{name_suffix}.tsv"
+    key_suffix = name_suffix.lstrip("_")
+    key_prefix = "figure1_panel_d" if not key_suffix else f"figure1_panel_d_{key_suffix}"
     panel_d.to_csv(source_path, sep="\t", index=False)
     panel_d_qc_table(panel_d).to_csv(qc_path, sep="\t", index=False)
-    return {"figure1_panel_d_table": source_path, "figure1_panel_d_qc": qc_path}
+    return {f"{key_prefix}_table": source_path, f"{key_prefix}_qc": qc_path}
 
 
 def kde_manual(values, grid, bandwidth: float | None = None) -> np.ndarray:
@@ -421,7 +423,13 @@ def kde_manual(values, grid, bandwidth: float | None = None) -> np.ndarray:
     return density
 
 
-def plot_figure1_panel_d_gene_lengths(panel_d: pd.DataFrame, figures_dir: pathlib.Path):
+def plot_figure1_panel_d_gene_lengths(
+    panel_d: pd.DataFrame,
+    figures_dir: pathlib.Path,
+    *,
+    out_name: str = "figure1_panel_d_gene_lengths.png",
+    label_mode: str = "dataset_gene",
+):
     plot_data = panel_d.dropna(subset=["utr3_length_bp"]).copy()
     if plot_data.empty:
         raise ValueError("No matched gene lengths available for Panel D.")
@@ -444,14 +452,21 @@ def plot_figure1_panel_d_gene_lengths(panel_d: pd.DataFrame, figures_dir: pathli
     igs_y = igs_density / max_density
     non_igs_y = non_igs_density / max_density
 
+    if label_mode == "unique_gene":
+        top_label = f"IGS Genes\nn={len(igs):,}"
+        bottom_label = f"non-IGS Genes\nn={len(non_igs):,}"
+    else:
+        top_label = f"IGS dataset-gene pairs\nn={len(igs):,}"
+        bottom_label = f"non-IGS dataset-gene pairs\nn={len(non_igs):,}"
+
     fig, ax = plt.subplots(figsize=(7.2, 2.25))
     igs_color = "#5DA5DA"
     non_igs_color = "#F17C7E"
     ax.fill_between(grid, 0, igs_y, alpha=0.82, color=igs_color, label="IGS Genes")
     ax.fill_between(grid, 0, -non_igs_y, alpha=0.82, color=non_igs_color, label="non-IGS Genes")
     ax.axhline(0, color="#555555", linewidth=0.8)
-    ax.text(lower, 0.74, f"IGS Genes\nn={len(igs):,}", ha="left", va="center", fontsize=8)
-    ax.text(lower, -0.74, f"non-IGS Genes\nn={len(non_igs):,}", ha="left", va="center", fontsize=8)
+    ax.text(lower, 0.74, top_label, ha="left", va="center", fontsize=8)
+    ax.text(lower, -0.74, bottom_label, ha="left", va="center", fontsize=8)
     ax.set_xlabel("3'UTR Length (bp)")
     ax.set_yticks([])
     ax.set_xlim(lower, upper)
@@ -461,7 +476,28 @@ def plot_figure1_panel_d_gene_lengths(panel_d: pd.DataFrame, figures_dir: pathli
     ax.spines["left"].set_visible(False)
     ax.legend(frameon=False, fontsize=7, loc="upper right")
     fig.tight_layout()
-    return save_figure(fig, figures_dir / "figure1_panel_d_gene_lengths.png")
+    return save_figure(fig, figures_dir / out_name)
+
+
+def build_panel_d_assets(
+    report_dir: pathlib.Path,
+    figures_dir: pathlib.Path,
+    tables_dir: pathlib.Path,
+    gene_lengths: pd.DataFrame,
+    *,
+    membership_mode: str,
+    name_suffix: str,
+) -> dict[str, pathlib.Path]:
+    panel_d = panel_d_gene_length_table(report_dir, gene_lengths, membership_mode=membership_mode)
+    outputs = write_panel_d_tables(panel_d, tables_dir, name_suffix=name_suffix)
+    figure_key = "figure1_panel_d" if not name_suffix else f"figure1_panel_d{name_suffix}"
+    outputs[figure_key] = plot_figure1_panel_d_gene_lengths(
+        panel_d,
+        figures_dir,
+        out_name=f"figure1_panel_d_gene_lengths{name_suffix}.png",
+        label_mode=membership_mode,
+    )
+    return outputs
 
 
 def expected_effect(frame: pd.DataFrame) -> pd.Series:
@@ -647,7 +683,6 @@ def build_assets(
     *,
     fdr: float,
     effect_threshold: float,
-    panel_d_membership_mode: str = "dataset_gene",
 ):
     figures_dir = out_dir / "figures"
     tables_dir = out_dir / "tables"
@@ -664,9 +699,26 @@ def build_assets(
 
     repo_root = find_repo_root(report_dir)
     gene_lengths = load_utr3_lengths(root=repo_root)
-    panel_d = panel_d_gene_length_table(report_dir, gene_lengths, membership_mode=panel_d_membership_mode)
-    outputs.update(write_panel_d_tables(panel_d, tables_dir))
-    outputs["figure1_panel_d"] = plot_figure1_panel_d_gene_lengths(panel_d, figures_dir)
+    outputs.update(
+        build_panel_d_assets(
+            report_dir,
+            figures_dir,
+            tables_dir,
+            gene_lengths,
+            membership_mode="dataset_gene",
+            name_suffix="",
+        )
+    )
+    outputs.update(
+        build_panel_d_assets(
+            report_dir,
+            figures_dir,
+            tables_dir,
+            gene_lengths,
+            membership_mode="unique_gene",
+            name_suffix="_unique_gene",
+        )
+    )
 
     local = rank_fraction_table(report_dir, rank_type="local", bins=10, fdr=fdr, effect_threshold=effect_threshold)
     global_ = rank_fraction_table(report_dir, rank_type="global", bins=5, fdr=fdr, effect_threshold=effect_threshold)
@@ -684,14 +736,12 @@ def main():
     parser.add_argument("--out-dir", type=pathlib.Path, default=pathlib.Path("manuscript_assets"))
     parser.add_argument("--fdr-threshold", type=float, default=0.05)
     parser.add_argument("--effect-threshold", type=float, default=1.0)
-    parser.add_argument("--panel-d-membership-mode", choices=["dataset_gene", "unique_gene"], default="dataset_gene", help="Use dataset-gene rows by default, or collapse Panel D to one row per unique gene.")
     args = parser.parse_args()
     outputs = build_assets(
         args.report_dir,
         args.out_dir,
         fdr=args.fdr_threshold,
         effect_threshold=args.effect_threshold,
-        panel_d_membership_mode=args.panel_d_membership_mode,
     )
     for name, path in outputs.items():
         print(f"{name}: {path}")
