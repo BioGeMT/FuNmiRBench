@@ -1,7 +1,7 @@
 """Build manuscript figures and tables from a FuNmiRBench report directory.
 
 This post-processing script creates only the manuscript assets we currently plan
-to include: three main figures, one main summary table, and one supplementary
+to include: main figures, one main summary table, and one supplementary
 per-dataset metrics table. It does not rerun the benchmark.
 
 Example
@@ -52,6 +52,25 @@ TOOL_PALETTE = [
     "#BCBD22",
     "#17BECF",
 ]
+GENE_ID_ALIASES = [
+    "gene_id",
+    "Ensembl_ID",
+    "ensembl_gene_id",
+    "ensembl_id",
+    "gene",
+    "GeneID",
+]
+UTR3_LENGTH_ALIASES = [
+    "utr3_length_bp",
+    "three_prime_utr_length",
+    "three_prime_utr_length_bp",
+    "3utr_length",
+    "3utr_length_bp",
+    "utr3_len",
+    "utr3_len_bp",
+    "length_bp",
+    "length",
+]
 
 
 def tool_color(tool_id: str, tool_ids=TOOL_IDS) -> str:
@@ -76,6 +95,19 @@ def save_figure(fig, out_path: pathlib.Path):
     fig.savefig(out_path.with_suffix(".svg"), format="svg", bbox_inches="tight", facecolor="white")
     plt.close(fig)
     return out_path
+
+
+def strip_ensembl_version(value) -> str:
+    return str(value).strip().split(".", 1)[0]
+
+
+def first_existing_column(columns, aliases, *, table_name: str) -> str:
+    normalized = {str(col).strip().lower(): col for col in columns}
+    for alias in aliases:
+        hit = normalized.get(alias.lower())
+        if hit is not None:
+            return hit
+    raise ValueError(f"Could not find any of {aliases} in {table_name}; columns={list(columns)}")
 
 
 def find_table(report_dir: pathlib.Path, filename: str) -> pathlib.Path:
@@ -184,12 +216,7 @@ def score_columns(frame: pd.DataFrame) -> list[str]:
 
 
 def gene_universe_count_table(report_dir: pathlib.Path) -> pd.DataFrame:
-    """Summarize full-gene-set and intersection-gene-set sizes per dataset.
-
-    FGS is the full usable joined table for a dataset. IGS is the subset of those
-    genes with non-missing scores from every selected predictor. The individual
-    predictor columns count genes scored by each method inside the FGS universe.
-    """
+    """Summarize full-gene-set and intersection-gene-set sizes per dataset."""
     rows = []
     for path in joined_paths(report_dir):
         frame = pd.read_csv(path, sep="\t")
@@ -240,13 +267,7 @@ def summarize_gene_universes(counts: pd.DataFrame) -> dict[str, int]:
 
 
 def plot_figure1_panel_c(report_dir: pathlib.Path, figures_dir: pathlib.Path):
-    """Draw the manuscript panel C schematic for FGS versus IGS.
-
-    The five translucent ellipses represent the gene sets scored by each
-    predictor. Their central overlap is the IGS. The full plotting field is the
-    FGS, i.e. all usable genes retained in the joined DE table, including genes
-    not scored by one or more methods.
-    """
+    """Draw the manuscript panel C schematic for FGS versus IGS."""
     summary = summarize_gene_universes(gene_universe_count_table(report_dir))
     fig, ax = plt.subplots(figsize=(5.8, 4.4))
     ax.set_xlim(0, 10)
@@ -323,6 +344,153 @@ def plot_figure1_panel_c(report_dir: pathlib.Path, figures_dir: pathlib.Path):
     ax.text(5.0, 0.62, f"Union scored by at least one predictor: median {summary['union']:,} genes", fontsize=8.5, color="#44546A", ha="center", va="center")
 
     return save_figure(fig, figures_dir / "figure1_panel_c_gene_universes.png")
+
+
+def load_gene_length_table(path: pathlib.Path) -> pd.DataFrame:
+    """Load a gene-length table and normalize it to gene_id/utr3_length_bp."""
+    sep = "," if path.suffix.lower() == ".csv" else "\t"
+    table = pd.read_csv(path, sep=sep)
+    gene_col = first_existing_column(table.columns, GENE_ID_ALIASES, table_name=str(path))
+    length_col = first_existing_column(table.columns, UTR3_LENGTH_ALIASES, table_name=str(path))
+    out = table[[gene_col, length_col]].copy()
+    out.columns = ["gene_id", "utr3_length_bp"]
+    out["gene_id"] = out["gene_id"].map(strip_ensembl_version)
+    out["utr3_length_bp"] = pd.to_numeric(out["utr3_length_bp"], errors="coerce")
+    out = out.dropna(subset=["gene_id", "utr3_length_bp"])
+    out = out.loc[out["utr3_length_bp"] > 0].copy()
+    if out.empty:
+        raise ValueError(f"No positive gene lengths found in {path}")
+    return out.groupby("gene_id", as_index=False)["utr3_length_bp"].max()
+
+
+def panel_d_gene_length_table(report_dir: pathlib.Path, gene_lengths: pd.DataFrame, *, membership_mode: str = "dataset_gene") -> pd.DataFrame:
+    """Build the Panel D source table from joined files and gene lengths.
+
+    membership_mode='dataset_gene' keeps one row per dataset-gene pair. Use
+    membership_mode='unique_gene' to collapse to one row per gene; genes that are
+    IGS in at least one dataset are marked IGS in that collapsed sensitivity mode.
+    """
+    if membership_mode not in {"dataset_gene", "unique_gene"}:
+        raise ValueError("membership_mode must be 'dataset_gene' or 'unique_gene'")
+    rows = []
+    for path in joined_paths(report_dir):
+        frame = pd.read_csv(path, sep="\t")
+        if "gene_id" not in frame.columns:
+            continue
+        if "dataset_id" in frame.columns and not frame.empty:
+            dataset_id = str(frame["dataset_id"].iloc[0])
+        else:
+            dataset_id = path.parent.name
+        frame = frame.copy()
+        frame["gene_id"] = frame["gene_id"].map(strip_ensembl_version)
+        frame["logFC_num"] = pd.to_numeric(frame.get("logFC"), errors="coerce")
+        usable = frame.loc[frame["logFC_num"].notna()].dropna(subset=["gene_id"]).copy()
+        cols = score_columns(usable)
+        if not cols:
+            continue
+        scored = usable[cols].notna()
+        rows.append(pd.DataFrame({
+            "dataset_id": dataset_id,
+            "gene_id": usable["gene_id"].to_numpy(),
+            "is_igs": scored.all(axis=1).to_numpy(bool),
+        }))
+    if not rows:
+        raise ValueError(f"No joined rows with predictor scores found below {report_dir}")
+    membership = pd.concat(rows, ignore_index=True).drop_duplicates()
+    if membership_mode == "unique_gene":
+        membership = membership.groupby("gene_id", as_index=False)["is_igs"].any()
+        membership.insert(0, "dataset_id", "unique_gene")
+    merged = membership.merge(gene_lengths, on="gene_id", how="left")
+    merged["gene_set"] = np.where(merged["is_igs"], "IGS genes", "non-IGS genes")
+    merged = merged[["dataset_id", "gene_id", "gene_set", "utr3_length_bp"]].copy()
+    return merged
+
+
+def panel_d_qc_table(panel_d: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for gene_set, sub in panel_d.groupby("gene_set", sort=False):
+        lengths = pd.to_numeric(sub["utr3_length_bp"], errors="coerce")
+        matched = lengths.notna()
+        rows.append({
+            "gene_set": gene_set,
+            "n_rows": int(len(sub)),
+            "n_rows_with_length": int(matched.sum()),
+            "length_match_fraction": float(matched.mean()) if len(sub) else np.nan,
+            "n_unique_genes": int(sub["gene_id"].nunique()),
+            "median_utr3_length_bp": float(lengths.dropna().median()) if matched.any() else np.nan,
+            "mean_utr3_length_bp": float(lengths.dropna().mean()) if matched.any() else np.nan,
+        })
+    return pd.DataFrame(rows)
+
+
+def write_panel_d_tables(panel_d: pd.DataFrame, tables_dir: pathlib.Path) -> dict[str, pathlib.Path]:
+    source_path = tables_dir / "figure1_panel_d_gene_lengths.tsv"
+    qc_path = tables_dir / "figure1_panel_d_gene_length_qc.tsv"
+    panel_d.to_csv(source_path, sep="\t", index=False)
+    panel_d_qc_table(panel_d).to_csv(qc_path, sep="\t", index=False)
+    return {"figure1_panel_d_table": source_path, "figure1_panel_d_qc": qc_path}
+
+
+def kde_manual(values, grid, bandwidth: float | None = None) -> np.ndarray:
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        return np.zeros_like(grid, dtype=float)
+    if bandwidth is None:
+        std = np.std(values, ddof=1) if values.size > 1 else max(float(values[0]) * 0.1, 1.0)
+        bandwidth = 1.06 * std * (values.size ** (-1.0 / 5.0)) if std > 0 else max(float(np.median(values)) * 0.1, 1.0)
+    bandwidth = max(float(bandwidth), 1.0)
+    density = np.zeros_like(grid, dtype=float)
+    chunk_size = 2500
+    for start in range(0, values.size, chunk_size):
+        chunk = values[start:start + chunk_size]
+        scaled = (grid[:, None] - chunk[None, :]) / bandwidth
+        density += np.exp(-0.5 * scaled * scaled).sum(axis=1)
+    density /= values.size * bandwidth * np.sqrt(2.0 * np.pi)
+    return density
+
+
+def plot_figure1_panel_d_gene_lengths(panel_d: pd.DataFrame, figures_dir: pathlib.Path):
+    plot_data = panel_d.dropna(subset=["utr3_length_bp"]).copy()
+    if plot_data.empty:
+        raise ValueError("No matched gene lengths available for Panel D.")
+    plot_data["utr3_length_bp"] = pd.to_numeric(plot_data["utr3_length_bp"], errors="coerce")
+    plot_data = plot_data.dropna(subset=["utr3_length_bp"])
+    if plot_data["gene_set"].nunique() < 2:
+        raise ValueError("Panel D requires both IGS genes and non-IGS genes.")
+
+    lower = max(0.0, float(plot_data["utr3_length_bp"].quantile(0.01)))
+    upper = float(plot_data["utr3_length_bp"].quantile(0.99))
+    if upper <= lower:
+        lower = 0.0
+        upper = float(plot_data["utr3_length_bp"].max())
+    grid = np.linspace(lower, upper, 500)
+    igs = plot_data.loc[plot_data["gene_set"] == "IGS genes", "utr3_length_bp"].to_numpy(float)
+    non_igs = plot_data.loc[plot_data["gene_set"] == "non-IGS genes", "utr3_length_bp"].to_numpy(float)
+    igs_density = kde_manual(igs, grid)
+    non_igs_density = kde_manual(non_igs, grid)
+    max_density = max(float(igs_density.max()), float(non_igs_density.max()), 1e-12)
+    igs_y = igs_density / max_density
+    non_igs_y = non_igs_density / max_density
+
+    fig, ax = plt.subplots(figsize=(7.2, 2.25))
+    igs_color = "#5DA5DA"
+    non_igs_color = "#F17C7E"
+    ax.fill_between(grid, 0, igs_y, alpha=0.82, color=igs_color, label="IGS Genes")
+    ax.fill_between(grid, 0, -non_igs_y, alpha=0.82, color=non_igs_color, label="non-IGS Genes")
+    ax.axhline(0, color="#555555", linewidth=0.8)
+    ax.text(lower, 0.74, f"IGS Genes\nn={len(igs):,}", ha="left", va="center", fontsize=8)
+    ax.text(lower, -0.74, f"non-IGS Genes\nn={len(non_igs):,}", ha="left", va="center", fontsize=8)
+    ax.set_xlabel("3'UTR Length (bp)")
+    ax.set_yticks([])
+    ax.set_xlim(lower, upper)
+    ax.set_ylim(-1.08, 1.08)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.legend(frameon=False, fontsize=7, loc="upper right")
+    fig.tight_layout()
+    return save_figure(fig, figures_dir / "figure1_panel_d_gene_lengths.png")
 
 
 def expected_effect(frame: pd.DataFrame) -> pd.Series:
@@ -502,7 +670,15 @@ def plot_figure3(table: pd.DataFrame, figures_dir: pathlib.Path):
     return save_figure(fig, figures_dir / "figure3_targetscan_centered.png")
 
 
-def build_assets(report_dir: pathlib.Path, out_dir: pathlib.Path, *, fdr: float, effect_threshold: float):
+def build_assets(
+    report_dir: pathlib.Path,
+    out_dir: pathlib.Path,
+    *,
+    fdr: float,
+    effect_threshold: float,
+    gene_lengths_tsv: pathlib.Path | None = None,
+    panel_d_membership_mode: str = "dataset_gene",
+):
     figures_dir = out_dir / "figures"
     tables_dir = out_dir / "tables"
     figures_dir.mkdir(parents=True, exist_ok=True)
@@ -515,6 +691,14 @@ def build_assets(report_dir: pathlib.Path, out_dir: pathlib.Path, *, fdr: float,
     outputs["figure1"] = plot_figure1(metrics_long, figures_dir)
     outputs["figure1_panel_c_table"] = write_gene_universe_table(report_dir, tables_dir)
     outputs["figure1_panel_c"] = plot_figure1_panel_c(report_dir, figures_dir)
+
+    if gene_lengths_tsv is not None:
+        gene_lengths = load_gene_length_table(gene_lengths_tsv)
+        panel_d = panel_d_gene_length_table(report_dir, gene_lengths, membership_mode=panel_d_membership_mode)
+        outputs.update(write_panel_d_tables(panel_d, tables_dir))
+        outputs["figure1_panel_d"] = plot_figure1_panel_d_gene_lengths(panel_d, figures_dir)
+    else:
+        print("Skipping Figure 1 panel D: pass --gene-lengths-tsv to provide 3'UTR lengths.")
 
     local = rank_fraction_table(report_dir, rank_type="local", bins=10, fdr=fdr, effect_threshold=effect_threshold)
     global_ = rank_fraction_table(report_dir, rank_type="global", bins=5, fdr=fdr, effect_threshold=effect_threshold)
@@ -532,8 +716,17 @@ def main():
     parser.add_argument("--out-dir", type=pathlib.Path, default=pathlib.Path("manuscript_assets"))
     parser.add_argument("--fdr-threshold", type=float, default=0.05)
     parser.add_argument("--effect-threshold", type=float, default=1.0)
+    parser.add_argument("--gene-lengths-tsv", type=pathlib.Path, default=None, help="Optional TSV/CSV with gene_id and utr3_length_bp columns for Figure 1 panel D.")
+    parser.add_argument("--panel-d-membership-mode", choices=["dataset_gene", "unique_gene"], default="dataset_gene", help="Use dataset-gene rows by default, or collapse Panel D to one row per unique gene.")
     args = parser.parse_args()
-    outputs = build_assets(args.report_dir, args.out_dir, fdr=args.fdr_threshold, effect_threshold=args.effect_threshold)
+    outputs = build_assets(
+        args.report_dir,
+        args.out_dir,
+        fdr=args.fdr_threshold,
+        effect_threshold=args.effect_threshold,
+        gene_lengths_tsv=args.gene_lengths_tsv,
+        panel_d_membership_mode=args.panel_d_membership_mode,
+    )
     for name, path in outputs.items():
         print(f"{name}: {path}")
 
