@@ -461,7 +461,7 @@ def plot_mirrored_density(
         top_label = f"IGS dataset-gene pairs\nn={len(igs):,}"
         bottom_label = f"non-IGS dataset-gene pairs\nn={len(non_igs):,}"
 
-    fig, ax = plt.subplots(figsize=(7.2, 2.25))
+    fig, ax = plt.subplots(figsize=(7.2, 2.55))
     igs_color = "#5DA5DA"
     non_igs_color = "#F17C7E"
     ax.fill_between(grid, 0, igs_y, alpha=0.82, color=igs_color, label="IGS Genes")
@@ -469,15 +469,19 @@ def plot_mirrored_density(
     ax.axhline(0, color="#555555", linewidth=0.8)
     ax.text(lower, 0.74, top_label, ha="left", va="center", fontsize=8)
     ax.text(lower, -0.74, bottom_label, ha="left", va="center", fontsize=8)
-    ax.set_xlabel(xlabel)
+    ax.set_xlabel(xlabel, labelpad=8)
     ax.set_yticks([])
     ax.set_xlim(lower, upper)
     ax.set_ylim(-1.08, 1.08)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(True)
+    ax.xaxis.set_visible(True)
+    ax.tick_params(axis="x", which="both", bottom=True, labelbottom=True, length=3, pad=3)
     ax.legend(frameon=False, fontsize=7, loc="upper right")
     fig.tight_layout()
+    fig.subplots_adjust(bottom=0.24)
     return save_figure(fig, figures_dir / out_name)
 
 
