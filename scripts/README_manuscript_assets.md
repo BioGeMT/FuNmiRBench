@@ -58,6 +58,23 @@ A single manuscript-asset build creates dataset-gene and unique-gene variants fo
 - `figure1_panel_e_conservation`: one row per dataset-gene pair, using mean 3'UTR phyloP conservation.
 - `figure1_panel_e_conservation_unique_gene`: one row per unique gene, for the corresponding conservation sensitivity version.
 
+## FGS versus IGS comparison script
+
+Use this when you want to show whether performance increases when the benchmark is restricted from the full usable gene set (FGS) to the intersection gene set (IGS):
+
+```bash
+uv run scripts/build_fgs_igs_comparison.py \
+  --report-dir results/20260703_115539 \
+  --out-dir manuscript_assets
+```
+
+This script evaluates each predictor twice for each dataset:
+
+- **FGS**: all usable genes are retained; missing predictor scores are assigned the lowest rank/score so incomplete coverage is penalized.
+- **IGS**: only genes scored by all selected predictors are retained, giving a controlled comparison on a shared gene universe.
+
+It writes paired per-dataset metrics, paired IGS-minus-FGS deltas, summary tables, and a 2x2 figure for APS, PR-AUC, AUROC, and Spearman.
+
 ## Main manuscript outputs
 
 Figures:
@@ -91,12 +108,17 @@ Figures:
 - `figures/gene_property_length_distribution_unique_gene.png` and `.svg`
 - `figures/gene_property_phylop_distribution_dataset_gene.png` and `.svg`
 - `figures/gene_property_phylop_distribution_unique_gene.png` and `.svg`
+- `figures/fgs_vs_igs_metric_bump.png` and `.svg`
 
 Tables:
 
 - `tables/gene_property_distribution_summary.tsv`
 - `tables/igs_gene_property_values_dataset_gene.tsv`
 - `tables/igs_gene_property_values_unique_gene.tsv`
+- `tables/fgs_vs_igs_per_dataset_metrics.tsv`
+- `tables/fgs_vs_igs_per_dataset_metric_deltas.tsv`
+- `tables/fgs_vs_igs_metric_summary.tsv`
+- `tables/fgs_vs_igs_metric_delta_summary.tsv`
 
 ## Supplementary output
 
