@@ -11,7 +11,7 @@ import pandas as pd
 import pyBigWig
 
 from funmirbench.gene_ids import strip_ensembl_version
-from funmirbench.gene_lengths import _interval_union_length
+from funmirbench.gene_lengths import _interval_union_length, _merge_intervals
 from funmirbench.protein_coding import (
     DEFAULT_GTF_REL_PATH,
     ENSEMBL_RELEASE,
@@ -26,7 +26,9 @@ DEFAULT_PHYLOP_URL = "https://hgdownload.cse.ucsc.edu/goldenPath/hg38/phyloP100w
 DEFAULT_PHASTCONS_URL = "https://hgdownload.cse.ucsc.edu/goldenPath/hg38/phastCons100way/hg38.phastCons100way.bw"
 DEFAULT_PHYLOP_REL_PATH = pathlib.Path("data/resources/ucsc/hg38.phyloP100way.bw")
 DEFAULT_PHASTCONS_REL_PATH = pathlib.Path("data/resources/ucsc/hg38.phastCons100way.bw")
-DEFAULT_UTR3_CONSERVATION_CACHE_REL_PATH = pathlib.Path("data/resources/ensembl/utr3_conservation.tsv")
+DEFAULT_UTR3_CONSERVATION_CACHE_REL_PATH = pathlib.Path(
+    "data/resources/ensembl/utr3_conservation_longest_protein_coding_transcript.tsv"
+)
 UTR3_FEATURE_NAMES = {"three_prime_utr", "three_prime_UTR", "3UTR", "3utr"}
 
 
@@ -54,22 +56,6 @@ def _normalize_chrom_for_bigwig(chrom: str, chrom_sizes: dict[str, int]) -> str 
     return None
 
 
-def _merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    if not intervals:
-        return []
-    ordered = sorted((min(start, end), max(start, end)) for start, end in intervals)
-    merged = []
-    current_start, current_end = ordered[0]
-    for start, end in ordered[1:]:
-        if start <= current_end + 1:
-            current_end = max(current_end, end)
-            continue
-        merged.append((current_start, current_end))
-        current_start, current_end = start, end
-    merged.append((current_start, current_end))
-    return merged
-
-
 def ensure_conservation_bigwigs(
     *,
     root: pathlib.Path,
@@ -91,13 +77,19 @@ def ensure_conservation_bigwigs(
     return phylop, phastcons
 
 
-def parse_utr3_intervals_from_gtf(
+def parse_longest_protein_coding_utr3_transcript_intervals_from_gtf(
     gtf_gz_path: pathlib.Path,
     *,
     protein_coding_only: bool = True,
-) -> dict[str, dict[str, list[tuple[int, int]]]]:
-    """Parse merged 3'UTR intervals per gene and chromosome from an Ensembl GTF."""
-    intervals_by_gene: dict[str, dict[str, list[tuple[int, int]]]] = {}
+) -> dict[str, dict[str, object]]:
+    """Parse the longest protein-coding 3'UTR transcript per gene.
+
+    Returns a dictionary keyed by gene ID. Each value contains the selected
+    transcript ID, merged intervals grouped by chromosome, selected transcript
+    3'UTR length, and the number of protein-coding transcripts with annotated
+    3'UTR intervals for that gene.
+    """
+    intervals_by_gene_tx: dict[str, dict[str, dict[str, list[tuple[int, int]]]]] = {}
     with gzip.open(gtf_gz_path, "rt", encoding="utf-8", errors="replace") as handle:
         for line in handle:
             if not line or line.startswith("#"):
@@ -108,15 +100,16 @@ def parse_utr3_intervals_from_gtf(
             attrs = _parse_gtf_attributes(fields[8])
             if protein_coding_only:
                 biotype = (
-                    attrs.get("gene_biotype")
-                    or attrs.get("gene_type")
-                    or attrs.get("transcript_biotype")
+                    attrs.get("transcript_biotype")
                     or attrs.get("transcript_type")
+                    or attrs.get("gene_biotype")
+                    or attrs.get("gene_type")
                 )
                 if biotype and biotype != "protein_coding":
                     continue
             gene_id = attrs.get("gene_id")
-            if not gene_id:
+            transcript_id = attrs.get("transcript_id")
+            if not gene_id or not transcript_id:
                 continue
             try:
                 start = int(fields[3])
@@ -124,22 +117,38 @@ def parse_utr3_intervals_from_gtf(
             except ValueError:
                 continue
             gene_id = strip_ensembl_version(gene_id)
+            transcript_id = strip_ensembl_version(transcript_id)
             chrom = fields[0]
-            intervals_by_gene.setdefault(gene_id, {}).setdefault(chrom, []).append((start, end))
+            intervals_by_gene_tx.setdefault(gene_id, {}).setdefault(transcript_id, {}).setdefault(chrom, []).append((start, end))
 
-    merged_by_gene = {}
-    for gene_id, chrom_intervals in intervals_by_gene.items():
-        merged_by_gene[gene_id] = {
-            chrom: _merge_intervals(intervals)
-            for chrom, intervals in chrom_intervals.items()
-            if intervals
+    selected: dict[str, dict[str, object]] = {}
+    for gene_id, transcript_intervals in intervals_by_gene_tx.items():
+        candidates = []
+        for transcript_id, chrom_intervals in transcript_intervals.items():
+            merged_by_chrom = {
+                chrom: _merge_intervals(intervals)
+                for chrom, intervals in chrom_intervals.items()
+                if intervals
+            }
+            length = sum(_interval_union_length(intervals) for intervals in merged_by_chrom.values())
+            if length > 0:
+                candidates.append((transcript_id, int(length), merged_by_chrom))
+        if not candidates:
+            continue
+        transcript_id, length, merged_by_chrom = sorted(candidates, key=lambda item: (-item[1], item[0]))[0]
+        selected[gene_id] = {
+            "transcript_id": transcript_id,
+            "utr3_length_bp": int(length),
+            "utr3_interval_count": int(sum(len(intervals) for intervals in merged_by_chrom.values())),
+            "protein_coding_transcript_with_utr3_count": int(len(candidates)),
+            "intervals_by_chrom": merged_by_chrom,
         }
-    if not merged_by_gene:
-        raise ValueError(f"No 3'UTR intervals parsed from {gtf_gz_path}")
-    return merged_by_gene
+    if not selected:
+        raise ValueError(f"No protein-coding transcript 3'UTR intervals parsed from {gtf_gz_path}")
+    return selected
 
 
-def _mean_bigwig_signal_for_gene(
+def _mean_bigwig_signal_for_transcript(
     bw,
     chrom_intervals: dict[str, list[tuple[int, int]]],
 ) -> tuple[float, int]:
@@ -175,22 +184,28 @@ def build_utr3_conservation_table(
     phastcons_bw_path: pathlib.Path,
     protein_coding_only: bool = True,
 ) -> pd.DataFrame:
-    """Compute mean 3'UTR phyloP/phastCons conservation per Ensembl gene."""
-    intervals_by_gene = parse_utr3_intervals_from_gtf(gtf_gz_path, protein_coding_only=protein_coding_only)
+    """Compute mean 3'UTR conservation for each gene's longest protein-coding transcript."""
+    selected_by_gene = parse_longest_protein_coding_utr3_transcript_intervals_from_gtf(
+        gtf_gz_path,
+        protein_coding_only=protein_coding_only,
+    )
     rows = []
     with pyBigWig.open(str(phylop_bw_path)) as bw_phylop, pyBigWig.open(str(phastcons_bw_path)) as bw_phastcons:
-        for gene_id, chrom_intervals in intervals_by_gene.items():
-            mean_phylop, phylop_bases = _mean_bigwig_signal_for_gene(bw_phylop, chrom_intervals)
-            mean_phastcons, phastcons_bases = _mean_bigwig_signal_for_gene(bw_phastcons, chrom_intervals)
-            utr3_length_bp = sum(_interval_union_length(intervals) for intervals in chrom_intervals.values())
+        for gene_id, selected in selected_by_gene.items():
+            chrom_intervals = selected["intervals_by_chrom"]
+            mean_phylop, phylop_bases = _mean_bigwig_signal_for_transcript(bw_phylop, chrom_intervals)
+            mean_phastcons, phastcons_bases = _mean_bigwig_signal_for_transcript(bw_phastcons, chrom_intervals)
             rows.append(
                 {
                     "gene_id": gene_id,
+                    "transcript_id": selected["transcript_id"],
                     "mean_phyloP": mean_phylop,
                     "mean_phastCons": mean_phastcons,
                     "utr3_scored_bases_phyloP": phylop_bases,
                     "utr3_scored_bases_phastCons": phastcons_bases,
-                    "utr3_length_bp": int(utr3_length_bp),
+                    "utr3_length_bp": int(selected["utr3_length_bp"]),
+                    "utr3_interval_count": int(selected["utr3_interval_count"]),
+                    "protein_coding_transcript_with_utr3_count": int(selected["protein_coding_transcript_with_utr3_count"]),
                 }
             )
     out = pd.DataFrame(rows).sort_values("gene_id").reset_index(drop=True)
@@ -201,22 +216,25 @@ def build_utr3_conservation_table(
 
 def read_utr3_conservation_cache(cache_path: pathlib.Path) -> pd.DataFrame:
     table = pd.read_csv(cache_path, sep="\t")
-    required = {"gene_id", "mean_phyloP"}
+    required = {"gene_id", "transcript_id", "mean_phyloP"}
     missing = sorted(required - set(table.columns))
     if missing:
         raise ValueError(f"{cache_path} missing required columns: {missing}")
     table = table.copy()
     table["gene_id"] = table["gene_id"].map(strip_ensembl_version)
-    for col in ["mean_phyloP", "mean_phastCons", "utr3_scored_bases_phyloP", "utr3_scored_bases_phastCons", "utr3_length_bp"]:
+    table["transcript_id"] = table["transcript_id"].map(strip_ensembl_version)
+    for col in [
+        "mean_phyloP",
+        "mean_phastCons",
+        "utr3_scored_bases_phyloP",
+        "utr3_scored_bases_phastCons",
+        "utr3_length_bp",
+        "utr3_interval_count",
+        "protein_coding_transcript_with_utr3_count",
+    ]:
         if col in table.columns:
             table[col] = pd.to_numeric(table[col], errors="coerce")
-    return table.groupby("gene_id", as_index=False).agg(
-        {
-            col: "max" if col.startswith("utr3_") else "mean"
-            for col in table.columns
-            if col != "gene_id"
-        }
-    )
+    return table.sort_values(["gene_id", "utr3_length_bp"], ascending=[True, False]).drop_duplicates("gene_id")
 
 
 def write_utr3_conservation_cache(cache_path: pathlib.Path, table: pd.DataFrame) -> None:
@@ -239,7 +257,7 @@ def load_utr3_conservation(
     if cache.exists():
         table = read_utr3_conservation_cache(cache)
         if not table.empty:
-            logger.info("Loaded %d 3'UTR conservation rows from %s", len(table), cache)
+            logger.info("Loaded %d longest-transcript 3'UTR conservation rows from %s", len(table), cache)
             return table
 
     gtf = ensure_ensembl_gtf(root=root, gtf_path=gtf_path or DEFAULT_GTF_REL_PATH)
@@ -252,7 +270,7 @@ def load_utr3_conservation(
     )
     write_utr3_conservation_cache(cache, table)
     logger.info(
-        "Cached %d Ensembl release %s 3'UTR conservation rows to %s",
+        "Cached %d Ensembl release %s longest-transcript 3'UTR conservation rows to %s",
         len(table),
         ENSEMBL_RELEASE,
         cache,
