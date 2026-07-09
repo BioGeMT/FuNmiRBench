@@ -50,7 +50,6 @@ Figures:
 - `figures/figure1_panel_e_conservation.png` and `.svg`
 - `figures/figure1_panel_e_conservation_unique_gene.png` and `.svg`
 - `figures/figure2_rank_enrichment_recovery.png` and `.svg`
-- `figures/figure3_targetscan_centered.png` and `.svg`
 
 Tables:
 
