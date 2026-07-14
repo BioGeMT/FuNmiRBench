@@ -19,9 +19,7 @@ Generate all panels from a specific run::
 
     uv run python scripts/figure2_coverage.py \
         --run-dir results/20260709_122904 \
-        --panel all \
-        --effect-threshold 1.0 \
-        --fdr-threshold none
+        --panel all
 
 Outputs are written by default to::
 
@@ -45,6 +43,9 @@ from funmirbench.evaluate_common import CURVE_COLORS
 DEFAULT_RESULTS_DIR = Path("results")
 DEFAULT_METADATA_PATH = Path("metadata/predictions_info.tsv")
 DEFAULT_OUTPUT_ROOT = Path("results/manuscript_figure2")
+DEFAULT_FORMATS = ("png", "svg")
+RUN_EFFECT_THRESHOLD = 1.0
+RUN_FDR_THRESHOLD = 0.05
 PANEL_CHOICES = ("A", "B", "C", "D", "all")
 IGS_COLOR = "#9E9E9E"
 FGS_COLOR = "#424242"
@@ -123,41 +124,12 @@ def parse_args() -> argparse.Namespace:
         help="Output directory. Default: results/manuscript_figure2/<run-name>/.",
     )
     parser.add_argument(
-        "--effect-threshold",
-        type=float,
-        default=1.0,
-        help="Positive threshold for the perturbation-aware expression effect.",
-    )
-    parser.add_argument(
-        "--fdr-threshold",
-        default="none",
-        help="FDR threshold, or 'none' to classify positives by effect only.",
-    )
-    parser.add_argument(
-        "--formats",
-        nargs="+",
-        choices=("png", "pdf", "svg"),
-        default=("png", "pdf"),
-        help="Plot formats to write for each panel.",
-    )
-    parser.add_argument(
         "--dpi",
         type=int,
         default=300,
         help="Raster output resolution.",
     )
     return parser.parse_args()
-
-
-def parse_optional_float(value: str) -> float | None:
-    normalized = str(value).strip().lower()
-    if normalized in {"none", "null", "na", "no"}:
-        return None
-    parsed = float(value)
-    if not 0.0 <= parsed <= 1.0:
-        raise ValueError("FDR threshold must be between 0 and 1, or 'none'.")
-    return parsed
-
 
 def find_latest_completed_run(results_dir: Path) -> Path:
     if not results_dir.exists():
@@ -362,11 +334,10 @@ def save_panel(
     *,
     out_dir: Path,
     stem: str,
-    formats: Iterable[str],
     dpi: int,
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    for extension in formats:
+    for extension in DEFAULT_FORMATS:
         fig.savefig(
             out_dir / f"{stem}.{extension}",
             dpi=dpi,
@@ -655,7 +626,6 @@ def write_panel(
     *,
     inputs: Figure2Inputs,
     out_dir: Path,
-    formats: Iterable[str],
     dpi: int,
 ) -> None:
     builders = {
@@ -674,13 +644,12 @@ def write_panel(
     panel_dir = out_dir / f"panel_{panel}"
     panel_dir.mkdir(parents=True, exist_ok=True)
     summary.to_csv(panel_dir / f"{stem}.tsv", sep="\t", index=False)
-    save_panel(fig, out_dir=panel_dir, stem=stem, formats=formats, dpi=dpi)
+    save_panel(fig, out_dir=panel_dir, stem=stem, dpi=dpi)
     print(f"Wrote panel {panel}: {panel_dir / stem}")
 
 
 def main() -> None:
     args = parse_args()
-    fdr_threshold = parse_optional_float(args.fdr_threshold)
     run_dir = (args.run_dir or find_latest_completed_run(args.results_dir)).resolve()
     metadata_path = args.metadata.resolve()
     out_dir = (args.out_dir or DEFAULT_OUTPUT_ROOT / run_dir.name).resolve()
@@ -688,8 +657,8 @@ def main() -> None:
     inputs = prepare_inputs(
         run_dir=run_dir,
         metadata_path=metadata_path,
-        fdr_threshold=fdr_threshold,
-        effect_threshold=args.effect_threshold,
+        fdr_threshold=RUN_FDR_THRESHOLD,
+        effect_threshold=RUN_EFFECT_THRESHOLD,
     )
 
     panels = ("A", "B", "C", "D") if args.panel == "all" else (args.panel,)
@@ -697,18 +666,12 @@ def main() -> None:
     print(f"Output directory: {out_dir}")
     print(f"Datasets: {len(inputs.datasets)}")
     print(f"Predictors: {', '.join(inputs.tool_ids)}")
-    print(f"Evaluation colors: {inputs.tool_colors}")
-    print(
-        "Ground truth: expected_effect > "
-        f"{inputs.effect_threshold}; FDR threshold="
-        f"{inputs.fdr_threshold if inputs.fdr_threshold is not None else 'none'}"
-    )
+    print("Ground-truth filters: inherited from the completed benchmark run")
     for panel in panels:
         write_panel(
             panel,
             inputs=inputs,
             out_dir=out_dir,
-            formats=args.formats,
             dpi=args.dpi,
         )
 
