@@ -1,0 +1,8 @@
+set_id	label	gene_count	fgs_gene_count	fgs_coverage	set_type
+targetscan	TargetScan v8	13144	19540	0.6726714431934493	predictor
+mirdb_mirtarget	miRDB	13420	19540	0.6867963152507677	predictor
+microt_cnn	microT-CNN	19392	19540	0.9924257932446264	predictor
+mirbind2	miRBind2-UTR	18639	19540	0.9538894575230297	predictor
+miraw	miRAW	18669	19540	0.955424769703173	predictor
+all_algorithm_intersection	"IGS
+(all algorithms)"	11312	19540	0.5789150460593654	intersection
