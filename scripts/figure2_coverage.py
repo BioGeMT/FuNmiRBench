@@ -31,6 +31,7 @@ Outputs are written by default to::
 from __future__ import annotations
 
 import argparse
+import itertools
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -784,6 +785,63 @@ def write_supplementary_coverage_table(
     return path
 
 
+def write_pairwise_gene_set_overlap_table(
+    *,
+    inputs: Figure2Inputs,
+    manuscript_out_dir: Path,
+) -> Path:
+    all_pairs = pd.concat(
+        [
+            dataset.frame.assign(dataset_id=dataset.dataset_id)
+            for dataset in inputs.datasets
+        ],
+        ignore_index=True,
+    )
+    scored_gene_sets = {
+        tool_id: set(
+            all_pairs.loc[all_pairs[score_column(tool_id)].notna(), "gene_id"]
+            .dropna()
+            .astype(str)
+        )
+        for tool_id in inputs.tool_ids
+    }
+
+    rows = []
+    for predictor_a, predictor_b in itertools.combinations(inputs.tool_ids, 2):
+        genes_a = scored_gene_sets[predictor_a]
+        genes_b = scored_gene_sets[predictor_b]
+        intersection = genes_a & genes_b
+        union = genes_a | genes_b
+        n_a = len(genes_a)
+        n_b = len(genes_b)
+        n_intersection = len(intersection)
+        n_union = len(union)
+        rows.append(
+            {
+                "predictor_a": inputs.tool_labels[predictor_a],
+                "predictor_b": inputs.tool_labels[predictor_b],
+                "n_a": n_a,
+                "n_b": n_b,
+                "intersection": n_intersection,
+                "union": n_union,
+                "only_a": len(genes_a - genes_b),
+                "only_b": len(genes_b - genes_a),
+                "jaccard": n_intersection / n_union if n_union else np.nan,
+                "overlap_coefficient": (
+                    n_intersection / min(n_a, n_b) if min(n_a, n_b) else np.nan
+                ),
+                "fraction_a_in_b": n_intersection / n_a if n_a else np.nan,
+                "fraction_b_in_a": n_intersection / n_b if n_b else np.nan,
+            }
+        )
+
+    path = manuscript_out_dir / "figure2_pairwise_gene_set_overlap.tsv"
+    manuscript_out_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, sep="\t", index=False)
+    print(f"Wrote pairwise Figure 2 gene-set overlap table: {path}")
+    return path
+
+
 def write_panel(
     panel: str,
     *,
@@ -972,6 +1030,10 @@ def main() -> None:
     if tuple(panels) == ("A", "B", "C", "D"):
         write_combined_figure(panel_outputs, out_dir=manuscript_out_dir, dpi=args.dpi)
         write_supplementary_coverage_table(
+            inputs=inputs,
+            manuscript_out_dir=manuscript_out_dir,
+        )
+        write_pairwise_gene_set_overlap_table(
             inputs=inputs,
             manuscript_out_dir=manuscript_out_dir,
         )
