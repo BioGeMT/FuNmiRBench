@@ -842,6 +842,74 @@ def write_pairwise_gene_set_overlap_table(
     return path
 
 
+def write_multiway_gene_set_overlap_table(
+    *,
+    inputs: Figure2Inputs,
+    manuscript_out_dir: Path,
+) -> Path:
+    all_pairs = pd.concat(
+        [
+            dataset.frame.assign(dataset_id=dataset.dataset_id)
+            for dataset in inputs.datasets
+        ],
+        ignore_index=True,
+    )
+    scored_gene_sets = {
+        tool_id: set(
+            all_pairs.loc[all_pairs[score_column(tool_id)].notna(), "gene_id"]
+            .dropna()
+            .astype(str)
+        )
+        for tool_id in inputs.tool_ids
+    }
+
+    rows = []
+    for combination_size in range(3, len(inputs.tool_ids) + 1):
+        for combination in itertools.combinations(inputs.tool_ids, combination_size):
+            gene_sets = [scored_gene_sets[tool_id] for tool_id in combination]
+            intersection = set.intersection(*gene_sets)
+            union = set.union(*gene_sets)
+            predictor_sizes = {
+                tool_id: len(scored_gene_sets[tool_id])
+                for tool_id in combination
+            }
+            n_intersection = len(intersection)
+            n_union = len(union)
+            row = {
+                "combination_size": combination_size,
+                "predictors": ";".join(
+                    inputs.tool_labels[tool_id] for tool_id in combination
+                ),
+                "n_predictors": ";".join(
+                    str(predictor_sizes[tool_id]) for tool_id in combination
+                ),
+                "intersection": n_intersection,
+                "union": n_union,
+                "jaccard": n_intersection / n_union if n_union else np.nan,
+                "overlap_coefficient": (
+                    n_intersection / min(predictor_sizes.values())
+                    if predictor_sizes and min(predictor_sizes.values())
+                    else np.nan
+                ),
+            }
+            for tool_id in inputs.tool_ids:
+                if tool_id in predictor_sizes:
+                    row[f"fraction_intersection_in_{tool_id}"] = (
+                        n_intersection / predictor_sizes[tool_id]
+                        if predictor_sizes[tool_id]
+                        else np.nan
+                    )
+                else:
+                    row[f"fraction_intersection_in_{tool_id}"] = np.nan
+            rows.append(row)
+
+    path = manuscript_out_dir / "figure2_multiway_gene_set_overlap.tsv"
+    manuscript_out_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, sep="\t", index=False)
+    print(f"Wrote multiway Figure 2 gene-set overlap table: {path}")
+    return path
+
+
 def write_panel(
     panel: str,
     *,
@@ -1034,6 +1102,10 @@ def main() -> None:
             manuscript_out_dir=manuscript_out_dir,
         )
         write_pairwise_gene_set_overlap_table(
+            inputs=inputs,
+            manuscript_out_dir=manuscript_out_dir,
+        )
+        write_multiway_gene_set_overlap_table(
             inputs=inputs,
             manuscript_out_dir=manuscript_out_dir,
         )
