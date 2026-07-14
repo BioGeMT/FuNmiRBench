@@ -19,16 +19,20 @@ Generate all panels from the most recent run under ``results/``::
 
     uv run python scripts/figure2_coverage.py --panel all
 
-Generate only panel C from a specific run::
+Generate all panels from a specific run::
 
     uv run python scripts/figure2_coverage.py \
-        --run-dir results/20260714_example \
-        --panel C \
+        --run-dir results/20260709_122904 \
+        --panel all \
         --effect-threshold 1.0 \
         --fdr-threshold none
 
-Outputs are written by default to
-``<run-dir>/publication/figure2/``.
+Outputs are written by default to a dedicated directory outside the benchmark
+run bundle::
+
+    results/manuscript_figure2/<run-name>/
+
+Use ``--out-dir`` to select another location.
 """
 
 from __future__ import annotations
@@ -45,7 +49,22 @@ import pandas as pd
 
 DEFAULT_RESULTS_DIR = Path("results")
 DEFAULT_METADATA_PATH = Path("metadata/predictions_info.tsv")
+DEFAULT_OUTPUT_ROOT = Path("results/manuscript_figure2")
 PANEL_CHOICES = ("A", "B", "C", "D", "all")
+
+OE_ALIASES = {
+    "OE",
+    "OVEREXPRESSION",
+    "OVER_EXPRESSION",
+}
+LOSS_ALIASES = {
+    "KO",
+    "KD",
+    "KNOCKOUT",
+    "KNOCK_OUT",
+    "KNOCKDOWN",
+    "KNOCK_DOWN",
+}
 
 
 @dataclass(frozen=True)
@@ -102,7 +121,10 @@ def parse_args() -> argparse.Namespace:
         "--out-dir",
         type=Path,
         default=None,
-        help="Output directory. Default: <run-dir>/publication/figure2/.",
+        help=(
+            "Output directory. Default: "
+            "results/manuscript_figure2/<run-name>/."
+        ),
     )
     parser.add_argument(
         "--effect-threshold",
@@ -207,7 +229,9 @@ def available_tool_ids(
     common_score_columns: set[str] | None = None
     for dataset in datasets:
         current = {column for column in dataset.frame.columns if column.startswith("score_")}
-        common_score_columns = current if common_score_columns is None else common_score_columns & current
+        common_score_columns = (
+            current if common_score_columns is None else common_score_columns & current
+        )
 
     common_score_columns = common_score_columns or set()
     common_tool_ids = {column.removeprefix("score_") for column in common_score_columns}
@@ -223,7 +247,13 @@ def available_tool_ids(
 def perturbation_series(frame: pd.DataFrame) -> pd.Series:
     if "perturbation" not in frame.columns:
         raise ValueError("Joined table is missing the perturbation column.")
-    return frame["perturbation"].astype(str).str.upper().str.strip()
+    return (
+        frame["perturbation"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+        .str.replace(r"[\s-]+", "_", regex=True)
+    )
 
 
 def annotate_ground_truth(
@@ -242,12 +272,16 @@ def annotate_ground_truth(
     work["logFC"] = pd.to_numeric(work["logFC"], errors="coerce")
 
     perturbation = perturbation_series(work)
-    oe_mask = perturbation.eq("OE")
-    loss_mask = perturbation.isin({"KO", "KD", "KNOCKOUT", "KNOCKDOWN"})
+    oe_mask = perturbation.isin(OE_ALIASES)
+    loss_mask = perturbation.isin(LOSS_ALIASES)
     unsupported = ~(oe_mask | loss_mask)
     if unsupported.any():
         values = sorted(perturbation.loc[unsupported].dropna().unique().tolist())
-        raise ValueError(f"Unsupported perturbation values: {values}")
+        raise ValueError(
+            "Unsupported perturbation values after normalization: "
+            f"{values}. Supported OE aliases: {sorted(OE_ALIASES)}; "
+            f"loss-of-function aliases: {sorted(LOSS_ALIASES)}"
+        )
 
     work["expected_effect"] = np.where(oe_mask, -work["logFC"], work["logFC"])
     usable = work["logFC"].notna()
@@ -295,7 +329,10 @@ def prepare_inputs(
         )
         for dataset in datasets
     )
-    resolved_labels = {tool_id: labels.get(tool_id, tool_id.replace("_", " ")) for tool_id in tool_ids}
+    resolved_labels = {
+        tool_id: labels.get(tool_id, tool_id.replace("_", " "))
+        for tool_id in tool_ids
+    }
     return Figure2Inputs(
         datasets=annotated,
         tool_ids=tool_ids,
@@ -310,10 +347,6 @@ def style_axis(ax: plt.Axes) -> None:
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", alpha=0.25, linewidth=0.8)
     ax.set_axisbelow(True)
-
-
-def predictor_labels(inputs: Figure2Inputs) -> list[str]:
-    return [inputs.tool_labels[tool_id] for tool_id in inputs.tool_ids]
 
 
 def save_panel(
@@ -348,7 +381,9 @@ def panel_a_experiment_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, pl
                 "predictor": inputs.tool_labels[tool_id],
                 "experiments_covered": covered,
                 "experiments_total": total_experiments,
-                "experiment_coverage": covered / total_experiments if total_experiments else np.nan,
+                "experiment_coverage": (
+                    covered / total_experiments if total_experiments else np.nan
+                ),
             }
         )
     summary = pd.DataFrame(rows)
@@ -392,7 +427,9 @@ def panel_b_gene_set_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, plt.
         )
         for tool_id in inputs.tool_ids
     }
-    igs_genes = set.intersection(*scored_gene_sets.values()) if scored_gene_sets else set()
+    igs_genes = (
+        set.intersection(*scored_gene_sets.values()) if scored_gene_sets else set()
+    )
 
     rows = []
     denominator = len(fgs_genes)
@@ -475,7 +512,9 @@ def pooled_pair_coverage(
                 "predictor": inputs.tool_labels[tool_id],
                 f"{subset_label}_pairs_scored": numerator,
                 f"{subset_label}_pairs_total": denominator,
-                f"{subset_label}_coverage": numerator / denominator if denominator else np.nan,
+                f"{subset_label}_coverage": (
+                    numerator / denominator if denominator else np.nan
+                ),
             }
         )
     return pd.DataFrame(rows)
@@ -572,10 +611,11 @@ def write_panel(
         "C": "figure2C_positive_coverage",
         "D": "figure2D_background_coverage",
     }[panel]
-    out_dir.mkdir(parents=True, exist_ok=True)
-    summary.to_csv(out_dir / f"{stem}.tsv", sep="\t", index=False)
-    save_panel(fig, out_dir=out_dir, stem=stem, formats=formats, dpi=dpi)
-    print(f"Wrote panel {panel}: {out_dir / stem}")
+    panel_dir = out_dir / f"panel_{panel}"
+    panel_dir.mkdir(parents=True, exist_ok=True)
+    summary.to_csv(panel_dir / f"{stem}.tsv", sep="\t", index=False)
+    save_panel(fig, out_dir=panel_dir, stem=stem, formats=formats, dpi=dpi)
+    print(f"Wrote panel {panel}: {panel_dir / stem}")
 
 
 def main() -> None:
@@ -584,7 +624,9 @@ def main() -> None:
     run_dir = args.run_dir or find_latest_completed_run(args.results_dir)
     run_dir = run_dir.resolve()
     metadata_path = args.metadata.resolve()
-    out_dir = (args.out_dir or run_dir / "publication" / "figure2").resolve()
+    out_dir = (
+        args.out_dir or DEFAULT_OUTPUT_ROOT / run_dir.name
+    ).resolve()
 
     inputs = prepare_inputs(
         run_dir=run_dir,
@@ -595,6 +637,7 @@ def main() -> None:
 
     panels = ("A", "B", "C", "D") if args.panel == "all" else (args.panel,)
     print(f"Run directory: {run_dir}")
+    print(f"Output directory: {out_dir}")
     print(f"Datasets: {len(inputs.datasets)}")
     print(f"Predictors: {', '.join(inputs.tool_ids)}")
     print(
