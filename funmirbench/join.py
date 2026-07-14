@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Collection
@@ -256,12 +257,33 @@ def load_predictor_score_cache(
     predictions,
     root,
     *,
+    max_workers: int = 1,
     logger=None,
 ) -> dict[str, LoadedPredictor]:
-    return {
-        tool_id: load_predictor_scores(tool_id, predictions[tool_id], root, logger=logger)
-        for tool_id in tool_ids
-    }
+    tool_ids = list(tool_ids)
+    if max_workers <= 1 or len(tool_ids) <= 1:
+        return {
+            tool_id: load_predictor_scores(tool_id, predictions[tool_id], root, logger=logger)
+            for tool_id in tool_ids
+        }
+
+    loaded_by_tool = {}
+    worker_count = min(int(max_workers), len(tool_ids))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_to_tool = {
+            executor.submit(
+                load_predictor_scores,
+                tool_id,
+                predictions[tool_id],
+                root,
+                logger=logger,
+            ): tool_id
+            for tool_id in tool_ids
+        }
+        for future in as_completed(future_to_tool):
+            tool_id = future_to_tool[future]
+            loaded_by_tool[tool_id] = future.result()
+    return {tool_id: loaded_by_tool[tool_id] for tool_id in tool_ids}
 
 
 def _select_loaded_tool_scores(

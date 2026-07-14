@@ -23,6 +23,7 @@ predictors:
   tool_id: [targetscan, mirdb_mirtarget, microt_cnn, mirbind2, miraw]
 
 evaluation:
+  parallel_workers: 4
   fdr_threshold: null
   effect_threshold: 1.0
   predictor_top_fraction: 0.10

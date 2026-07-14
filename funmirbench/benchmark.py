@@ -86,6 +86,13 @@ def _optional_bool(value, default=False):
     raise ValueError(f"Expected a boolean value, got {value!r}")
 
 
+def _positive_int(value, *, name):
+    parsed = int(value)
+    if parsed < 1:
+        raise ValueError(f"{name} must be >= 1, got {value!r}")
+    return parsed
+
+
 def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
     dataset_plots_dir = plots_dir / dataset_id
     if dataset_plots_dir.exists():
@@ -219,6 +226,7 @@ def run_benchmark(config_path):
         eval_cfg.get("report_min_common_coverage", eval_cfg.get("publication_min_common_coverage", 0.10))
     )
     protein_coding_only = _optional_bool(eval_cfg.get("protein_coding_only"), True)
+    parallel_workers = _positive_int(eval_cfg.get("parallel_workers", 1), name="evaluation.parallel_workers")
 
     logger.info("Loading predictors...")
     predictions = load_predictions(
@@ -310,11 +318,12 @@ def run_benchmark(config_path):
     common_prediction_summaries = []
     logger.info(f"Experiments: {len(experiments)}")
     logger.info(f"Predictors:  {tool_ids}")
-    logger.info("Loading predictor score files once for this run...")
+    logger.info("Loading predictor score files once for this run with %d worker(s)...", parallel_workers)
     predictor_cache = load_predictor_score_cache(
         tool_ids,
         predictions,
         root,
+        max_workers=parallel_workers,
         logger=logger.info,
     )
 
