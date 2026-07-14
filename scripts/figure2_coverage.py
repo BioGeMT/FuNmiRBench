@@ -56,6 +56,7 @@ INTERSECTION_COLORS = {
 }
 PREDICTOR_BAR_ALPHA = 0.35
 IGS_BAR_ALPHA = 0.55
+BAR_LABEL_FONTSIZE = 12
 
 OE_ALIASES = {
     "OE",
@@ -439,14 +440,14 @@ def panel_a_experiment_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, pl
     ax.set_ylabel("Experiments retained")
     ax.set_ylim(0, max(total_experiments * 1.16, 1))
     set_panel_title(ax, "A", "Experiment coverage")
-    for bar, value in zip(bars, summary["experiments_retained"]):
+    for bar, percentage in zip(bars, summary["experiment_coverage"]):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height(),
-            f"{int(value)}/{total_experiments}",
+            f"{percentage:.1%}",
             ha="center",
             va="bottom",
-            fontsize=10,
+            fontsize=BAR_LABEL_FONTSIZE,
         )
     style_axis(ax)
     fig.tight_layout()
@@ -533,16 +534,14 @@ def panel_b_gene_set_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, plt.
         va="top",
         fontsize=10,
     )
-    for bar, count, percentage in zip(
-        bars, summary["gene_count"], summary["fgs_coverage"]
-    ):
+    for bar, percentage in zip(bars, summary["fgs_coverage"]):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height(),
-            f"{int(count):,}\n({percentage:.1%})",
+            f"{percentage:.1%}",
             ha="center",
             va="bottom",
-            fontsize=9.5,
+            fontsize=BAR_LABEL_FONTSIZE,
         )
     style_axis(ax)
     fig.tight_layout()
@@ -606,19 +605,14 @@ def pair_coverage_figure(
     ax.set_ylabel(ylabel)
     ax.set_ylim(0, 110)
     set_panel_title(ax, panel, title)
-    for bar, numerator, denominator, percentage in zip(
-        bars,
-        summary[numerator_column],
-        summary[denominator_column],
-        summary[coverage_column],
-    ):
+    for bar, percentage in zip(bars, summary[coverage_column]):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height(),
-            f"{percentage:.1%}\n{int(numerator):,}/{int(denominator):,}",
+            f"{percentage:.1%}",
             ha="center",
             va="bottom",
-            fontsize=9.5,
+            fontsize=BAR_LABEL_FONTSIZE,
         )
     style_axis(ax)
     fig.tight_layout()
@@ -661,6 +655,134 @@ def panel_d_background_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, pl
         panel="D",
     )
     return summary, fig
+
+
+def predictor_mean_mirnas_per_scored_gene(inputs: Figure2Inputs) -> pd.DataFrame:
+    all_pairs = pd.concat(
+        [
+            dataset.frame.assign(dataset_id=dataset.dataset_id)
+            for dataset in inputs.datasets
+        ],
+        ignore_index=True,
+    )
+    rows = []
+    for tool_id in inputs.tool_ids:
+        scored = (
+            all_pairs.loc[
+                all_pairs[score_column(tool_id)].notna(),
+                ["gene_id", "mirna"],
+            ]
+            .dropna()
+            .copy()
+        )
+        total_pairs = int(scored.shape[0])
+        per_gene = (
+            scored.drop_duplicates(["gene_id", "mirna"])
+            .groupby("gene_id")["mirna"]
+            .nunique()
+        )
+        rows.append(
+            {
+                "tool_id": tool_id,
+                "total_scored_pairs": total_pairs,
+                "mean_mirnas_per_scored_gene": (
+                    float(per_gene.mean()) if len(per_gene) else np.nan
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def write_supplementary_coverage_table(
+    *,
+    inputs: Figure2Inputs,
+    manuscript_out_dir: Path,
+) -> Path:
+    experiment, experiment_fig = panel_a_experiment_coverage(inputs)
+    plt.close(experiment_fig)
+    experiment = experiment.rename(
+        columns={
+            "experiments_retained": "panel_a_experiments_retained",
+            "experiments_total": "panel_a_experiments_total",
+            "experiments_excluded": "panel_a_experiments_excluded",
+            "experiment_coverage": "panel_a_experiment_coverage",
+        }
+    )
+    gene, gene_fig = panel_b_gene_set_coverage(inputs)
+    plt.close(gene_fig)
+    gene = gene.rename(
+        columns={
+            "set_id": "tool_id",
+            "label": "predictor",
+            "gene_count": "panel_b_gene_count",
+            "fgs_gene_count": "panel_b_fgs_gene_count",
+            "fgs_coverage": "panel_b_fgs_coverage",
+        }
+    )
+    positive, positive_fig = panel_c_positive_coverage(inputs)
+    plt.close(positive_fig)
+    positive = positive.rename(
+        columns={
+            "positive_pairs_scored": "panel_c_positive_pairs_scored",
+            "positive_pairs_total": "panel_c_positive_pairs_total",
+            "positive_coverage": "panel_c_positive_pair_coverage",
+        }
+    )
+    background, background_fig = panel_d_background_coverage(inputs)
+    plt.close(background_fig)
+    background = background.rename(
+        columns={
+            "background_pairs_scored": "panel_d_background_pairs_scored",
+            "background_pairs_total": "panel_d_background_pairs_total",
+            "background_coverage": "panel_d_background_pair_coverage",
+        }
+    )
+    mirnas_per_gene = predictor_mean_mirnas_per_scored_gene(inputs)
+
+    for frame in (experiment, positive, background):
+        if "predictor" in frame.columns:
+            frame.drop(columns=["predictor"], inplace=True)
+
+    table = gene.merge(experiment, on="tool_id", how="left")
+    table = table.merge(positive, on="tool_id", how="left")
+    table = table.merge(background, on="tool_id", how="left")
+    table = table.merge(mirnas_per_gene, on="tool_id", how="left")
+    table.insert(
+        1,
+        "predictor_name",
+        table["tool_id"].map(inputs.tool_labels).fillna(table["predictor"]),
+    )
+    table.loc[
+        table["tool_id"] == "all_algorithm_intersection",
+        "predictor_name",
+    ] = "IGS (all algorithms)"
+
+    columns = [
+        "tool_id",
+        "predictor_name",
+        "set_type",
+        "panel_a_experiments_retained",
+        "panel_a_experiments_total",
+        "panel_a_experiments_excluded",
+        "panel_a_experiment_coverage",
+        "panel_b_gene_count",
+        "panel_b_fgs_gene_count",
+        "panel_b_fgs_coverage",
+        "panel_c_positive_pairs_scored",
+        "panel_c_positive_pairs_total",
+        "panel_c_positive_pair_coverage",
+        "panel_d_background_pairs_scored",
+        "panel_d_background_pairs_total",
+        "panel_d_background_pair_coverage",
+        "total_scored_pairs",
+        "mean_mirnas_per_scored_gene",
+    ]
+    table = table[columns]
+    path = manuscript_out_dir / "figure2_supplementary_coverage_table.tsv"
+    manuscript_out_dir.mkdir(parents=True, exist_ok=True)
+    table.to_csv(path, sep="\t", index=False)
+    print(f"Wrote supplementary Figure 2 table: {path}")
+    return path
 
 
 def write_panel(
@@ -850,6 +972,10 @@ def main() -> None:
         )
     if tuple(panels) == ("A", "B", "C", "D"):
         write_combined_figure(panel_outputs, out_dir=manuscript_out_dir, dpi=args.dpi)
+        write_supplementary_coverage_table(
+            inputs=inputs,
+            manuscript_out_dir=manuscript_out_dir,
+        )
 
 
 if __name__ == "__main__":
