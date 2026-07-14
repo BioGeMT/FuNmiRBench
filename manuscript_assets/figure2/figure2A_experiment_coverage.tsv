@@ -1,0 +1,6 @@
+tool_id	predictor	experiments_retained	experiments_total	experiments_excluded	experiment_coverage	excluded_dataset_ids
+targetscan	TargetScan v8	27	31	4	0.8709677419354839	GSE129076_OE_miR_450a_5p_2;GSE175729_OE_miR-1915-3p_Kelly;GSE259375_KO_miR_125b-5p_HCA7;GSE51217_KO_miR-200c-3p_SK-BR-3
+mirdb_mirtarget	miRDB	29	31	2	0.9354838709677419	GSE129076_OE_miR_450a_5p_2;GSE259375_KO_miR_125b-5p_HCA7
+microt_cnn	microT-CNN	31	31	0	1.0	
+mirbind2	miRBind2-UTR	31	31	0	1.0	
+miraw	miRAW	31	31	0	1.0	

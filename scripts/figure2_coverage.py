@@ -3,13 +3,14 @@
 
 The script reads the ``joined.tsv`` files from one completed FuNmiRBench run and
 writes each panel as a separate publication-ready plot plus the exact summary
-values used to draw it.
+values used to draw it. Stable manuscript assets are written to
+``manuscript_assets/figure2``.
 
 Panel definitions
 -----------------
 A. Number of benchmark experiments retained for each predictor.
 B. Predictor gene-set coverage across the full benchmark gene universe, plus
-   the Intersection Gene Set (IGS) shared by all predictors.
+   the all-algorithm Intersection Gene Set (IGS).
 C. Coverage of perturbation-consistent positive miRNA-gene pairs.
 D. Coverage of background/non-positive miRNA-gene pairs.
 
@@ -24,11 +25,13 @@ Generate all panels from a specific run::
 Outputs are written by default to::
 
     results/manuscript_figure2/<run-name>/panel_<letter>/
+    manuscript_assets/figure2/
 """
 
 from __future__ import annotations
 
 import argparse
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -43,12 +46,16 @@ from funmirbench.evaluate_common import CURVE_COLORS
 DEFAULT_RESULTS_DIR = Path("results")
 DEFAULT_METADATA_PATH = Path("metadata/predictions_info.tsv")
 DEFAULT_OUTPUT_ROOT = Path("results/manuscript_figure2")
+DEFAULT_MANUSCRIPT_OUTPUT_DIR = Path("manuscript_assets/figure2")
 DEFAULT_FORMATS = ("png", "svg")
 RUN_EFFECT_THRESHOLD = 1.0
 RUN_FDR_THRESHOLD = 0.05
 PANEL_CHOICES = ("A", "B", "C", "D", "all")
-IGS_COLOR = "#9E9E9E"
-FGS_COLOR = "#424242"
+INTERSECTION_COLORS = {
+    "all_algorithm_intersection": "#7A8798",
+}
+PREDICTOR_BAR_ALPHA = 0.35
+IGS_BAR_ALPHA = 0.55
 
 OE_ALIASES = {
     "OE",
@@ -122,6 +129,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Output directory. Default: results/manuscript_figure2/<run-name>/.",
+    )
+    parser.add_argument(
+        "--manuscript-out-dir",
+        type=Path,
+        default=DEFAULT_MANUSCRIPT_OUTPUT_DIR,
+        help="Stable manuscript output directory. Default: manuscript_assets/figure2/.",
     )
     parser.add_argument(
         "--dpi",
@@ -329,21 +342,35 @@ def style_axis(ax: plt.Axes) -> None:
     ax.set_axisbelow(True)
 
 
+def set_panel_title(ax: plt.Axes, letter: str, title: str) -> None:
+    ax.text(
+        -0.12,
+        1.07,
+        letter,
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=15,
+        fontweight="bold",
+    )
+    ax.set_title(title, pad=18, fontsize=14, fontweight="bold")
+
+
 def save_panel(
     fig: plt.Figure,
     *,
     out_dir: Path,
     stem: str,
     dpi: int,
-) -> None:
+) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
     for extension in DEFAULT_FORMATS:
-        fig.savefig(
-            out_dir / f"{stem}.{extension}",
-            dpi=dpi,
-            bbox_inches="tight",
-        )
+        path = out_dir / f"{stem}.{extension}"
+        fig.savefig(path, dpi=dpi, bbox_inches="tight")
+        paths.append(path)
     plt.close(fig)
+    return paths
 
 
 def load_experiment_metric_table(run_dir: Path) -> pd.DataFrame | None:
@@ -403,21 +430,20 @@ def panel_a_experiment_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, pl
         x,
         summary["experiments_retained"].to_numpy(),
         color=colors,
+        edgecolor=colors,
+        alpha=PREDICTOR_BAR_ALPHA,
+        linewidth=1.0,
     )
     ax.axhline(total_experiments, linestyle="--", linewidth=1.2, color="black")
     ax.set_xticks(x, summary["predictor"], rotation=25, ha="right")
     ax.set_ylabel("Experiments retained")
     ax.set_ylim(0, max(total_experiments * 1.16, 1))
-    ax.set_title("A  Experiment coverage")
-    for bar, value, percentage in zip(
-        bars,
-        summary["experiments_retained"],
-        summary["experiment_coverage"],
-    ):
+    set_panel_title(ax, "A", "Experiment coverage")
+    for bar, value in zip(bars, summary["experiments_retained"]):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height(),
-            f"{int(value)}/{total_experiments}\n({percentage:.1%})",
+            f"{int(value)}/{total_experiments}",
             ha="center",
             va="bottom",
             fontsize=10,
@@ -444,10 +470,6 @@ def panel_b_gene_set_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, plt.
         )
         for tool_id in inputs.tool_ids
     }
-    igs_genes = (
-        set.intersection(*scored_gene_sets.values()) if scored_gene_sets else set()
-    )
-
     rows = []
     denominator = len(fgs_genes)
     for tool_id in inputs.tool_ids:
@@ -462,45 +484,55 @@ def panel_b_gene_set_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, plt.
                 "set_type": "predictor",
             }
         )
-    rows.extend(
-        [
-            {
-                "set_id": "IGS",
-                "label": "IGS",
-                "gene_count": len(igs_genes),
-                "fgs_gene_count": denominator,
-                "fgs_coverage": len(igs_genes) / denominator if denominator else np.nan,
-                "set_type": "intersection",
-            },
-            {
-                "set_id": "FGS",
-                "label": "FGS",
-                "gene_count": denominator,
-                "fgs_gene_count": denominator,
-                "fgs_coverage": 1.0 if denominator else np.nan,
-                "set_type": "full",
-            },
-        ]
+
+    available_sets = [scored_gene_sets[tool_id] for tool_id in inputs.tool_ids]
+    igs_genes = set.intersection(*available_sets) if available_sets else set()
+    rows.append(
+        {
+            "set_id": "all_algorithm_intersection",
+            "label": "IGS\n(all algorithms)",
+            "gene_count": len(igs_genes),
+            "fgs_gene_count": denominator,
+            "fgs_coverage": len(igs_genes) / denominator if denominator else np.nan,
+            "set_type": "intersection",
+        }
     )
     summary = pd.DataFrame(rows)
 
     colors = [
         inputs.tool_colors[set_id]
         if set_id in inputs.tool_colors
-        else IGS_COLOR if set_id == "IGS" else FGS_COLOR
+        else INTERSECTION_COLORS[set_id]
         for set_id in summary["set_id"]
     ]
-    fig, ax = plt.subplots(figsize=(8.0, 4.8))
+    fig, ax = plt.subplots(figsize=(8.8, 4.8))
     x = np.arange(len(summary))
+    alphas = [
+        PREDICTOR_BAR_ALPHA if set_type == "predictor" else IGS_BAR_ALPHA
+        for set_type in summary["set_type"]
+    ]
     bars = ax.bar(
         x,
         100.0 * summary["fgs_coverage"].to_numpy(),
         color=colors,
+        edgecolor=colors,
+        linewidth=1.0,
     )
+    for bar, alpha in zip(bars, alphas):
+        bar.set_alpha(alpha)
     ax.set_xticks(x, summary["label"], rotation=25, ha="right")
-    ax.set_ylabel("Unique gene coverage of FGS (%)")
+    ax.set_ylabel("Genes covered (%)")
     ax.set_ylim(0, 110)
-    ax.set_title("B  Gene-set coverage and common intersection")
+    set_panel_title(ax, "B", "Gene-set coverage and IGS")
+    ax.text(
+        0.01,
+        0.96,
+        f"FGS: {denominator:,} genes",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=10,
+    )
     for bar, count, percentage in zip(
         bars, summary["gene_count"], summary["fgs_coverage"]
     ):
@@ -556,16 +588,24 @@ def pair_coverage_figure(
     denominator_column: str,
     title: str,
     ylabel: str,
+    panel: str,
 ) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(7.2, 4.8))
     x = np.arange(len(summary))
     percentages = 100.0 * summary[coverage_column].to_numpy()
     colors = [inputs.tool_colors[tool_id] for tool_id in summary["tool_id"]]
-    bars = ax.bar(x, percentages, color=colors)
+    bars = ax.bar(
+        x,
+        percentages,
+        color=colors,
+        edgecolor=colors,
+        alpha=PREDICTOR_BAR_ALPHA,
+        linewidth=1.0,
+    )
     ax.set_xticks(x, summary["predictor"], rotation=25, ha="right")
     ax.set_ylabel(ylabel)
     ax.set_ylim(0, 110)
-    ax.set_title(title)
+    set_panel_title(ax, panel, title)
     for bar, numerator, denominator, percentage in zip(
         bars,
         summary[numerator_column],
@@ -597,8 +637,9 @@ def panel_c_positive_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, plt.
         coverage_column="positive_coverage",
         numerator_column="positive_pairs_scored",
         denominator_column="positive_pairs_total",
-        title="C  Perturbation-consistent positive coverage",
-        ylabel="Positive pair coverage (%)",
+        title="Positive miRNA-gene pair coverage",
+        ylabel="Positive miRNA-gene pairs covered (%)",
+        panel="C",
     )
     return summary, fig
 
@@ -615,8 +656,9 @@ def panel_d_background_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, pl
         coverage_column="background_coverage",
         numerator_column="background_pairs_scored",
         denominator_column="background_pairs_total",
-        title="D  Background/non-positive coverage",
-        ylabel="Background pair coverage (%)",
+        title="Background miRNA-gene pair coverage",
+        ylabel="Background miRNA-gene pairs covered (%)",
+        panel="D",
     )
     return summary, fig
 
@@ -626,8 +668,9 @@ def write_panel(
     *,
     inputs: Figure2Inputs,
     out_dir: Path,
+    manuscript_out_dir: Path,
     dpi: int,
-) -> None:
+) -> dict[str, Path]:
     builders = {
         "A": panel_a_experiment_coverage,
         "B": panel_b_gene_set_coverage,
@@ -643,9 +686,136 @@ def write_panel(
     }[panel]
     panel_dir = out_dir / f"panel_{panel}"
     panel_dir.mkdir(parents=True, exist_ok=True)
-    summary.to_csv(panel_dir / f"{stem}.tsv", sep="\t", index=False)
-    save_panel(fig, out_dir=panel_dir, stem=stem, dpi=dpi)
+    table_path = panel_dir / f"{stem}.tsv"
+    summary.to_csv(table_path, sep="\t", index=False)
+    figure_paths = save_panel(fig, out_dir=panel_dir, stem=stem, dpi=dpi)
+    manuscript_out_dir.mkdir(parents=True, exist_ok=True)
+    manuscript_table = manuscript_out_dir / f"{stem}.tsv"
+    shutil.copy2(table_path, manuscript_table)
+    manuscript_figures = {}
+    for figure_path in figure_paths:
+        manuscript_path = manuscript_out_dir / figure_path.name
+        shutil.copy2(figure_path, manuscript_path)
+        manuscript_figures[figure_path.suffix.lstrip(".")] = manuscript_path
     print(f"Wrote panel {panel}: {panel_dir / stem}")
+    return {
+        "table": manuscript_table,
+        **manuscript_figures,
+    }
+
+
+def trim_white_border(image: np.ndarray, *, threshold: float = 0.985, pad: int = 16) -> np.ndarray:
+    rgb = image[..., :3]
+    nonwhite = np.any(rgb < threshold, axis=2)
+    if not np.any(nonwhite):
+        return image
+    rows = np.where(nonwhite.any(axis=1))[0]
+    cols = np.where(nonwhite.any(axis=0))[0]
+    top = max(int(rows[0]) - pad, 0)
+    bottom = min(int(rows[-1]) + pad + 1, image.shape[0])
+    left = max(int(cols[0]) - pad, 0)
+    right = min(int(cols[-1]) + pad + 1, image.shape[1])
+    return image[top:bottom, left:right]
+
+
+def pad_to_shape(
+    image: np.ndarray,
+    shape: tuple[int, int],
+    *,
+    vertical: str = "center",
+    horizontal: str = "center",
+) -> np.ndarray:
+    target_height, target_width = shape
+    height, width = image.shape[:2]
+    if height > target_height or width > target_width:
+        raise ValueError("Target shape must be at least as large as the image.")
+
+    channels = image.shape[2] if image.ndim == 3 else 1
+    canvas_shape = (target_height, target_width, channels)
+    canvas = np.ones(canvas_shape, dtype=image.dtype)
+    if vertical == "top":
+        top = 0
+    elif vertical == "bottom":
+        top = target_height - height
+    else:
+        top = (target_height - height) // 2
+    if horizontal == "left":
+        left = 0
+    elif horizontal == "right":
+        left = target_width - width
+    else:
+        left = (target_width - width) // 2
+    canvas[top : top + height, left : left + width, ...] = image
+    return canvas
+
+
+def write_combined_figure(panel_outputs: dict[str, dict[str, Path]], *, out_dir: Path, dpi: int) -> None:
+    required = ("A", "B", "C", "D")
+    missing = [panel for panel in required if panel not in panel_outputs or "png" not in panel_outputs[panel]]
+    if missing:
+        return
+
+    panel_images = {
+        panel: trim_white_border(plt.imread(panel_outputs[panel]["png"]))
+        for panel in required
+    }
+    row_heights = [
+        max(panel_images[panel].shape[0] for panel in ("A", "B")),
+        max(panel_images[panel].shape[0] for panel in ("C", "D")),
+    ]
+    column_widths = [
+        max(panel_images[panel].shape[1] for panel in ("A", "C")),
+        max(panel_images[panel].shape[1] for panel in ("B", "D")),
+    ]
+    cells = {
+        "A": pad_to_shape(panel_images["A"], (row_heights[0], column_widths[0]), vertical="top"),
+        "B": pad_to_shape(panel_images["B"], (row_heights[0], column_widths[1]), vertical="top"),
+        "C": pad_to_shape(panel_images["C"], (row_heights[1], column_widths[0]), vertical="top"),
+        "D": pad_to_shape(panel_images["D"], (row_heights[1], column_widths[1]), vertical="top"),
+    }
+
+    gap_x = 90
+    gap_y = 20
+    channels = next(iter(cells.values())).shape[2]
+    dtype = next(iter(cells.values())).dtype
+    top_row = np.hstack(
+        [
+            cells["A"],
+            np.ones((row_heights[0], gap_x, channels), dtype=dtype),
+            cells["B"],
+        ]
+    )
+    bottom_row = np.hstack(
+        [
+            cells["C"],
+            np.ones((row_heights[1], gap_x, channels), dtype=dtype),
+            cells["D"],
+        ]
+    )
+    combined = np.vstack(
+        [
+            top_row,
+            np.ones((gap_y, top_row.shape[1], channels), dtype=dtype),
+            bottom_row,
+        ]
+    )
+
+    fig_width = 16.2
+    fig_height = fig_width * combined.shape[0] / combined.shape[1]
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    ax.imshow(combined)
+    ax.axis("off")
+    fig.subplots_adjust(
+        left=0,
+        right=1,
+        top=1,
+        bottom=0,
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for extension in DEFAULT_FORMATS:
+        fig.savefig(out_dir / f"figure2_combined.{extension}", dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Wrote combined Figure 2: {out_dir / 'figure2_combined'}")
 
 
 def main() -> None:
@@ -653,6 +823,7 @@ def main() -> None:
     run_dir = (args.run_dir or find_latest_completed_run(args.results_dir)).resolve()
     metadata_path = args.metadata.resolve()
     out_dir = (args.out_dir or DEFAULT_OUTPUT_ROOT / run_dir.name).resolve()
+    manuscript_out_dir = args.manuscript_out_dir.resolve()
 
     inputs = prepare_inputs(
         run_dir=run_dir,
@@ -664,16 +835,21 @@ def main() -> None:
     panels = ("A", "B", "C", "D") if args.panel == "all" else (args.panel,)
     print(f"Run directory: {run_dir}")
     print(f"Output directory: {out_dir}")
+    print(f"Manuscript output directory: {manuscript_out_dir}")
     print(f"Datasets: {len(inputs.datasets)}")
     print(f"Predictors: {', '.join(inputs.tool_ids)}")
     print("Ground-truth filters: inherited from the completed benchmark run")
+    panel_outputs = {}
     for panel in panels:
-        write_panel(
+        panel_outputs[panel] = write_panel(
             panel,
             inputs=inputs,
             out_dir=out_dir,
+            manuscript_out_dir=manuscript_out_dir,
             dpi=args.dpi,
         )
+    if tuple(panels) == ("A", "B", "C", "D"):
+        write_combined_figure(panel_outputs, out_dir=manuscript_out_dir, dpi=args.dpi)
 
 
 if __name__ == "__main__":
