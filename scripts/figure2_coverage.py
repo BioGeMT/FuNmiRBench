@@ -785,7 +785,7 @@ def write_supplementary_coverage_table(
     return path
 
 
-def write_pairwise_gene_set_overlap_table(
+def write_gene_set_overlap_table(
     *,
     inputs: Figure2Inputs,
     manuscript_out_dir: Path,
@@ -807,64 +807,7 @@ def write_pairwise_gene_set_overlap_table(
     }
 
     rows = []
-    for predictor_a, predictor_b in itertools.combinations(inputs.tool_ids, 2):
-        genes_a = scored_gene_sets[predictor_a]
-        genes_b = scored_gene_sets[predictor_b]
-        intersection = genes_a & genes_b
-        union = genes_a | genes_b
-        n_a = len(genes_a)
-        n_b = len(genes_b)
-        n_intersection = len(intersection)
-        n_union = len(union)
-        rows.append(
-            {
-                "predictor_a": inputs.tool_labels[predictor_a],
-                "predictor_b": inputs.tool_labels[predictor_b],
-                "n_a": n_a,
-                "n_b": n_b,
-                "intersection": n_intersection,
-                "union": n_union,
-                "only_a": len(genes_a - genes_b),
-                "only_b": len(genes_b - genes_a),
-                "jaccard": n_intersection / n_union if n_union else np.nan,
-                "overlap_coefficient": (
-                    n_intersection / min(n_a, n_b) if min(n_a, n_b) else np.nan
-                ),
-                "fraction_a_in_b": n_intersection / n_a if n_a else np.nan,
-                "fraction_b_in_a": n_intersection / n_b if n_b else np.nan,
-            }
-        )
-
-    path = manuscript_out_dir / "figure2_pairwise_gene_set_overlap.tsv"
-    manuscript_out_dir.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(rows).to_csv(path, sep="\t", index=False)
-    print(f"Wrote pairwise Figure 2 gene-set overlap table: {path}")
-    return path
-
-
-def write_multiway_gene_set_overlap_table(
-    *,
-    inputs: Figure2Inputs,
-    manuscript_out_dir: Path,
-) -> Path:
-    all_pairs = pd.concat(
-        [
-            dataset.frame.assign(dataset_id=dataset.dataset_id)
-            for dataset in inputs.datasets
-        ],
-        ignore_index=True,
-    )
-    scored_gene_sets = {
-        tool_id: set(
-            all_pairs.loc[all_pairs[score_column(tool_id)].notna(), "gene_id"]
-            .dropna()
-            .astype(str)
-        )
-        for tool_id in inputs.tool_ids
-    }
-
-    rows = []
-    for combination_size in range(3, len(inputs.tool_ids) + 1):
+    for combination_size in range(2, len(inputs.tool_ids) + 1):
         for combination in itertools.combinations(inputs.tool_ids, combination_size):
             gene_sets = [scored_gene_sets[tool_id] for tool_id in combination]
             intersection = set.intersection(*gene_sets)
@@ -892,6 +835,13 @@ def write_multiway_gene_set_overlap_table(
                     else np.nan
                 ),
             }
+            if combination_size == 2:
+                genes_a, genes_b = gene_sets
+                row["only_first"] = len(genes_a - genes_b)
+                row["only_second"] = len(genes_b - genes_a)
+            else:
+                row["only_first"] = np.nan
+                row["only_second"] = np.nan
             for tool_id in inputs.tool_ids:
                 if tool_id in predictor_sizes:
                     row[f"fraction_intersection_in_{tool_id}"] = (
@@ -903,10 +853,10 @@ def write_multiway_gene_set_overlap_table(
                     row[f"fraction_intersection_in_{tool_id}"] = np.nan
             rows.append(row)
 
-    path = manuscript_out_dir / "figure2_multiway_gene_set_overlap.tsv"
+    path = manuscript_out_dir / "figure2_gene_set_overlap.tsv"
     manuscript_out_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(path, sep="\t", index=False)
-    print(f"Wrote multiway Figure 2 gene-set overlap table: {path}")
+    print(f"Wrote Figure 2 gene-set overlap table: {path}")
     return path
 
 
@@ -1101,11 +1051,7 @@ def main() -> None:
             inputs=inputs,
             manuscript_out_dir=manuscript_out_dir,
         )
-        write_pairwise_gene_set_overlap_table(
-            inputs=inputs,
-            manuscript_out_dir=manuscript_out_dir,
-        )
-        write_multiway_gene_set_overlap_table(
+        write_gene_set_overlap_table(
             inputs=inputs,
             manuscript_out_dir=manuscript_out_dir,
         )
