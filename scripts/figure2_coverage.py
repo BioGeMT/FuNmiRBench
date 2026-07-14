@@ -31,10 +31,14 @@ Outputs are written by default to::
 from __future__ import annotations
 
 import argparse
+import gzip
 import itertools
+import math
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Iterable
 
 import matplotlib.pyplot as plt
@@ -51,7 +55,13 @@ DEFAULT_MANUSCRIPT_OUTPUT_DIR = Path("manuscript_assets/figure2")
 DEFAULT_FORMATS = ("png", "svg")
 RUN_EFFECT_THRESHOLD = 1.0
 RUN_FDR_THRESHOLD = 0.05
-PANEL_CHOICES = ("A", "B", "C", "D", "all")
+PANEL_CHOICES = ("A", "B", "C", "D", "E", "F", "all")
+DEFAULT_CONSERVATION_TABLE = Path(
+    "results/manuscript_supplement_utr_conservation/20260709_122904/"
+    "utr3_conservation_raw.tsv"
+)
+DEFAULT_GTF = Path("data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz")
+ATTR_RE = re.compile(r'([A-Za-z0-9_]+) "([^"]*)"')
 INTERSECTION_COLORS = {
     "all_algorithm_intersection": "#7A8798",
 }
@@ -143,6 +153,21 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=300,
         help="Raster output resolution.",
+    )
+    parser.add_argument(
+        "--gtf",
+        type=Path,
+        default=DEFAULT_GTF,
+        help="GTF used to derive longest protein-coding transcript 3'UTR lengths.",
+    )
+    parser.add_argument(
+        "--conservation-table",
+        type=Path,
+        default=DEFAULT_CONSERVATION_TABLE,
+        help=(
+            "Gene-level 3'UTR conservation table with gene_id and "
+            "utr3_mean_conservation columns, used for panel F."
+        ),
     )
     return parser.parse_args()
 
@@ -369,7 +394,7 @@ def save_panel(
     paths = []
     for extension in DEFAULT_FORMATS:
         path = out_dir / f"{stem}.{extension}"
-        fig.savefig(path, dpi=dpi, bbox_inches="tight")
+        fig.savefig(path, dpi=dpi)
         paths.append(path)
     plt.close(fig)
     return paths
@@ -492,7 +517,7 @@ def panel_b_gene_set_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, plt.
     rows.append(
         {
             "set_id": "all_algorithm_intersection",
-            "label": "IGS\n(all algorithms)",
+            "label": "IGS",
             "gene_count": len(igs_genes),
             "fgs_gene_count": denominator,
             "fgs_coverage": len(igs_genes) / denominator if denominator else np.nan,
@@ -507,7 +532,7 @@ def panel_b_gene_set_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, plt.
         else INTERSECTION_COLORS[set_id]
         for set_id in summary["set_id"]
     ]
-    fig, ax = plt.subplots(figsize=(8.8, 4.8))
+    fig, ax = plt.subplots(figsize=(7.2, 4.8))
     x = np.arange(len(summary))
     alphas = [
         PREDICTOR_BAR_ALPHA if set_type == "predictor" else IGS_BAR_ALPHA
@@ -547,6 +572,308 @@ def panel_b_gene_set_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, plt.
     style_axis(ax)
     fig.tight_layout()
     return summary, fig
+
+
+def strip_version(gene_id: object) -> str:
+    return str(gene_id).split(".", 1)[0]
+
+
+def parse_attributes(attributes: str) -> dict[str, str]:
+    return dict(ATTR_RE.findall(attributes))
+
+
+def open_text(path: Path):
+    if path.suffix == ".gz":
+        return gzip.open(path, "rt")
+    return path.open("rt")
+
+
+def merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    if not intervals:
+        return []
+    ordered = sorted(intervals)
+    merged = [ordered[0]]
+    for start, end in ordered[1:]:
+        prev_start, prev_end = merged[-1]
+        if start <= prev_end + 1:
+            merged[-1] = (prev_start, max(prev_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def interval_length(intervals: list[tuple[int, int]]) -> int:
+    return sum(end - start + 1 for start, end in merge_intervals(intervals))
+
+
+def load_max_utr_lengths(gtf_path: Path) -> pd.DataFrame:
+    if not gtf_path.exists():
+        raise FileNotFoundError(f"GTF does not exist: {gtf_path}")
+
+    transcript_intervals: dict[tuple[str, str], list[tuple[int, int]]] = {}
+    with open_text(gtf_path) as handle:
+        for line in handle:
+            if not line or line.startswith("#"):
+                continue
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) < 9 or fields[2] != "three_prime_utr":
+                continue
+            attrs = parse_attributes(fields[8])
+            gene_id = attrs.get("gene_id")
+            transcript_id = attrs.get("transcript_id")
+            if not gene_id or not transcript_id:
+                continue
+            if attrs.get("transcript_biotype") != "protein_coding":
+                continue
+            key = (strip_version(gene_id), transcript_id)
+            transcript_intervals.setdefault(key, []).append(
+                (int(fields[3]), int(fields[4]))
+            )
+
+    gene_lengths: dict[str, int] = {}
+    for (gene_id, _transcript_id), intervals in transcript_intervals.items():
+        length = interval_length(intervals)
+        gene_lengths[gene_id] = max(gene_lengths.get(gene_id, 0), length)
+
+    return pd.DataFrame(
+        {
+            "gene_id": list(gene_lengths.keys()),
+            "utr3_length": list(gene_lengths.values()),
+        }
+    )
+
+
+def load_conservation_table(path: Path) -> pd.DataFrame:
+    sep = "," if path.suffix.lower() == ".csv" else "\t"
+    table = pd.read_csv(path, sep=sep)
+    required = {"gene_id", "utr3_mean_conservation"}
+    missing = required.difference(table.columns)
+    if missing:
+        raise ValueError(f"{path} is missing columns: {sorted(missing)}")
+    out = table[["gene_id", "utr3_mean_conservation"]].copy()
+    out["gene_id"] = out["gene_id"].map(strip_version)
+    out["utr3_mean_conservation"] = pd.to_numeric(
+        out["utr3_mean_conservation"],
+        errors="coerce",
+    )
+    return out.dropna(subset=["gene_id", "utr3_mean_conservation"])
+
+
+def annotate_sets(values: pd.DataFrame, gene_sets: SimpleNamespace) -> pd.DataFrame:
+    work = values.copy()
+    work["gene_id"] = work["gene_id"].map(strip_version)
+    work = work[work["gene_id"].isin(gene_sets.fgs)].copy()
+    work["gene_set"] = np.where(work["gene_id"].isin(gene_sets.igs), "IGS", "non-IGS")
+    return work
+
+
+def mann_whitney_pvalue(a: pd.Series, b: pd.Series) -> float:
+    values = pd.concat(
+        [
+            pd.DataFrame({"value": a.astype(float), "group": "a"}),
+            pd.DataFrame({"value": b.astype(float), "group": "b"}),
+        ],
+        ignore_index=True,
+    ).dropna()
+    n1 = int((values["group"] == "a").sum())
+    n2 = int((values["group"] == "b").sum())
+    if n1 == 0 or n2 == 0:
+        return float("nan")
+
+    values["rank"] = values["value"].rank(method="average")
+    rank_sum_a = float(values.loc[values["group"] == "a", "rank"].sum())
+    u1 = rank_sum_a - n1 * (n1 + 1) / 2.0
+    mean_u = n1 * n2 / 2.0
+    tie_counts = values["value"].value_counts()
+    tie_term = float(((tie_counts**3) - tie_counts).sum())
+    n = n1 + n2
+    variance = n1 * n2 / 12.0 * ((n + 1) - tie_term / (n * (n - 1)))
+    if variance <= 0:
+        return float("nan")
+    z = (u1 - mean_u) / math.sqrt(variance)
+    return math.erfc(abs(z) / math.sqrt(2.0))
+
+
+def metric_stats(frame: pd.DataFrame, *, metric: str, label: str) -> dict[str, object]:
+    igs = frame.loc[frame["gene_set"] == "IGS", metric].dropna()
+    non = frame.loc[frame["gene_set"] == "non-IGS", metric].dropna()
+    pvalue = mann_whitney_pvalue(igs, non)
+    return {
+        "metric": label,
+        "n_igs": int(igs.size),
+        "n_non_igs": int(non.size),
+        "mean_igs": float(igs.mean()) if not igs.empty else np.nan,
+        "mean_non_igs": float(non.mean()) if not non.empty else np.nan,
+        "mean_difference_igs_minus_non_igs": (
+            float(igs.mean() - non.mean()) if not igs.empty and not non.empty else np.nan
+        ),
+        "median_igs": float(igs.median()) if not igs.empty else np.nan,
+        "median_non_igs": float(non.median()) if not non.empty else np.nan,
+        "mann_whitney_pvalue_two_sided_normal_approx": pvalue,
+        "pvalue_label": "<1e-308" if pvalue == 0.0 else f"{pvalue:.3g}",
+    }
+
+
+def smoothed_density(values: pd.Series, *, bins: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    counts, edges = np.histogram(values.dropna().astype(float), bins=bins, density=True)
+    centers = (edges[:-1] + edges[1:]) / 2.0
+    kernel_x = np.linspace(-3.0, 3.0, 21)
+    kernel = np.exp(-0.5 * kernel_x**2)
+    kernel /= kernel.sum()
+    density = np.convolve(counts, kernel, mode="same")
+    return centers, density
+
+
+def plot_metric(
+    ax: plt.Axes,
+    frame: pd.DataFrame,
+    *,
+    metric: str,
+    title: str,
+    xlabel: str,
+    x_upper: float | None = None,
+) -> None:
+    non = frame.loc[frame["gene_set"] == "non-IGS", metric].dropna().astype(float)
+    igs = frame.loc[frame["gene_set"] == "IGS", metric].dropna().astype(float)
+    combined = pd.concat([non, igs], ignore_index=True)
+    upper = float(x_upper) if x_upper is not None else float(combined.max())
+    lower = max(0.0, float(combined.min())) if (combined >= 0).all() else float(combined.min())
+    bins = np.linspace(lower, upper, 90)
+
+    colors = {
+        "non-IGS": "#8FB5D6",
+        "IGS": "#D8766A",
+    }
+    igs_x, igs_y = smoothed_density(igs.clip(lower=lower, upper=upper), bins=bins)
+    non_x, non_y = smoothed_density(non.clip(lower=lower, upper=upper), bins=bins)
+    scale = 0.52 / max(float(igs_y.max()), float(non_y.max()), 1e-12)
+    igs_y = igs_y * scale
+    non_y = non_y * scale
+
+    ax.fill_between(
+        igs_x,
+        0,
+        igs_y,
+        color=colors["IGS"],
+        alpha=0.8,
+        label=f"IGS genes (n={len(igs):,})",
+    )
+    ax.plot(igs_x, igs_y, color=colors["IGS"], linewidth=1.2)
+    ax.fill_between(
+        non_x,
+        0,
+        -non_y,
+        color=colors["non-IGS"],
+        alpha=0.8,
+        label=f"non-IGS genes (n={len(non):,})",
+    )
+    ax.plot(non_x, -non_y, color=colors["non-IGS"], linewidth=1.2)
+    ax.axhline(0, color="#888888", linewidth=0.8)
+    ax.axvline(igs.median(), ymin=0.50, ymax=0.88, color=colors["IGS"], linewidth=1.2, linestyle="--", alpha=0.95)
+    ax.axvline(non.median(), ymin=0.12, ymax=0.50, color=colors["non-IGS"], linewidth=1.2, linestyle="--", alpha=0.95)
+    ax.set_xlabel(xlabel)
+    ax.set_xlim(lower, upper)
+    ax.set_ylim(-0.62, 0.62)
+    ax.set_yticks([0.28, -0.28], ["IGS genes", "non-IGS genes"])
+    ax.set_ylabel("")
+    ax.set_title(title, fontsize=10, fontweight="bold")
+    ax.legend(frameon=False, fontsize=7, loc="upper right")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.grid(axis="x", alpha=0.18, linewidth=0.8)
+    ax.set_axisbelow(True)
+
+
+def figure2_gene_sets(inputs: Figure2Inputs) -> SimpleNamespace:
+    all_pairs = pd.concat(
+        [
+            dataset.frame.assign(dataset_id=dataset.dataset_id)
+            for dataset in inputs.datasets
+        ],
+        ignore_index=True,
+    )
+    fgs_genes = set(all_pairs["gene_id"].dropna().astype(str))
+    scored_gene_sets = {
+        tool_id: set(
+            all_pairs.loc[all_pairs[score_column(tool_id)].notna(), "gene_id"]
+            .dropna()
+            .astype(str)
+        )
+        for tool_id in inputs.tool_ids
+    }
+    igs_genes = (
+        set.intersection(*scored_gene_sets.values()) if scored_gene_sets else set()
+    )
+    return SimpleNamespace(fgs=fgs_genes, igs=igs_genes)
+
+
+def panel_e_utr_length(
+    inputs: Figure2Inputs,
+    *,
+    gtf_path: Path,
+) -> tuple[pd.DataFrame, plt.Figure]:
+    gene_sets = figure2_gene_sets(inputs)
+    lengths = annotate_sets(load_max_utr_lengths(gtf_path), gene_sets)
+    stats = pd.DataFrame(
+        [metric_stats(lengths, metric="utr3_length", label="3'UTR length")]
+    )
+    stats.insert(1, "fgs_genes", len(gene_sets.fgs))
+    stats.insert(2, "igs_genes", len(gene_sets.igs))
+    stats.insert(3, "non_igs_genes", len(gene_sets.fgs - gene_sets.igs))
+
+    fig, ax = plt.subplots(figsize=(7.2, 4.8))
+    plot_metric(
+        ax,
+        lengths,
+        metric="utr3_length",
+        title="E. 3'UTR length",
+        xlabel="3'UTR length (nt; displayed to 10,000 nt)",
+        x_upper=10000.0,
+    )
+    fig.tight_layout()
+    return stats, fig
+
+
+def panel_f_utr_conservation(
+    inputs: Figure2Inputs,
+    *,
+    conservation_table: Path,
+) -> tuple[pd.DataFrame, plt.Figure]:
+    if not conservation_table.exists():
+        raise FileNotFoundError(
+            "Panel F requires a gene-level conservation table. "
+            f"Missing: {conservation_table}"
+        )
+    gene_sets = figure2_gene_sets(inputs)
+    conservation = annotate_sets(
+        load_conservation_table(conservation_table),
+        gene_sets,
+    )
+    stats = pd.DataFrame(
+        [
+            metric_stats(
+                conservation,
+                metric="utr3_mean_conservation",
+                label="3'UTR mean conservation",
+            )
+        ]
+    )
+    stats.insert(1, "fgs_genes", len(gene_sets.fgs))
+    stats.insert(2, "igs_genes", len(gene_sets.igs))
+    stats.insert(3, "non_igs_genes", len(gene_sets.fgs - gene_sets.igs))
+
+    fig, ax = plt.subplots(figsize=(7.2, 4.8))
+    plot_metric(
+        ax,
+        conservation,
+        metric="utr3_mean_conservation",
+        title="F. 3'UTR conservation",
+        xlabel="Mean 3'UTR conservation score",
+        x_upper=1.0,
+    )
+    fig.tight_layout()
+    return stats, fig
 
 
 def pooled_pair_coverage(
@@ -879,6 +1206,8 @@ def write_panel(
     inputs: Figure2Inputs,
     out_dir: Path,
     manuscript_out_dir: Path,
+    gtf_path: Path,
+    conservation_table: Path,
     dpi: int,
 ) -> dict[str, Path]:
     builders = {
@@ -887,12 +1216,22 @@ def write_panel(
         "C": panel_c_positive_coverage,
         "D": panel_d_background_coverage,
     }
-    summary, fig = builders[panel](inputs)
+    if panel == "E":
+        summary, fig = panel_e_utr_length(inputs, gtf_path=gtf_path)
+    elif panel == "F":
+        summary, fig = panel_f_utr_conservation(
+            inputs,
+            conservation_table=conservation_table,
+        )
+    else:
+        summary, fig = builders[panel](inputs)
     stem = {
         "A": "figure2A_experiment_coverage",
         "B": "figure2B_gene_set_coverage",
         "C": "figure2C_positive_coverage",
         "D": "figure2D_background_coverage",
+        "E": "figure2E_utr_length",
+        "F": "figure2F_utr_conservation",
     }[panel]
     panel_dir = out_dir / f"panel_{panel}"
     panel_dir.mkdir(parents=True, exist_ok=True)
@@ -960,7 +1299,7 @@ def pad_to_shape(
 
 
 def write_combined_figure(panel_outputs: dict[str, dict[str, Path]], *, out_dir: Path, dpi: int) -> None:
-    required = ("A", "B", "C", "D")
+    required = ("A", "B", "C", "D", "E", "F")
     missing = [panel for panel in required if panel not in panel_outputs or "png" not in panel_outputs[panel]]
     if missing:
         return
@@ -969,46 +1308,51 @@ def write_combined_figure(panel_outputs: dict[str, dict[str, Path]], *, out_dir:
         panel: trim_white_border(plt.imread(panel_outputs[panel]["png"]))
         for panel in required
     }
+    row_pairs = (("A", "B"), ("C", "D"), ("E", "F"))
+    column_pairs = (("A", "C", "E"), ("B", "D", "F"))
     row_heights = [
-        max(panel_images[panel].shape[0] for panel in ("A", "B")),
-        max(panel_images[panel].shape[0] for panel in ("C", "D")),
+        max(panel_images[panel].shape[0] for panel in row_pair)
+        for row_pair in row_pairs
     ]
     column_widths = [
-        max(panel_images[panel].shape[1] for panel in ("A", "C")),
-        max(panel_images[panel].shape[1] for panel in ("B", "D")),
+        max(panel_images[panel].shape[1] for panel in column_pair)
+        for column_pair in column_pairs
     ]
     cells = {
         "A": pad_to_shape(panel_images["A"], (row_heights[0], column_widths[0]), vertical="top"),
         "B": pad_to_shape(panel_images["B"], (row_heights[0], column_widths[1]), vertical="top"),
         "C": pad_to_shape(panel_images["C"], (row_heights[1], column_widths[0]), vertical="top"),
         "D": pad_to_shape(panel_images["D"], (row_heights[1], column_widths[1]), vertical="top"),
+        "E": pad_to_shape(panel_images["E"], (row_heights[2], column_widths[0]), vertical="top"),
+        "F": pad_to_shape(panel_images["F"], (row_heights[2], column_widths[1]), vertical="top"),
     }
 
     gap_x = 90
     gap_y = 20
     channels = next(iter(cells.values())).shape[2]
     dtype = next(iter(cells.values())).dtype
-    top_row = np.hstack(
-        [
-            cells["A"],
-            np.ones((row_heights[0], gap_x, channels), dtype=dtype),
-            cells["B"],
-        ]
-    )
-    bottom_row = np.hstack(
-        [
-            cells["C"],
-            np.ones((row_heights[1], gap_x, channels), dtype=dtype),
-            cells["D"],
-        ]
-    )
-    combined = np.vstack(
-        [
-            top_row,
-            np.ones((gap_y, top_row.shape[1], channels), dtype=dtype),
-            bottom_row,
-        ]
-    )
+    rows = []
+    for left_panel, right_panel in row_pairs:
+        rows.append(
+            np.hstack(
+                [
+                    cells[left_panel],
+                    np.ones(
+                        (cells[left_panel].shape[0], gap_x, channels),
+                        dtype=dtype,
+                    ),
+                    cells[right_panel],
+                ]
+            )
+        )
+    combined_parts = []
+    for index, row in enumerate(rows):
+        if index:
+            combined_parts.append(
+                np.ones((gap_y, rows[0].shape[1], channels), dtype=dtype)
+            )
+        combined_parts.append(row)
+    combined = np.vstack(combined_parts)
 
     fig_width = 16.2
     fig_height = fig_width * combined.shape[0] / combined.shape[1]
@@ -1042,7 +1386,7 @@ def main() -> None:
         effect_threshold=RUN_EFFECT_THRESHOLD,
     )
 
-    panels = ("A", "B", "C", "D") if args.panel == "all" else (args.panel,)
+    panels = ("A", "B", "C", "D", "E", "F") if args.panel == "all" else (args.panel,)
     print(f"Run directory: {run_dir}")
     print(f"Output directory: {out_dir}")
     print(f"Manuscript output directory: {manuscript_out_dir}")
@@ -1056,9 +1400,11 @@ def main() -> None:
             inputs=inputs,
             out_dir=out_dir,
             manuscript_out_dir=manuscript_out_dir,
+            gtf_path=args.gtf,
+            conservation_table=args.conservation_table,
             dpi=args.dpi,
         )
-    if tuple(panels) == ("A", "B", "C", "D"):
+    if tuple(panels) == ("A", "B", "C", "D", "E", "F"):
         write_combined_figure(panel_outputs, out_dir=manuscript_out_dir, dpi=args.dpi)
         write_supplementary_coverage_table(
             inputs=inputs,

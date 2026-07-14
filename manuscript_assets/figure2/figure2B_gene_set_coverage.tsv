@@ -4,5 +4,4 @@ mirdb_mirtarget	miRDB	13420	19540	0.6867963152507677	predictor
 microt_cnn	microT-CNN	19392	19540	0.9924257932446264	predictor
 mirbind2	miRBind2-UTR	18639	19540	0.9538894575230297	predictor
 miraw	miRAW	18669	19540	0.955424769703173	predictor
-all_algorithm_intersection	"IGS
-(all algorithms)"	11312	19540	0.5789150460593654	intersection
+all_algorithm_intersection	IGS	11312	19540	0.5789150460593654	intersection
