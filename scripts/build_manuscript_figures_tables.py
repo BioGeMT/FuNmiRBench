@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.patches import Ellipse, FancyBboxPatch
-from matplotlib.ticker import PercentFormatter
+from matplotlib.ticker import MaxNLocator, PercentFormatter
 
 from funmirbench.gene_conservation import load_utr3_conservation
 from funmirbench.gene_lengths import load_utr3_lengths
@@ -257,50 +257,35 @@ def summarize_gene_universes(counts: pd.DataFrame) -> dict[str, int]:
 
 def plot_figure1_panel_c(report_dir: pathlib.Path, figures_dir: pathlib.Path):
     """Draw the manuscript panel C schematic for FGS versus IGS."""
-    summary = summarize_gene_universes(gene_universe_count_table(report_dir))
-    fig, ax = plt.subplots(figsize=(5.8, 4.4))
+    counts = gene_universe_count_table(report_dir)
+    summary = summarize_gene_universes(counts)
+    predictor_medians = {
+        tool_id: int(round(pd.to_numeric(counts[f"{tool_id}_scored_gene_count"], errors="coerce").median()))
+        for tool_id in TOOL_IDS
+        if f"{tool_id}_scored_gene_count" in counts.columns
+    }
+
+    fig, ax = plt.subplots(figsize=(5.8, 4.35))
     ax.set_xlim(0, 10)
-    ax.set_ylim(0, 7.2)
+    ax.set_ylim(0, 7.4)
     ax.set_aspect("equal")
     ax.axis("off")
 
-    fgs_box = FancyBboxPatch(
-        (0.35, 0.45),
-        9.3,
-        6.25,
-        boxstyle="round,pad=0.18,rounding_size=0.28",
-        facecolor="#F7F8FB",
-        edgecolor="#B8C4D6",
-        linewidth=1.1,
-        zorder=0,
-    )
-    ax.add_patch(fgs_box)
-    ax.text(0.65, 6.45, "FGS: full usable gene set", fontsize=11, weight="bold", ha="left", va="center")
-    ax.text(
-        0.65,
-        6.08,
-        f"median {summary['fgs']:,} genes across {summary['datasets']:,} datasets; unscored pairs kept as lowest confidence",
-        fontsize=8.7,
-        color="#44546A",
-        ha="left",
-        va="center",
-    )
-
     ellipse_specs = [
-        ("targetscan", 3.85, 4.05, 6.3, 2.45, 0),
-        ("mirdb_mirtarget", 6.15, 4.05, 6.3, 2.45, 0),
-        ("microt_cnn", 5.00, 4.95, 2.95, 5.45, 0),
-        ("mirbind2", 3.95, 2.85, 2.95, 5.45, -52),
-        ("miraw", 6.05, 2.85, 2.95, 5.45, 52),
+        ("targetscan", "A", 4.95, 4.85, 3.65, 5.75, 0),
+        ("mirdb_mirtarget", "B", 6.85, 4.10, 4.85, 2.75, 0),
+        ("microt_cnn", "C", 6.25, 2.72, 5.00, 2.85, -23),
+        ("mirbind2", "D", 3.78, 2.70, 4.90, 2.85, 23),
+        ("miraw", "E", 3.05, 4.10, 4.85, 2.75, 0),
     ]
-    label_positions = {
-        "targetscan": (1.25, 4.12),
-        "mirdb_mirtarget": (8.75, 4.12),
-        "microt_cnn": (5.00, 6.33),
-        "mirbind2": (2.15, 1.12),
-        "miraw": (7.85, 1.12),
+    letter_positions = {
+        "targetscan": (4.95, 7.03),
+        "mirdb_mirtarget": (8.97, 4.72),
+        "microt_cnn": (6.88, 1.42),
+        "mirbind2": (3.12, 1.42),
+        "miraw": (1.03, 4.72),
     }
-    for tool_id, x, y, width, height, angle in ellipse_specs:
+    for tool_id, letter, x, y, width, height, angle in ellipse_specs:
         patch = Ellipse(
             (x, y),
             width,
@@ -313,24 +298,38 @@ def plot_figure1_panel_c(report_dir: pathlib.Path, figures_dir: pathlib.Path):
             zorder=1,
         )
         ax.add_patch(patch)
-        lx, ly = label_positions[tool_id]
-        ax.text(lx, ly, TOOL_LABELS[tool_id], fontsize=9.2, weight="bold", ha="center", va="center", color="#25364A")
+        lx, ly = letter_positions[tool_id]
+        ax.text(lx, ly, letter, fontsize=9.5, weight="bold", ha="center", va="center", color="#25364A")
 
     igs_box = FancyBboxPatch(
-        (3.77, 3.05),
-        2.46,
-        1.18,
-        boxstyle="round,pad=0.15,rounding_size=0.16",
-        facecolor="white",
-        edgecolor="#5B6577",
-        linewidth=1.0,
-        alpha=0.84,
+        (3.55, 3.32),
+        2.9,
+        1.1,
+        boxstyle="round,pad=0.12,rounding_size=0.08",
+        facecolor=(1, 1, 1, 0.72),
+        edgecolor="#4A5568",
+        linewidth=0.9,
         zorder=4,
     )
     ax.add_patch(igs_box)
-    ax.text(5.0, 3.77, "IGS", fontsize=18, color="#D62728", style="italic", weight="bold", ha="center", va="center", zorder=5)
-    ax.text(5.0, 3.34, f"all predictors scored\nmedian {summary['igs']:,} genes", fontsize=8.7, color="#25364A", ha="center", va="center", zorder=5)
-    ax.text(5.0, 0.62, f"Union scored by at least one predictor: median {summary['union']:,} genes", fontsize=8.5, color="#44546A", ha="center", va="center")
+    ax.text(5.0, 4.08, "IGS", fontsize=17, color="#D62728", style="italic", weight="bold", ha="center", va="center", zorder=5)
+    ax.text(5.0, 3.63, f"all five predictors\nmedian {summary['igs']:,} genes", fontsize=8.4, color="#25364A", ha="center", va="center", zorder=5)
+
+    legend_rows = [
+        ("A", "TargetScan", "targetscan"),
+        ("B", "miRDB", "mirdb_mirtarget"),
+        ("C", "microT-CNN", "microt_cnn"),
+        ("D", "miRBind2", "mirbind2"),
+        ("E", "miRAW", "miraw"),
+    ]
+    x0, y0 = 0.42, 0.77
+    for idx, (letter, label, tool_id) in enumerate(legend_rows):
+        y = y0 - idx * 0.25
+        ax.text(x0, y, letter, fontsize=7.4, weight="bold", color=tool_color(tool_id), ha="left", va="center")
+        ax.text(x0 + 0.25, y, f"{label}: median {predictor_medians.get(tool_id, 0):,}", fontsize=7.3, color="#25364A", ha="left", va="center")
+
+    ax.text(5.0, 0.56, f"FGS median {summary['fgs']:,} genes across {summary['datasets']:,} datasets", fontsize=8.1, color="#25364A", ha="center", va="center")
+    ax.text(5.0, 0.27, f"Union scored by >=1 predictor: median {summary['union']:,} genes", fontsize=7.8, color="#44546A", ha="center", va="center")
 
     return save_figure(fig, figures_dir / "figure1_panel_c_gene_universes.png")
 
@@ -453,6 +452,8 @@ def plot_mirrored_density(
     max_density = max(float(igs_density.max()), float(non_igs_density.max()), 1e-12)
     igs_y = igs_density / max_density
     non_igs_y = non_igs_density / max_density
+    igs_peak_x = float(grid[int(np.argmax(igs_density))])
+    non_igs_peak_x = float(grid[int(np.argmax(non_igs_density))])
 
     if label_mode == "unique_gene":
         top_label = f"IGS Genes\nn={len(igs):,}"
@@ -467,6 +468,8 @@ def plot_mirrored_density(
     ax.fill_between(grid, 0, igs_y, alpha=0.82, color=igs_color, label="IGS Genes")
     ax.fill_between(grid, 0, -non_igs_y, alpha=0.82, color=non_igs_color, label="non-IGS Genes")
     ax.axhline(0, color="#555555", linewidth=0.8)
+    ax.vlines(igs_peak_x, 0, 0.28, color="#245C8A", linewidth=1.2)
+    ax.vlines(non_igs_peak_x, 0, -0.28, color="#A83234", linewidth=1.2)
     ax.text(lower, 0.74, top_label, ha="left", va="center", fontsize=8)
     ax.text(lower, -0.74, bottom_label, ha="left", va="center", fontsize=8)
     ax.set_xlabel(xlabel, labelpad=8)
@@ -477,11 +480,16 @@ def plot_mirrored_density(
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_visible(False)
     ax.spines["bottom"].set_visible(True)
+    ax.spines["bottom"].set_color("#333333")
+    ax.spines["bottom"].set_linewidth(0.9)
+    ax.spines["bottom"].set_position(("outward", 5))
     ax.xaxis.set_visible(True)
-    ax.tick_params(axis="x", which="both", bottom=True, labelbottom=True, length=3, pad=3)
+    ax.xaxis.set_ticks_position("bottom")
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=6, prune=None))
+    ax.tick_params(axis="x", which="both", bottom=True, top=False, labelbottom=True, length=4, width=0.8, pad=4, labelsize=8)
     ax.legend(frameon=False, fontsize=7, loc="upper right")
     fig.tight_layout()
-    fig.subplots_adjust(bottom=0.24)
+    fig.subplots_adjust(bottom=0.28)
     return save_figure(fig, figures_dir / out_name)
 
 
