@@ -588,6 +588,7 @@ def pair_coverage_figure(
     denominator_column: str,
     title: str,
     ylabel: str,
+    total_label: str,
     panel: str,
 ) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(7.2, 4.8))
@@ -606,6 +607,16 @@ def pair_coverage_figure(
     ax.set_ylabel(ylabel)
     ax.set_ylim(0, 110)
     set_panel_title(ax, panel, title)
+    denominator = int(summary[denominator_column].iloc[0]) if not summary.empty else 0
+    ax.text(
+        0.01,
+        0.96,
+        f"{total_label}: {denominator:,} pairs",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=10,
+    )
     for bar, percentage in zip(bars, summary[coverage_column]):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
@@ -634,6 +645,7 @@ def panel_c_positive_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, plt.
         denominator_column="positive_pairs_total",
         title="Positive miRNA-gene pair coverage",
         ylabel="Positive miRNA-gene pairs covered (%)",
+        total_label="Total positive",
         panel="C",
     )
     return summary, fig
@@ -653,6 +665,7 @@ def panel_d_background_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, pl
         denominator_column="background_pairs_total",
         title="Background miRNA-gene pair coverage",
         ylabel="Background miRNA-gene pairs covered (%)",
+        total_label="Total background",
         panel="D",
     )
     return summary, fig
