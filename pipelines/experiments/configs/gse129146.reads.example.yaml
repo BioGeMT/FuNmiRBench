@@ -1,6 +1,6 @@
 dataset_id: GSE129146_OE_miR_455-3p
 mirna_name: hsa-miR-455-3p
-experiment_type: OE
+experiment_type: Overexpression
 gse: GSE129146
 
 source:
