@@ -27,6 +27,7 @@ data/joined/
 data/plots/
 data/experiments/raw/refs/*
 data/resources/ensembl/*
+data/resources/conservation/*
 
 # Benchmark results
 results/
