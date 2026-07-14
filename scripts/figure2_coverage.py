@@ -749,17 +749,16 @@ def write_supplementary_coverage_table(
     table = table.merge(mirnas_per_gene, on="tool_id", how="left")
     table.insert(
         1,
-        "predictor_name",
+        "name",
         table["tool_id"].map(inputs.tool_labels).fillna(table["predictor"]),
     )
     table.loc[
         table["tool_id"] == "all_algorithm_intersection",
-        "predictor_name",
+        "name",
     ] = "IGS (all algorithms)"
 
     columns = [
-        "tool_id",
-        "predictor_name",
+        "name",
         "set_type",
         "panel_a_experiments_retained",
         "panel_a_experiments_total",
