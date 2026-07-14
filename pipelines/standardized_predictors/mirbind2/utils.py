@@ -2,8 +2,10 @@ import logging
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
+import requests
 
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
@@ -31,6 +33,40 @@ def resolve_path_relative_to_root(path: Path) -> Path:
         return path.resolve().relative_to(repo_root())
     except ValueError:
         return path
+
+
+def download_file(
+    url: str,
+    output_path: Path,
+    params: Optional[dict[str, str]] = None,
+    timeout: int = 120,
+    resource_label: str = "file",
+) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    relative_path = resolve_path_relative_to_root(output_path)
+
+    if output_path.exists():
+        logger.info("Using cached %s: %s", resource_label, relative_path)
+        return output_path
+
+    logger.info("Downloading %s: %s", resource_label, relative_path)
+
+    try:
+        response = requests.get(url, params=params, timeout=timeout)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Failed to download {resource_label} from {url} to {relative_path}: {exc}"
+        ) from exc
+
+    if not response.content.strip():
+        raise RuntimeError(
+            f"Failed to download {resource_label} from {url} to {relative_path}: empty response"
+        )
+
+    output_path.write_bytes(response.content)
+    logger.info("Saved %s: %s", resource_label, relative_path)
+    return output_path
 
 
 def configure_logging(log_path: Path, log_level: str) -> None:
