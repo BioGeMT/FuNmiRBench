@@ -440,11 +440,11 @@ def panel_a_experiment_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, pl
     ax.set_ylabel("Experiments retained")
     ax.set_ylim(0, max(total_experiments * 1.16, 1))
     set_panel_title(ax, "A", "Experiment coverage")
-    for bar, percentage in zip(bars, summary["experiment_coverage"]):
+    for bar, retained in zip(bars, summary["experiments_retained"]):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height(),
-            f"{percentage:.1%}",
+            f"{int(retained)}/{total_experiments}",
             ha="center",
             va="bottom",
             fontsize=BAR_LABEL_FONTSIZE,
