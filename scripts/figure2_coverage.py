@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import itertools
+import logging
 import math
 import re
 import shutil
@@ -49,7 +50,10 @@ import pandas as pd
 import yaml
 
 from funmirbench.evaluate_common import CURVE_COLORS
+from funmirbench.logger import setup_logging
 
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_RESULTS_DIR = Path("results")
 DEFAULT_METADATA_PATH = Path("metadata/predictions_info.tsv")
@@ -176,6 +180,11 @@ def parse_args() -> argparse.Namespace:
             "Gene-level 3'UTR conservation table with gene_id and "
             "utr3_mean_conservation columns, used for panel F."
         ),
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        help="Logging level. Default: INFO.",
     )
     return parser.parse_args()
 
@@ -1151,7 +1160,7 @@ def write_supplementary_coverage_table(
     path = manuscript_tables_dir / "figure2_supplementary_coverage_table.tsv"
     manuscript_tables_dir.mkdir(parents=True, exist_ok=True)
     table.to_csv(path, sep="\t", index=False)
-    print(f"Wrote supplementary Figure 2 table: {path}")
+    logger.info("Wrote supplementary Figure 2 table: %s", path)
     return path
 
 
@@ -1226,7 +1235,7 @@ def write_gene_set_overlap_table(
     path = manuscript_tables_dir / "figure2_gene_set_overlap.tsv"
     manuscript_tables_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(path, sep="\t", index=False)
-    print(f"Wrote Figure 2 gene-set overlap table: {path}")
+    logger.info("Wrote Figure 2 gene-set overlap table: %s", path)
     return path
 
 
@@ -1278,7 +1287,7 @@ def write_panel(
         manuscript_path = manuscript_figures_dir / figure_path.name
         shutil.copy2(figure_path, manuscript_path)
         manuscript_figures[figure_path.suffix.lstrip(".")] = manuscript_path
-    print(f"Wrote panel {panel}: {panel_dir / stem}")
+    logger.info("Wrote panel %s: %s", panel, panel_dir / stem)
     return {
         "table": manuscript_table,
         **manuscript_figures,
@@ -1401,11 +1410,12 @@ def write_combined_figure(panel_outputs: dict[str, dict[str, Path]], *, out_dir:
     for extension in DEFAULT_FORMATS:
         fig.savefig(out_dir / f"figure2_combined.{extension}", dpi=dpi, bbox_inches="tight")
     plt.close(fig)
-    print(f"Wrote combined Figure 2: {out_dir / 'figure2_combined'}")
+    logger.info("Wrote combined Figure 2: %s", out_dir / "figure2_combined")
 
 
 def main() -> None:
     args = parse_args()
+    setup_logging(args.log_level)
     run_dir = (args.run_dir or find_latest_completed_run(args.results_dir)).resolve()
     metadata_path = args.metadata.resolve()
     out_dir = (args.out_dir or DEFAULT_OUTPUT_ROOT / run_dir.name).resolve()
@@ -1421,21 +1431,18 @@ def main() -> None:
     )
 
     panels = ("A", "B", "C", "D", "E", "F") if args.panel == "all" else (args.panel,)
-    print(f"Run directory: {run_dir}")
-    print(f"Output directory: {out_dir}")
-    print(f"Manuscript figure output directory: {manuscript_figures_dir}")
-    print(f"Manuscript table output directory: {manuscript_tables_dir}")
-    print(f"Datasets: {len(inputs.datasets)}")
-    print(f"Predictors: {', '.join(inputs.tool_ids)}")
+    logger.info("Run directory: %s", run_dir)
+    logger.info("Output directory: %s", out_dir)
+    logger.info("Manuscript figure output directory: %s", manuscript_figures_dir)
+    logger.info("Manuscript table output directory: %s", manuscript_tables_dir)
+    logger.info("Datasets: %d", len(inputs.datasets))
+    logger.info("Predictors: %s", ", ".join(inputs.tool_ids))
     gt_filter_text = (
         f"FDR<{inputs.fdr_threshold}, effect>{inputs.effect_threshold}"
         if inputs.fdr_threshold is not None
         else f"effect>{inputs.effect_threshold}"
     )
-    print(
-        "Ground-truth filters from run config: "
-        f"{gt_filter_text}"
-    )
+    logger.info("Ground-truth filters from run config: %s", gt_filter_text)
     panel_outputs = {}
     for panel in panels:
         panel_outputs[panel] = write_panel(

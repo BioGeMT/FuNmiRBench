@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import logging
 from pathlib import Path
 
 import requests
+
+from funmirbench.logger import setup_logging
 
 
 DEFAULT_URL = (
@@ -19,6 +22,7 @@ DEFAULT_MD5_URL = (
     "phastCons100way/md5sum.txt"
 )
 DEFAULT_OUT = Path("data/resources/conservation/hg38.phastCons100way.bw")
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--chunk-size", type=int, default=1024 * 1024)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--skip-md5", action="store_true")
+    parser.add_argument("--log-level", default="INFO")
     return parser.parse_args()
 
 
@@ -63,7 +68,9 @@ def download(url: str, out: Path, chunk_size: int) -> None:
     with requests.get(url, stream=True, headers=headers, timeout=120) as response:
         response.raise_for_status()
         if existing and response.status_code != 206:
-            print("Server did not honor Range request; restarting download from byte 0.")
+            logger.info(
+                "Server did not honor Range request; restarting download from byte 0."
+            )
             existing = 0
         mode = "ab" if existing else "wb"
         total = response.headers.get("Content-Length")
@@ -75,19 +82,18 @@ def download(url: str, out: Path, chunk_size: int) -> None:
                     continue
                 handle.write(chunk)
                 written += len(chunk)
-                if total_size:
-                    pct = 100.0 * written / total_size
-                    print(f"\rDownloaded {written / 1e9:.2f}/{total_size / 1e9:.2f} GB ({pct:.1f}%)", end="")
-                else:
-                    print(f"\rDownloaded {written / 1e9:.2f} GB", end="")
-    print()
+    if total_size:
+        logger.info("Downloaded %.2f/%.2f GB", written / 1e9, total_size / 1e9)
+    else:
+        logger.info("Downloaded %.2f GB", written / 1e9)
     tmp.replace(out)
 
 
 def main() -> int:
     args = parse_args()
+    setup_logging(args.log_level)
     if args.out.exists() and not args.force:
-        print(f"Already exists: {args.out}")
+        logger.info("Already exists: %s", args.out)
     else:
         download(args.url, args.out, args.chunk_size)
 
@@ -100,9 +106,9 @@ def main() -> int:
             raise ValueError(
                 f"MD5 mismatch for {args.out}: expected {expected}, observed {observed}"
             )
-        print(f"MD5 ok: {observed}")
+        logger.info("MD5 ok: %s", observed)
 
-    print(f"Conservation BigWig: {args.out}")
+    logger.info("Conservation BigWig: %s", args.out)
     return 0
 
 
