@@ -15,13 +15,48 @@ manuscript_assets/tables/
 Figure-specific image assets belong under `manuscript_assets/figure<N>/`.
 Reusable or supplementary TSV tables belong under `manuscript_assets/tables/`.
 
+## Prepare Conservation Scores
+
+Panel F uses gene-level mean phastCons100way scores over each gene's longest
+protein-coding 3'UTR. If the conservation BigWig is not already available
+locally, download it first:
+
+```bash
+uv run python scripts/download_phastcons100way.py
+```
+
+This downloads UCSC `hg38.phastCons100way.bw` to:
+
+```text
+data/resources/conservation/hg38.phastCons100way.bw
+```
+
+The BigWig is ignored by git because it is large.
+
+Then compute the raw gene-level conservation table:
+
+```bash
+uv run python scripts/figure2_utr_conservation.py
+```
+
+By default this writes:
+
+```text
+manuscript_assets/tables/figure2F_utr_conservation_raw.tsv
+```
+
+The table contains `gene_id` and `utr3_mean_conservation`, plus supporting
+transcript, scored-base, and 3'UTR-length columns. The main Figure 2 script
+consumes this precomputed table so normal figure regeneration does not need to
+re-read the multi-GB BigWig.
+
 ## Generate Figure 2
 
 Run from the repository root:
 
 ```bash
 uv run python scripts/figure2_coverage.py \
-  --run-dir results/20260709_122904 \
+  --run-dir results/20260716_150502 \
   --panel all
 ```
 
@@ -62,6 +97,7 @@ manuscript_assets/tables/figure2C_positive_coverage.tsv
 manuscript_assets/tables/figure2D_background_coverage.tsv
 manuscript_assets/tables/figure2E_utr_length.tsv
 manuscript_assets/tables/figure2F_utr_conservation.tsv
+manuscript_assets/tables/figure2F_utr_conservation_raw.tsv
 manuscript_assets/tables/figure2_supplementary_coverage_table.tsv
 manuscript_assets/tables/figure2_gene_set_overlap.tsv
 ```
@@ -87,7 +123,7 @@ protein-coding transcripts, after merging transcript-level 3'UTR intervals.
 Panel F reads the precomputed gene-level conservation table:
 
 ```text
-results/manuscript_supplement_utr_conservation/<run-name>/utr3_conservation_raw.tsv
+manuscript_assets/tables/figure2F_utr_conservation_raw.tsv
 ```
 
 The table must contain:
@@ -96,32 +132,3 @@ The table must contain:
 gene_id
 utr3_mean_conservation
 ```
-
-## Download phastCons100way
-
-If the conservation BigWig is not already available locally, download it with:
-
-```bash
-uv run python scripts/download_phastcons100way.py
-```
-
-This downloads UCSC `hg38.phastCons100way.bw` to:
-
-```text
-data/resources/conservation/hg38.phastCons100way.bw
-```
-
-The BigWig is ignored by git because it is large.
-
-## Recompute Conservation Scores
-
-If the gene-level conservation table needs to be regenerated, use the
-phastCons100way BigWig:
-
-```bash
-uv run python scripts/figure2_utr_conservation.py \
-  --out results/manuscript_supplement_utr_conservation/20260716_150502/utr3_conservation_raw.tsv
-```
-
-The Figure 2 script intentionally consumes the precomputed table so that normal
-figure regeneration does not require re-reading a multi-GB BigWig.

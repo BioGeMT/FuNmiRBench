@@ -18,10 +18,7 @@ from funmirbench.logger import setup_logging
 
 DEFAULT_GTF = Path("data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz")
 DEFAULT_BIGWIG = Path("data/resources/conservation/hg38.phastCons100way.bw")
-DEFAULT_OUT = Path(
-    "results/manuscript_supplement_utr_conservation/latest/"
-    "utr3_conservation_raw.tsv"
-)
+DEFAULT_OUT = Path("manuscript_assets/tables/figure2F_utr_conservation_raw.tsv")
 ATTR_RE = re.compile(r'([A-Za-z0-9_]+) "([^"]*)"')
 UTR3_FEATURE_NAMES = {"three_prime_utr", "three_prime_UTR", "3UTR", "3utr"}
 logger = logging.getLogger(__name__)
