@@ -57,12 +57,15 @@ def download(url: str, out: Path, chunk_size: int) -> None:
     tmp = out.with_suffix(out.suffix + ".tmp")
     headers = {}
     existing = tmp.stat().st_size if tmp.exists() else 0
-    mode = "ab" if existing else "wb"
     if existing:
         headers["Range"] = f"bytes={existing}-"
 
     with requests.get(url, stream=True, headers=headers, timeout=120) as response:
         response.raise_for_status()
+        if existing and response.status_code != 206:
+            print("Server did not honor Range request; restarting download from byte 0.")
+            existing = 0
+        mode = "ab" if existing else "wb"
         total = response.headers.get("Content-Length")
         total_size = int(total) + existing if total is not None else None
         written = existing
