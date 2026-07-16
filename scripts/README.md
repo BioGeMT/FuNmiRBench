@@ -56,7 +56,7 @@ Run from the repository root:
 
 ```bash
 uv run python scripts/figure2_coverage.py \
-  --run-dir results/20260716_150502 \
+  --run-dir results/<results_dir> \
   --panel all
 ```
 
