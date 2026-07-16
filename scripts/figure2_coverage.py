@@ -3,8 +3,8 @@
 
 The script reads the ``joined.tsv`` files from one completed FuNmiRBench run and
 writes each panel as a separate publication-ready plot plus the exact summary
-values used to draw it. Stable manuscript figures are written to
-``manuscript_assets/figure2`` and stable manuscript tables are written to
+values used to draw it. Manuscript figures are written to
+``manuscript_assets/figure2`` and manuscript tables are written to
 ``manuscript_assets/tables``.
 
 Panel definitions
@@ -25,7 +25,6 @@ Generate all panels from a specific run::
 
 Outputs are written by default to::
 
-    results/manuscript_figure2/<run-name>/panel_<letter>/
     manuscript_assets/figure2/
     manuscript_assets/tables/
 """
@@ -57,15 +56,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_RESULTS_DIR = Path("results")
 DEFAULT_METADATA_PATH = Path("metadata/predictions_info.tsv")
-DEFAULT_OUTPUT_ROOT = Path("results/manuscript_figure2")
 DEFAULT_MANUSCRIPT_OUTPUT_DIR = Path("manuscript_assets/figure2")
 DEFAULT_MANUSCRIPT_TABLES_DIR = Path("manuscript_assets/tables")
 DEFAULT_FORMATS = ("png", "svg")
 PANEL_CHOICES = ("A", "B", "C", "D", "E", "F", "all")
-DEFAULT_CONSERVATION_TABLE = Path(
-    "utr3_conservation_raw.tsv"
-)
-DEFAULT_CONSERVATION_OUTPUT_ROOT = Path("results/manuscript_supplement_utr_conservation")
+DEFAULT_CONSERVATION_TABLE = Path("figure2F_utr_conservation_raw.tsv")
 DEFAULT_GTF = Path("data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz")
 ATTR_RE = re.compile(r'([A-Za-z0-9_]+) "([^"]*)"')
 INTERSECTION_COLORS = {
@@ -146,7 +141,10 @@ def parse_args() -> argparse.Namespace:
         "--out-dir",
         type=Path,
         default=None,
-        help="Output directory. Default: results/manuscript_figure2/<run-name>/.",
+        help=(
+            "Optional diagnostic output directory for per-panel subdirectories. "
+            "By default, only manuscript_assets outputs are written."
+        ),
     )
     parser.add_argument(
         "--manuscript-out-dir",
@@ -179,8 +177,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Gene-level 3'UTR conservation table with gene_id and "
             "utr3_mean_conservation columns, used for panel F. Default: "
-            "results/manuscript_supplement_utr_conservation/<run-name>/"
-            "utr3_conservation_raw.tsv."
+            "manuscript_assets/tables/figure2F_utr_conservation_raw.tsv."
         ),
     )
     parser.add_argument(
@@ -218,18 +215,25 @@ def load_run_thresholds(run_dir: Path) -> tuple[float | None, float]:
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle) or {}
     evaluation = config.get("evaluation") or {}
-    raw_fdr_threshold = evaluation.get("fdr_threshold", 0.05)
+    missing = [
+        key
+        for key in ("fdr_threshold", "effect_threshold")
+        if key not in evaluation
+    ]
+    if missing:
+        raise KeyError(
+            f"{config_path} is missing evaluation keys required by Figure 2: {missing}"
+        )
+    raw_fdr_threshold = evaluation["fdr_threshold"]
     fdr_threshold = (
         None if raw_fdr_threshold is None else float(raw_fdr_threshold)
     )
-    effect_threshold = float(
-        evaluation.get("effect_threshold", evaluation.get("abs_logfc_threshold", 1.0))
-    )
+    effect_threshold = float(evaluation["effect_threshold"])
     return fdr_threshold, effect_threshold
 
 
-def default_conservation_table_for_run(run_dir: Path) -> Path:
-    return DEFAULT_CONSERVATION_OUTPUT_ROOT / run_dir.name / DEFAULT_CONSERVATION_TABLE
+def default_conservation_table() -> Path:
+    return DEFAULT_MANUSCRIPT_TABLES_DIR / DEFAULT_CONSERVATION_TABLE
 
 
 def validate_panel_inputs(panels: tuple[str, ...], *, gtf_path: Path, conservation_table: Path) -> None:
@@ -1266,7 +1270,7 @@ def write_panel(
     panel: str,
     *,
     inputs: Figure2Inputs,
-    out_dir: Path,
+    out_dir: Path | None,
     manuscript_figures_dir: Path,
     manuscript_tables_dir: Path,
     gtf_path: Path,
@@ -1296,21 +1300,28 @@ def write_panel(
         "E": "figure2E_utr_length",
         "F": "figure2F_utr_conservation",
     }[panel]
-    panel_dir = out_dir / f"panel_{panel}"
-    panel_dir.mkdir(parents=True, exist_ok=True)
-    table_path = panel_dir / f"{stem}.tsv"
-    summary.to_csv(table_path, sep="\t", index=False)
-    figure_paths = save_panel(fig, out_dir=panel_dir, stem=stem, dpi=dpi)
     manuscript_figures_dir.mkdir(parents=True, exist_ok=True)
     manuscript_tables_dir.mkdir(parents=True, exist_ok=True)
     manuscript_table = manuscript_tables_dir / f"{stem}.tsv"
-    shutil.copy2(table_path, manuscript_table)
-    manuscript_figures = {}
-    for figure_path in figure_paths:
-        manuscript_path = manuscript_figures_dir / figure_path.name
-        shutil.copy2(figure_path, manuscript_path)
-        manuscript_figures[figure_path.suffix.lstrip(".")] = manuscript_path
-    logger.info("Wrote panel %s: %s", panel, panel_dir / stem)
+    summary.to_csv(manuscript_table, sep="\t", index=False)
+    manuscript_figure_paths = save_panel(
+        fig,
+        out_dir=manuscript_figures_dir,
+        stem=stem,
+        dpi=dpi,
+    )
+    manuscript_figures = {
+        figure_path.suffix.lstrip("."): figure_path
+        for figure_path in manuscript_figure_paths
+    }
+    if out_dir is not None:
+        panel_dir = out_dir / f"panel_{panel}"
+        panel_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(manuscript_table, panel_dir / f"{stem}.tsv")
+        for figure_path in manuscript_figure_paths:
+            shutil.copy2(figure_path, panel_dir / figure_path.name)
+        logger.info("Wrote panel %s diagnostics: %s", panel, panel_dir / stem)
+    logger.info("Wrote panel %s: %s", panel, manuscript_figures_dir / stem)
     return {
         "table": manuscript_table,
         **manuscript_figures,
@@ -1441,11 +1452,11 @@ def main() -> int:
     setup_logging(args.log_level)
     run_dir = (args.run_dir or find_latest_completed_run(args.results_dir)).resolve()
     metadata_path = args.metadata.resolve()
-    out_dir = (args.out_dir or DEFAULT_OUTPUT_ROOT / run_dir.name).resolve()
+    out_dir = args.out_dir.resolve() if args.out_dir is not None else None
     manuscript_figures_dir = args.manuscript_out_dir.resolve()
     manuscript_tables_dir = args.manuscript_tables_dir.resolve()
     conservation_table = (
-        args.conservation_table or default_conservation_table_for_run(run_dir)
+        args.conservation_table or default_conservation_table()
     ).resolve()
     fdr_threshold, effect_threshold = load_run_thresholds(run_dir)
 
@@ -1463,7 +1474,8 @@ def main() -> int:
         conservation_table=conservation_table,
     )
     logger.info("Run directory: %s", run_dir)
-    logger.info("Output directory: %s", out_dir)
+    if out_dir is not None:
+        logger.info("Diagnostic output directory: %s", out_dir)
     logger.info("Manuscript figure output directory: %s", manuscript_figures_dir)
     logger.info("Manuscript table output directory: %s", manuscript_tables_dir)
     logger.info("Conservation table: %s", conservation_table)
