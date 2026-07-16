@@ -1,7 +1,19 @@
-# Figure 2 Scripts
+# Manuscript Figure Scripts
 
-This folder contains the scripts used to generate the manuscript Figure 2
-assets.
+This folder contains scripts used to generate manuscript figure assets and the
+tables that support them.
+
+## Output Layout
+
+Stable manuscript outputs are grouped by artifact type:
+
+```text
+manuscript_assets/figure2/
+manuscript_assets/tables/
+```
+
+Figure-specific image assets belong under `manuscript_assets/figure<N>/`.
+Reusable or supplementary TSV tables belong under `manuscript_assets/tables/`.
 
 ## Generate Figure 2
 
@@ -19,6 +31,12 @@ This writes the individual panels and the combined six-panel figure to:
 manuscript_assets/figure2/
 ```
 
+It writes the panel TSVs and supplementary Figure 2 tables to:
+
+```text
+manuscript_assets/tables/
+```
+
 The Figure 2 script reads the ground-truth FDR and effect thresholds from the
 completed benchmark run's config snapshot:
 
@@ -33,6 +51,20 @@ The combined figure is:
 ```text
 manuscript_assets/figure2/figure2_combined.png
 manuscript_assets/figure2/figure2_combined.svg
+```
+
+The main table outputs are:
+
+```text
+manuscript_assets/tables/figure2A_experiment_coverage.tsv
+manuscript_assets/tables/figure2B_gene_set_coverage.tsv
+manuscript_assets/tables/figure2C_positive_coverage.tsv
+manuscript_assets/tables/figure2D_background_coverage.tsv
+manuscript_assets/tables/figure2E_utr_length.tsv
+manuscript_assets/tables/figure2F_utr_conservation.tsv
+manuscript_assets/tables/figure2_supplementary_coverage_table.tsv
+manuscript_assets/tables/figure2_gene_set_overlap.tsv
+manuscript_assets/tables/figure2_predictor_pairs_mean_mirnas_per_gene.tsv
 ```
 
 Panels:
