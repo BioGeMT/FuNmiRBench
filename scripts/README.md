@@ -64,7 +64,6 @@ manuscript_assets/tables/figure2E_utr_length.tsv
 manuscript_assets/tables/figure2F_utr_conservation.tsv
 manuscript_assets/tables/figure2_supplementary_coverage_table.tsv
 manuscript_assets/tables/figure2_gene_set_overlap.tsv
-manuscript_assets/tables/figure2_predictor_pairs_mean_mirnas_per_gene.tsv
 ```
 
 Panels:
@@ -88,7 +87,7 @@ protein-coding transcripts, after merging transcript-level 3'UTR intervals.
 Panel F reads the precomputed gene-level conservation table:
 
 ```text
-results/manuscript_supplement_utr_conservation/20260709_122904/utr3_conservation_raw.tsv
+results/manuscript_supplement_utr_conservation/<run-name>/utr3_conservation_raw.tsv
 ```
 
 The table must contain:
@@ -117,11 +116,11 @@ The BigWig is ignored by git because it is large.
 ## Recompute Conservation Scores
 
 If the gene-level conservation table needs to be regenerated, use the
-phastCons100way BigWig with the conservation extraction script from the working
-branch history, or restore/adapt it from the implementation that produced:
+phastCons100way BigWig:
 
-```text
-results/manuscript_supplement_utr_conservation/20260709_122904/utr3_conservation_raw.tsv
+```bash
+uv run python scripts/figure2_utr_conservation.py \
+  --out results/manuscript_supplement_utr_conservation/20260716_150502/utr3_conservation_raw.tsv
 ```
 
 The Figure 2 script intentionally consumes the precomputed table so that normal
