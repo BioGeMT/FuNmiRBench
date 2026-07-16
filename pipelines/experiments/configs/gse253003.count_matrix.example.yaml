@@ -1,6 +1,6 @@
 dataset_id: GSE253003_OE_miR_323a_3p
 mirna_name: hsa-miR-323a-3p
-experiment_type: OE
+experiment_type: Overexpression
 gse: GSE253003
 
 source:

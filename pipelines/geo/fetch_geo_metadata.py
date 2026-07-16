@@ -356,7 +356,7 @@ def call_gemini(
 
 {{
   "mirna_name": "exact miRBase mature name (e.g. hsa-miR-21-5p) or null",
-  "experiment_type": "OE or KO or null",
+  "experiment_type": "Overexpression, Knockout, Knockdown, or null",
   "treatment": "short description of the experimental treatment or null",
   "tested_cell_line": "cell line name without trailing 'cells' or 'cell line' (e.g. HaCaT, A549) or null",
   "tissue": "tissue or organ type (e.g. Lung, Skin, Ovarian) or null",
@@ -365,7 +365,7 @@ def call_gemini(
 
 Extraction rules:
 - mirna_name: Use exact miRBase mature miRNA format with organism prefix and arm suffix (e.g. hsa-miR-21-5p). If the arm (-3p/-5p) is ambiguous, pick the more likely one based on context. Return null if no specific miRNA is mentioned.
-- experiment_type: "OE" for overexpression/mimic/gain-of-function, "KO" for knockdown/inhibition/knockout/antagomir/loss-of-function. Return null if unclear.
+- experiment_type: "Overexpression" for overexpression/mimic/gain-of-function, "Knockout" for knockout, and "Knockdown" for knockdown/inhibition/antagomir/loss-of-function. Return null if unclear.
 - treatment: Short phrase describing what was done (e.g. "Overexpression of miR-21-5p in HaCaT cells").
 - tested_cell_line: Clean name without "cells" or "cell line" suffix.
 - tissue: The tissue/organ this cell line originates from or the tissue type studied.
@@ -612,7 +612,7 @@ def print_summary(
             "mirna_name":      "exact miRBase mature name (e.g. hsa-miR-21-5p, NOT hsa-mir-21-5p)\n"
                                "                           wrong arm (-3p/-5p) will break downstream analysis\n"
                                "                           verify at https://mirbase.org",
-            "experiment_type": "OE (overexpression) or KO (knockdown/inhibition/knockout)",
+            "experiment_type": "Overexpression, Knockout, or Knockdown",
             "treatment":       "short description of the experiment",
         }
         for field in manual_fields:

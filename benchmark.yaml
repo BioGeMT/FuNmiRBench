@@ -16,7 +16,7 @@ experiments:
   # tested_cell_line: [HUV-EC-C]
   # tissue: [Cervix]
   # method: [RNA-seq]
-  # experiment_type: [OE, KD]
+  # experiment_type: [Overexpression, Knockdown]
 
 # The default repo config compares TargetScan, miRDB, microT-CNN, miRBind2, and miRAW.
 predictors:

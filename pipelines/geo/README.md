@@ -111,7 +111,7 @@ tested_cell_line:    A549
 treatment:           Overexpression of miR-21-5p
 tissue:              Lung
 method:              RNA-seq
-experiment_type:     OE
+experiment_type:     Overexpression
 gse_url:             https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE129076
 raw_data_dir:        (empty)
 control_samples:     SRR8816234,SRR8816235,SRR8816236
@@ -135,7 +135,7 @@ tested_cell_line:    A549
 treatment:           Overexpression of miR-21-5p
 tissue:              Lung
 method:              RNA-seq
-experiment_type:     OE
+experiment_type:     Overexpression
 gse_url:             https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE129076
 raw_data_dir:        (empty)
 control_samples:     GSM6437108,GSM6437109,GSM6437110
@@ -158,7 +158,7 @@ tested_cell_line:    HaCaT
 treatment:           Knockdown of miR-155-5p
 tissue:              Skin
 method:              RNA-seq
-experiment_type:     KO
+experiment_type:     Knockdown
 gse_url:             https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE999999
 raw_data_dir:        /path/to/your/fastq/files
 control_samples:     ctrl_rep1,ctrl_rep2,ctrl_rep3
@@ -187,7 +187,7 @@ tested_cell_line:    HSVSMC
 treatment:           Overexpression of miR-323-3p
 tissue:              Vascular
 method:              RNA-seq
-experiment_type:     OE
+experiment_type:     Overexpression
 gse_url:             https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE253003
 raw_data_dir:        (empty)
 control_samples:     HSVSMC_IP_miRCTRL_1,HSVSMC_IP_miRCTRL_2,HSVSMC_IP_miRCTRL_3
