@@ -3,8 +3,9 @@
 
 The script reads the ``joined.tsv`` files from one completed FuNmiRBench run and
 writes each panel as a separate publication-ready plot plus the exact summary
-values used to draw it. Stable manuscript assets are written to
-``manuscript_assets/figure2``.
+values used to draw it. Stable manuscript figures are written to
+``manuscript_assets/figure2`` and stable manuscript tables are written to
+``manuscript_assets/tables``.
 
 Panel definitions
 -----------------
@@ -26,6 +27,7 @@ Outputs are written by default to::
 
     results/manuscript_figure2/<run-name>/panel_<letter>/
     manuscript_assets/figure2/
+    manuscript_assets/tables/
 """
 
 from __future__ import annotations
@@ -53,6 +55,7 @@ DEFAULT_RESULTS_DIR = Path("results")
 DEFAULT_METADATA_PATH = Path("metadata/predictions_info.tsv")
 DEFAULT_OUTPUT_ROOT = Path("results/manuscript_figure2")
 DEFAULT_MANUSCRIPT_OUTPUT_DIR = Path("manuscript_assets/figure2")
+DEFAULT_MANUSCRIPT_TABLES_DIR = Path("manuscript_assets/tables")
 DEFAULT_FORMATS = ("png", "svg")
 PANEL_CHOICES = ("A", "B", "C", "D", "E", "F", "all")
 DEFAULT_CONSERVATION_TABLE = Path(
@@ -145,7 +148,13 @@ def parse_args() -> argparse.Namespace:
         "--manuscript-out-dir",
         type=Path,
         default=DEFAULT_MANUSCRIPT_OUTPUT_DIR,
-        help="Stable manuscript output directory. Default: manuscript_assets/figure2/.",
+        help="Stable manuscript figure output directory. Default: manuscript_assets/figure2/.",
+    )
+    parser.add_argument(
+        "--manuscript-tables-dir",
+        type=Path,
+        default=DEFAULT_MANUSCRIPT_TABLES_DIR,
+        help="Stable manuscript table output directory. Default: manuscript_assets/tables/.",
     )
     parser.add_argument(
         "--dpi",
@@ -1058,7 +1067,7 @@ def predictor_mean_mirnas_per_scored_gene(inputs: Figure2Inputs) -> pd.DataFrame
 def write_supplementary_coverage_table(
     *,
     inputs: Figure2Inputs,
-    manuscript_out_dir: Path,
+    manuscript_tables_dir: Path,
 ) -> Path:
     experiment, experiment_fig = panel_a_experiment_coverage(inputs)
     plt.close(experiment_fig)
@@ -1139,8 +1148,8 @@ def write_supplementary_coverage_table(
         "mean_mirnas_per_scored_gene",
     ]
     table = table[columns]
-    path = manuscript_out_dir / "figure2_supplementary_coverage_table.tsv"
-    manuscript_out_dir.mkdir(parents=True, exist_ok=True)
+    path = manuscript_tables_dir / "figure2_supplementary_coverage_table.tsv"
+    manuscript_tables_dir.mkdir(parents=True, exist_ok=True)
     table.to_csv(path, sep="\t", index=False)
     print(f"Wrote supplementary Figure 2 table: {path}")
     return path
@@ -1149,7 +1158,7 @@ def write_supplementary_coverage_table(
 def write_gene_set_overlap_table(
     *,
     inputs: Figure2Inputs,
-    manuscript_out_dir: Path,
+    manuscript_tables_dir: Path,
 ) -> Path:
     all_pairs = pd.concat(
         [
@@ -1214,8 +1223,8 @@ def write_gene_set_overlap_table(
                     row[f"fraction_intersection_in_{tool_id}"] = np.nan
             rows.append(row)
 
-    path = manuscript_out_dir / "figure2_gene_set_overlap.tsv"
-    manuscript_out_dir.mkdir(parents=True, exist_ok=True)
+    path = manuscript_tables_dir / "figure2_gene_set_overlap.tsv"
+    manuscript_tables_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(path, sep="\t", index=False)
     print(f"Wrote Figure 2 gene-set overlap table: {path}")
     return path
@@ -1226,7 +1235,8 @@ def write_panel(
     *,
     inputs: Figure2Inputs,
     out_dir: Path,
-    manuscript_out_dir: Path,
+    manuscript_figures_dir: Path,
+    manuscript_tables_dir: Path,
     gtf_path: Path,
     conservation_table: Path,
     dpi: int,
@@ -1259,12 +1269,13 @@ def write_panel(
     table_path = panel_dir / f"{stem}.tsv"
     summary.to_csv(table_path, sep="\t", index=False)
     figure_paths = save_panel(fig, out_dir=panel_dir, stem=stem, dpi=dpi)
-    manuscript_out_dir.mkdir(parents=True, exist_ok=True)
-    manuscript_table = manuscript_out_dir / f"{stem}.tsv"
+    manuscript_figures_dir.mkdir(parents=True, exist_ok=True)
+    manuscript_tables_dir.mkdir(parents=True, exist_ok=True)
+    manuscript_table = manuscript_tables_dir / f"{stem}.tsv"
     shutil.copy2(table_path, manuscript_table)
     manuscript_figures = {}
     for figure_path in figure_paths:
-        manuscript_path = manuscript_out_dir / figure_path.name
+        manuscript_path = manuscript_figures_dir / figure_path.name
         shutil.copy2(figure_path, manuscript_path)
         manuscript_figures[figure_path.suffix.lstrip(".")] = manuscript_path
     print(f"Wrote panel {panel}: {panel_dir / stem}")
@@ -1398,7 +1409,8 @@ def main() -> None:
     run_dir = (args.run_dir or find_latest_completed_run(args.results_dir)).resolve()
     metadata_path = args.metadata.resolve()
     out_dir = (args.out_dir or DEFAULT_OUTPUT_ROOT / run_dir.name).resolve()
-    manuscript_out_dir = args.manuscript_out_dir.resolve()
+    manuscript_figures_dir = args.manuscript_out_dir.resolve()
+    manuscript_tables_dir = args.manuscript_tables_dir.resolve()
     fdr_threshold, effect_threshold = load_run_thresholds(run_dir)
 
     inputs = prepare_inputs(
@@ -1411,7 +1423,8 @@ def main() -> None:
     panels = ("A", "B", "C", "D", "E", "F") if args.panel == "all" else (args.panel,)
     print(f"Run directory: {run_dir}")
     print(f"Output directory: {out_dir}")
-    print(f"Manuscript output directory: {manuscript_out_dir}")
+    print(f"Manuscript figure output directory: {manuscript_figures_dir}")
+    print(f"Manuscript table output directory: {manuscript_tables_dir}")
     print(f"Datasets: {len(inputs.datasets)}")
     print(f"Predictors: {', '.join(inputs.tool_ids)}")
     gt_filter_text = (
@@ -1429,20 +1442,21 @@ def main() -> None:
             panel,
             inputs=inputs,
             out_dir=out_dir,
-            manuscript_out_dir=manuscript_out_dir,
+            manuscript_figures_dir=manuscript_figures_dir,
+            manuscript_tables_dir=manuscript_tables_dir,
             gtf_path=args.gtf,
             conservation_table=args.conservation_table,
             dpi=args.dpi,
         )
     if tuple(panels) == ("A", "B", "C", "D", "E", "F"):
-        write_combined_figure(panel_outputs, out_dir=manuscript_out_dir, dpi=args.dpi)
+        write_combined_figure(panel_outputs, out_dir=manuscript_figures_dir, dpi=args.dpi)
         write_supplementary_coverage_table(
             inputs=inputs,
-            manuscript_out_dir=manuscript_out_dir,
+            manuscript_tables_dir=manuscript_tables_dir,
         )
         write_gene_set_overlap_table(
             inputs=inputs,
-            manuscript_out_dir=manuscript_out_dir,
+            manuscript_tables_dir=manuscript_tables_dir,
         )
 
 
