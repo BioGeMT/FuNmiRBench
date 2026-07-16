@@ -1414,9 +1414,14 @@ def main() -> None:
     print(f"Manuscript output directory: {manuscript_out_dir}")
     print(f"Datasets: {len(inputs.datasets)}")
     print(f"Predictors: {', '.join(inputs.tool_ids)}")
+    gt_filter_text = (
+        f"FDR<{inputs.fdr_threshold}, effect>{inputs.effect_threshold}"
+        if inputs.fdr_threshold is not None
+        else f"effect>{inputs.effect_threshold}"
+    )
     print(
         "Ground-truth filters from run config: "
-        f"FDR={inputs.fdr_threshold}, effect>{inputs.effect_threshold}"
+        f"{gt_filter_text}"
     )
     panel_outputs = {}
     for panel in panels:
