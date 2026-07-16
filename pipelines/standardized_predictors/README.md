@@ -14,7 +14,6 @@ conda activate standardized_predictors
 Current predictor pipelines:
 
 - `targetscan/`
-- `tec-mitarget/`
 - `microt_cnn/`
 - `mirbind2/`
 - `mirdb_mirtarget/`
@@ -37,7 +36,6 @@ Not every pipeline currently populates every column, but they all write this sch
 ## Pipelines
 
 - `targetscan/`
-- `tec-mitarget/`
 - `microt_cnn/`
 - `mirbind2/`
 - `mirdb_mirtarget/`
