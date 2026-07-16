@@ -78,7 +78,7 @@ def main() -> None:
     final_columns = ["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score"]
 
     mirbind2_predictions_url = "https://zenodo.org/records/20609975/files/3utrs_mirbind2_predictions.tsv.gz?download=1"
-    total_steps = 5
+    total_steps = 6
 
     log_step(logger, 1, total_steps, "Download or resolve raw miRBind2 predictions")
     raw_predictions_path = download_file(
