@@ -19,6 +19,15 @@ This writes the individual panels and the combined six-panel figure to:
 manuscript_assets/figure2/
 ```
 
+The Figure 2 script reads the ground-truth FDR and effect thresholds from the
+completed benchmark run's config snapshot:
+
+```text
+<run-dir>/benchmark_config.yaml
+```
+
+Regenerate the benchmark run with the current pipeline if that file is missing.
+
 The combined figure is:
 
 ```text

@@ -44,6 +44,7 @@ from typing import Iterable
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import yaml
 
 from funmirbench.evaluate_common import CURVE_COLORS
 
@@ -53,8 +54,6 @@ DEFAULT_METADATA_PATH = Path("metadata/predictions_info.tsv")
 DEFAULT_OUTPUT_ROOT = Path("results/manuscript_figure2")
 DEFAULT_MANUSCRIPT_OUTPUT_DIR = Path("manuscript_assets/figure2")
 DEFAULT_FORMATS = ("png", "svg")
-RUN_EFFECT_THRESHOLD = 1.0
-RUN_FDR_THRESHOLD = 0.05
 PANEL_CHOICES = ("A", "B", "C", "D", "E", "F", "all")
 DEFAULT_CONSERVATION_TABLE = Path(
     "results/manuscript_supplement_utr_conservation/20260709_122904/"
@@ -185,6 +184,28 @@ def find_latest_completed_run(results_dir: Path) -> Path:
             f"No completed benchmark run with datasets/*/joined.tsv found under {results_dir}."
         )
     return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def load_run_thresholds(run_dir: Path) -> tuple[float | None, float]:
+    config_path = run_dir / "benchmark_config.yaml"
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Completed run is missing benchmark config snapshot: {config_path}. "
+            "Regenerate the benchmark run with the current pipeline so Figure 2 "
+            "can reuse the run's ground-truth thresholds."
+        )
+
+    with config_path.open("r", encoding="utf-8") as handle:
+        config = yaml.safe_load(handle) or {}
+    evaluation = config.get("evaluation") or {}
+    raw_fdr_threshold = evaluation.get("fdr_threshold", 0.05)
+    fdr_threshold = (
+        None if raw_fdr_threshold is None else float(raw_fdr_threshold)
+    )
+    effect_threshold = float(
+        evaluation.get("effect_threshold", evaluation.get("abs_logfc_threshold", 1.0))
+    )
+    return fdr_threshold, effect_threshold
 
 
 def load_tool_metadata(path: Path) -> tuple[tuple[str, ...], dict[str, str]]:
@@ -1378,12 +1399,13 @@ def main() -> None:
     metadata_path = args.metadata.resolve()
     out_dir = (args.out_dir or DEFAULT_OUTPUT_ROOT / run_dir.name).resolve()
     manuscript_out_dir = args.manuscript_out_dir.resolve()
+    fdr_threshold, effect_threshold = load_run_thresholds(run_dir)
 
     inputs = prepare_inputs(
         run_dir=run_dir,
         metadata_path=metadata_path,
-        fdr_threshold=RUN_FDR_THRESHOLD,
-        effect_threshold=RUN_EFFECT_THRESHOLD,
+        fdr_threshold=fdr_threshold,
+        effect_threshold=effect_threshold,
     )
 
     panels = ("A", "B", "C", "D", "E", "F") if args.panel == "all" else (args.panel,)
@@ -1392,7 +1414,10 @@ def main() -> None:
     print(f"Manuscript output directory: {manuscript_out_dir}")
     print(f"Datasets: {len(inputs.datasets)}")
     print(f"Predictors: {', '.join(inputs.tool_ids)}")
-    print("Ground-truth filters: inherited from the completed benchmark run")
+    print(
+        "Ground-truth filters from run config: "
+        f"FDR={inputs.fdr_threshold}, effect>{inputs.effect_threshold}"
+    )
     panel_outputs = {}
     for panel in panels:
         panel_outputs[panel] = write_panel(
