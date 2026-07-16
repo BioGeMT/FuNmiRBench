@@ -24,7 +24,7 @@ predictors:
 
 evaluation:
   predictor_load_workers: 2
-  fdr_threshold: 0.05
+  fdr_threshold: null
   effect_threshold: 1.0
   predictor_top_fraction: 0.10
   write_top_prediction_cdfs: true

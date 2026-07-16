@@ -108,6 +108,7 @@ def _finalize_run_bundle(
     *,
     out_root,
     config_path,
+    config_snapshot_path,
     tags,
     dataset_outputs,
     tool_ids,
@@ -179,6 +180,7 @@ def _finalize_run_bundle(
     )
     summary = {
         "config": str(config_path),
+        "config_snapshot": str(config_snapshot_path),
         "out_root": str(out_root),
         "out_dir": str(out_dir),
         "run_dir_name": out_dir.name,
@@ -309,6 +311,9 @@ def run_benchmark(config_path):
     logger.info(f"Results root: {out_root}")
     logger.info(f"Run output dir: {out_dir}")
     main_layout = _init_run_layout(out_dir)
+    config_snapshot_path = out_dir / "benchmark_config.yaml"
+    shutil.copy2(config_path, config_snapshot_path)
+    logger.info(f"Wrote benchmark config snapshot: {config_snapshot_path}")
 
     tool_ids = list(predictions)
     tool_labels = {
@@ -433,6 +438,7 @@ def run_benchmark(config_path):
         out_dir,
         out_root=out_root,
         config_path=config_path,
+        config_snapshot_path=config_snapshot_path,
         tags=config.get("tags"),
         dataset_outputs=dataset_outputs,
         tool_ids=tool_ids,
