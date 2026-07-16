@@ -63,9 +63,9 @@ DEFAULT_MANUSCRIPT_TABLES_DIR = Path("manuscript_assets/tables")
 DEFAULT_FORMATS = ("png", "svg")
 PANEL_CHOICES = ("A", "B", "C", "D", "E", "F", "all")
 DEFAULT_CONSERVATION_TABLE = Path(
-    "results/manuscript_supplement_utr_conservation/20260709_122904/"
     "utr3_conservation_raw.tsv"
 )
+DEFAULT_CONSERVATION_OUTPUT_ROOT = Path("results/manuscript_supplement_utr_conservation")
 DEFAULT_GTF = Path("data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz")
 ATTR_RE = re.compile(r'([A-Za-z0-9_]+) "([^"]*)"')
 INTERSECTION_COLORS = {
@@ -175,10 +175,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--conservation-table",
         type=Path,
-        default=DEFAULT_CONSERVATION_TABLE,
+        default=None,
         help=(
             "Gene-level 3'UTR conservation table with gene_id and "
-            "utr3_mean_conservation columns, used for panel F."
+            "utr3_mean_conservation columns, used for panel F. Default: "
+            "results/manuscript_supplement_utr_conservation/<run-name>/"
+            "utr3_conservation_raw.tsv."
         ),
     )
     parser.add_argument(
@@ -224,6 +226,27 @@ def load_run_thresholds(run_dir: Path) -> tuple[float | None, float]:
         evaluation.get("effect_threshold", evaluation.get("abs_logfc_threshold", 1.0))
     )
     return fdr_threshold, effect_threshold
+
+
+def default_conservation_table_for_run(run_dir: Path) -> Path:
+    return DEFAULT_CONSERVATION_OUTPUT_ROOT / run_dir.name / DEFAULT_CONSERVATION_TABLE
+
+
+def validate_panel_inputs(panels: tuple[str, ...], *, gtf_path: Path, conservation_table: Path) -> None:
+    missing = []
+    if "E" in panels and not gtf_path.exists():
+        missing.append(f"Panel E GTF: {gtf_path}")
+    if "F" in panels and not conservation_table.exists():
+        missing.append(f"Panel F conservation table: {conservation_table}")
+    if missing:
+        details = "\n".join(f"- {item}" for item in missing)
+        raise FileNotFoundError(
+            "Missing required Figure 2 input files:\n"
+            f"{details}\n"
+            "For Panel F, generate the conservation table with:\n"
+            "uv run python scripts/figure2_utr_conservation.py "
+            f"--gtf {gtf_path} --out {conservation_table}"
+        )
 
 
 def load_tool_metadata(path: Path) -> tuple[tuple[str, ...], dict[str, str]]:
@@ -1413,7 +1436,7 @@ def write_combined_figure(panel_outputs: dict[str, dict[str, Path]], *, out_dir:
     logger.info("Wrote combined Figure 2: %s", out_dir / "figure2_combined")
 
 
-def main() -> None:
+def main() -> int:
     args = parse_args()
     setup_logging(args.log_level)
     run_dir = (args.run_dir or find_latest_completed_run(args.results_dir)).resolve()
@@ -1421,6 +1444,9 @@ def main() -> None:
     out_dir = (args.out_dir or DEFAULT_OUTPUT_ROOT / run_dir.name).resolve()
     manuscript_figures_dir = args.manuscript_out_dir.resolve()
     manuscript_tables_dir = args.manuscript_tables_dir.resolve()
+    conservation_table = (
+        args.conservation_table or default_conservation_table_for_run(run_dir)
+    ).resolve()
     fdr_threshold, effect_threshold = load_run_thresholds(run_dir)
 
     inputs = prepare_inputs(
@@ -1431,10 +1457,16 @@ def main() -> None:
     )
 
     panels = ("A", "B", "C", "D", "E", "F") if args.panel == "all" else (args.panel,)
+    validate_panel_inputs(
+        panels,
+        gtf_path=args.gtf,
+        conservation_table=conservation_table,
+    )
     logger.info("Run directory: %s", run_dir)
     logger.info("Output directory: %s", out_dir)
     logger.info("Manuscript figure output directory: %s", manuscript_figures_dir)
     logger.info("Manuscript table output directory: %s", manuscript_tables_dir)
+    logger.info("Conservation table: %s", conservation_table)
     logger.info("Datasets: %d", len(inputs.datasets))
     logger.info("Predictors: %s", ", ".join(inputs.tool_ids))
     gt_filter_text = (
@@ -1452,7 +1484,7 @@ def main() -> None:
             manuscript_figures_dir=manuscript_figures_dir,
             manuscript_tables_dir=manuscript_tables_dir,
             gtf_path=args.gtf,
-            conservation_table=args.conservation_table,
+            conservation_table=conservation_table,
             dpi=args.dpi,
         )
     if tuple(panels) == ("A", "B", "C", "D", "E", "F"):
@@ -1465,7 +1497,12 @@ def main() -> None:
             inputs=inputs,
             manuscript_tables_dir=manuscript_tables_dir,
         )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        raise SystemExit(main())
+    except FileNotFoundError as error:
+        logger.error("%s", error)
+        raise SystemExit(1) from None

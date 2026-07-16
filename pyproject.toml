@@ -8,6 +8,7 @@ dependencies = [
     "scikit-learn>=1.5",
     "pyyaml>=6",
     "requests>=2.32",
+    "pybigwig>=0.3.25",
 ]
 
 [project.scripts]
