@@ -91,8 +91,7 @@ relative to the repository root.
 From the repository root:
 
 ```bash
-conda run -n standardized_predictors \
-  python pipelines/standardized_predictors/mirbind2/pipeline.py
+uv run pipelines/standardized_predictors/mirbind2/pipeline.py
 ```
 
 ## CLI Arguments
@@ -100,8 +99,7 @@ conda run -n standardized_predictors \
 Relative CLI paths are resolved from the repository root.
 
 ```bash
-conda run -n standardized_predictors \
-  python pipelines/standardized_predictors/mirbind2/pipeline.py \
+uv run pipelines/standardized_predictors/mirbind2/pipeline.py \
   --mirbase-mature data/resources/mirbase/mature.fa \
   --output data/predictions/mirbind2/mirbind2_standardized.tsv \
   --log-file pipelines/standardized_predictors/mirbind2/mirbind2_pipeline.log \

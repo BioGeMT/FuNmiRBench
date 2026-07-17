@@ -61,14 +61,6 @@ The log notes whether each resource was reused from cache or downloaded.
 From the repository root:
 
 ```bash
-conda env create -f pipelines/standardized_predictors/environment.yml
-conda activate standardized_predictors
-python pipelines/standardized_predictors/microt_cnn/pipeline.py
-```
-
-Or using the repo's `uv` environment:
-
-```bash
 uv run pipelines/standardized_predictors/microt_cnn/pipeline.py
 ```
 
