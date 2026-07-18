@@ -34,11 +34,9 @@ from utils import (  # noqa: E402
 
 logger = logging.getLogger("miraw_pipeline")
 
-MIRAW_PAPER_DOI = "10.1371/journal.pcbi.1006185"
 MIRAW_PREDICTIONS_DOI = "10.6084/m9.figshare.32982218"
 MIRAW_FIGSHARE_ARTICLE_ID = "32982218"
 MIRAW_FIGSHARE_FILENAME = "helios_summary.tsv.gz"
-MIRAW_SOURCE_ENSEMBL_RELEASE = 112
 TARGET_ENSEMBL_RELEASE = 115
 TARGET_MIRBASE_RELEASE = "22.1"
 
@@ -115,15 +113,6 @@ def main() -> None:
 
     configure_file_logging(args.log_file, args.log_level)
     logger.info("Starting miRAW standardization pipeline")
-    logger.info(
-        "Source: miRAW paper DOI %s; prediction dataset DOI %s; source Ensembl release %d; "
-        "target Ensembl release %d; miRBase release %s",
-        MIRAW_PAPER_DOI,
-        MIRAW_PREDICTIONS_DOI,
-        MIRAW_SOURCE_ENSEMBL_RELEASE,
-        TARGET_ENSEMBL_RELEASE,
-        TARGET_MIRBASE_RELEASE,
-    )
     total_steps = 9
 
     log_step(logger, 1, total_steps, "Download or reuse raw site-level miRAW predictions")
