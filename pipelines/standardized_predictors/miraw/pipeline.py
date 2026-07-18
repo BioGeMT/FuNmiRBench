@@ -8,6 +8,8 @@ import logging
 import sys
 from pathlib import Path
 
+import requests
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (  # noqa: E402
     add_standard_io_args,
@@ -32,6 +34,36 @@ from utils import (  # noqa: E402
 
 logger = logging.getLogger("miraw_pipeline")
 
+MIRAW_FIGSHARE_DOI = "10.6084/m9.figshare.32982218"
+MIRAW_FIGSHARE_ARTICLE_ID = "32982218"
+MIRAW_FIGSHARE_FILENAME = "best_per_pair.tsv.gz"
+
+
+def resolve_figshare_download_url(article_id: str, filename: str, timeout: int = 120) -> str:
+    metadata_url = f"https://api.figshare.com/v2/articles/{article_id}"
+    try:
+        response = requests.get(metadata_url, timeout=timeout)
+        response.raise_for_status()
+        metadata = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise RuntimeError(
+            f"Failed to resolve miRAW predictions from DOI {MIRAW_FIGSHARE_DOI}: {exc}"
+        ) from exc
+
+    for file_info in metadata.get("files", []):
+        if file_info.get("name") == filename and file_info.get("download_url"):
+            return str(file_info["download_url"])
+
+    available_files = sorted(
+        str(file_info.get("name"))
+        for file_info in metadata.get("files", [])
+        if file_info.get("name")
+    )
+    raise RuntimeError(
+        f"Figshare record for DOI {MIRAW_FIGSHARE_DOI} does not contain {filename}. "
+        f"Available files: {available_files}"
+    )
+
 
 def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -40,8 +72,11 @@ def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     parser.add_argument(
         "--predictions-file",
         type=Path,
-        default=pipeline_dir / "data" / "best_per_pair.tsv.gz",
-        help="Path to the local preprocessed miRAW predictions file (.tsv, .tsv.gz, .txt, or .txt.gz)",
+        default=pipeline_dir / "data" / MIRAW_FIGSHARE_FILENAME,
+        help=(
+            "Path to the preprocessed miRAW predictions file. When the default path is missing, "
+            f"the file is downloaded from DOI {MIRAW_FIGSHARE_DOI}."
+        ),
     )
     parser.add_argument(
         "--resources-dir",
@@ -68,9 +103,21 @@ def main() -> None:
 
     configure_file_logging(args.log_file, args.log_level)
     logger.info("Starting miRAW standardization pipeline")
-    total_steps = 8
+    total_steps = 9
 
-    log_step(logger, 1, total_steps, "Resolve external miRBase/Ensembl resources")
+    log_step(logger, 1, total_steps, "Download or resolve preprocessed miRAW predictions")
+    miraw_download_url = resolve_figshare_download_url(
+        MIRAW_FIGSHARE_ARTICLE_ID,
+        MIRAW_FIGSHARE_FILENAME,
+    )
+    predictions_path = download_file(
+        miraw_download_url,
+        args.predictions_file,
+        timeout=360,
+        resource_label=f"miRAW predictions from DOI {MIRAW_FIGSHARE_DOI}",
+    )
+
+    log_step(logger, 2, total_steps, "Resolve external miRBase/Ensembl resources")
     mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"
     mirbase_path = download_file(
         mirbase_url,
@@ -86,10 +133,10 @@ def main() -> None:
         resource_label="Ensembl v115 GTF resource",
     )
 
-    log_step(logger, 2, total_steps, "Load preprocessed miRAW predictions")
-    pred_df = load_miraw_predictions(args.predictions_file)
+    log_step(logger, 3, total_steps, "Load preprocessed miRAW predictions")
+    pred_df = load_miraw_predictions(predictions_path)
 
-    log_step(logger, 3, total_steps, "Collapse to the best Prediction score per Ensembl_ID-miRNA pair")
+    log_step(logger, 4, total_steps, "Collapse to the best Prediction score per Ensembl_ID-miRNA pair")
     pred_df = collapse_to_best_score_per_pair(
         pred_df,
         ensembl_id_column="Ensembl_ID",
@@ -97,13 +144,13 @@ def main() -> None:
         score_column="Score",
     )
 
-    log_step(logger, 4, total_steps, "Create miRNA name-to-MIMAT mapping from miRBase mature.fa")
+    log_step(logger, 5, total_steps, "Create miRNA name-to-MIMAT mapping from miRBase mature.fa")
     mirna_name_to_mimat_map = create_mirna_name_to_mimat_mapping(mirbase_path)
 
-    log_step(logger, 5, total_steps, "Create Ensembl gene ID-to-gene-name mapping from Ensembl v115 GTF")
+    log_step(logger, 6, total_steps, "Create Ensembl gene ID-to-gene-name mapping from Ensembl v115 GTF")
     ensembl_to_gene_name_map = create_ensembl_to_gene_name_mapping_from_gtf(ensembl_gtf_path)
 
-    log_step(logger, 6, total_steps, "Map miRNA names to MIMAT IDs")
+    log_step(logger, 7, total_steps, "Map miRNA names to MIMAT IDs")
     pred_df = map_mirna_names_to_mimat(
         pred_df,
         mirna_name_to_mimat_map,
@@ -111,7 +158,7 @@ def main() -> None:
         mimat_column="miRNA_ID",
     )
 
-    log_step(logger, 7, total_steps, "Map Ensembl IDs to gene names")
+    log_step(logger, 8, total_steps, "Map Ensembl IDs to gene names")
     pred_df = map_ensembl_to_gene_name(
         pred_df,
         ensembl_to_gene_name_map,
@@ -120,7 +167,7 @@ def main() -> None:
         raw_gene_name_column="Raw_Gene_Name",
     )
 
-    log_step(logger, 8, total_steps, "Build, validate, and write standardized output table")
+    log_step(logger, 9, total_steps, "Build, validate, and write standardized output table")
     final_columns = ["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score"]
     final_df = build_output_table(
         pred_df,
