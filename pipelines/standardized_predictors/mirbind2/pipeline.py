@@ -20,6 +20,7 @@ from common import (  # noqa: E402
 from utils import (  # noqa: E402
     build_output_table,
     create_mirna_name_to_mimat_mapping,
+    download_file,
     load_predictions,
     map_mirna_names_to_mimat,
     resolve_path_relative_to_root,
@@ -33,8 +34,8 @@ def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     parser.add_argument(
         "--predictions-file",
         type=Path,
-        default=pipeline_dir / "3utrs_mirbind2_predictions.tsv",
-        help="Raw miRBind2 TSV prediction file",
+        default=pipeline_dir / "data" / "3utrs_mirbind2_predictions.tsv.gz",
+        help="Raw miRBind2 TSV prediction file (downloaded from Zenodo by default)",
     )
     parser.add_argument(
         "--mirbase-mature",
@@ -76,10 +77,20 @@ def main() -> None:
 
     final_columns = ["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score"]
 
-    total_steps = 5
-    log_step(logger, 1, total_steps, "Load raw miRBind2 predictions")
-    pred_df = load_predictions(
+    mirbind2_predictions_url = "https://zenodo.org/records/20609975/files/3utrs_mirbind2_predictions.tsv.gz?download=1"
+    total_steps = 6
+
+    log_step(logger, 1, total_steps, "Download or resolve raw miRBind2 predictions")
+    raw_predictions_path = download_file(
+        mirbind2_predictions_url,
         args.predictions_file,
+        timeout=360,
+        resource_label="miRBind2 raw prediction file",
+    )
+
+    log_step(logger, 2, total_steps, "Load raw miRBind2 predictions")
+    pred_df = load_predictions(
+        raw_predictions_path,
         required_columns=raw_columns,
         ensembl_column=raw_ensembl_column,
         gene_name_column=raw_gene_name_column,
@@ -87,10 +98,10 @@ def main() -> None:
         score_column=raw_prediction_column,
     )
 
-    log_step(logger, 2, total_steps, "Create miRNA name-to-MIMAT mapping from miRBase mature.fa")
+    log_step(logger, 3, total_steps, "Create miRNA name-to-MIMAT mapping from miRBase mature.fa")
     mirna_name_to_mimat = create_mirna_name_to_mimat_mapping(args.mirbase_mature)
 
-    log_step(logger, 3, total_steps, "Annotate raw miRNA names to MIMAT IDs")
+    log_step(logger, 4, total_steps, "Annotate raw miRNA names to MIMAT IDs")
     pred_df = map_mirna_names_to_mimat(
         pred_df,
         mirna_name_to_mimat,
@@ -98,7 +109,7 @@ def main() -> None:
         mimat_column="miRNA_ID",
     )
 
-    log_step(logger, 4, total_steps, "Build standardized output columns")
+    log_step(logger, 5, total_steps, "Build standardized output columns")
     final_df = build_output_table(
         pred_df,
         raw_ensembl_column=raw_ensembl_column,
@@ -113,7 +124,7 @@ def main() -> None:
         final_columns=final_columns,
     )
 
-    log_step(logger, 5, total_steps, "Validate and write standardized output table")
+    log_step(logger, 6, total_steps, "Validate and write standardized output table")
     write_standardized_table(final_df, args.output, logger=logger, columns=final_columns)
     logger.info("Relative output path: %s", resolve_path_relative_to_root(args.output))
 

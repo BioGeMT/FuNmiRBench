@@ -110,8 +110,7 @@ relative to the repository root.
 From the repository root:
 
 ```bash
-conda run -n standardized_predictors \
-  python pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py
+uv run pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py
 ```
 
 ## CLI Arguments
@@ -119,8 +118,7 @@ conda run -n standardized_predictors \
 Relative CLI paths are resolved from the repository root, so the current working directory does not change where inputs, resources, logs, or outputs are read or written.
 
 ```bash
-conda run -n standardized_predictors \
-  python pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py \
+uv run pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py \
   --predictions-file pipelines/standardized_predictors/mirdb_mirtarget/data/miRDB_v6.0_prediction_result_human_all_scores.txt.gz \
   --resources-dir pipelines/standardized_predictors/mirdb_mirtarget/data/resources \
   --output data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv \

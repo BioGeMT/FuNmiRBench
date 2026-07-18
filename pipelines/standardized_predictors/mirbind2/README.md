@@ -10,11 +10,19 @@ This directory contains the standardization pipeline for miRBind2 human 3UTR pre
 
 ## Inputs
 
-The raw input file is not tracked in Git because it is large. Before running the pipeline, copy the raw miRBind2 prediction table into this directory with this exact filename:
+The raw input file is not tracked in Git because it is large. By default, the pipeline downloads it from Zenodo and caches it in this directory with this exact filename:
 
 ```text
-3utrs_mirbind2_predictions.tsv
+data/3utrs_mirbind2_predictions.tsv.gz
 ```
+
+Source URL:
+
+```text
+https://zenodo.org/records/20609975/files/3utrs_mirbind2_predictions.tsv.gz?download=1
+```
+
+You can still override the input with `--predictions-file` if you want to point the pipeline at a local copy.
 
 Its header is:
 
@@ -83,8 +91,7 @@ relative to the repository root.
 From the repository root:
 
 ```bash
-conda run -n standardized_predictors \
-  python pipelines/standardized_predictors/mirbind2/pipeline.py
+uv run pipelines/standardized_predictors/mirbind2/pipeline.py
 ```
 
 ## CLI Arguments
@@ -92,9 +99,7 @@ conda run -n standardized_predictors \
 Relative CLI paths are resolved from the repository root.
 
 ```bash
-conda run -n standardized_predictors \
-  python pipelines/standardized_predictors/mirbind2/pipeline.py \
-  --predictions-file pipelines/standardized_predictors/mirbind2/3utrs_mirbind2_predictions_no_sequences.tsv \
+uv run pipelines/standardized_predictors/mirbind2/pipeline.py \
   --mirbase-mature data/resources/mirbase/mature.fa \
   --output data/predictions/mirbind2/mirbind2_standardized.tsv \
   --log-file pipelines/standardized_predictors/mirbind2/mirbind2_pipeline.log \
