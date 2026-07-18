@@ -36,7 +36,7 @@ logger = logging.getLogger("miraw_pipeline")
 
 MIRAW_FIGSHARE_DOI = "10.6084/m9.figshare.32982218"
 MIRAW_FIGSHARE_ARTICLE_ID = "32982218"
-MIRAW_FIGSHARE_FILENAME = "best_per_pair.tsv.gz"
+MIRAW_FIGSHARE_FILENAME = "helios_summary.tsv.gz"
 
 
 def resolve_figshare_download_url(article_id: str, filename: str, timeout: int = 120) -> str:
