@@ -1,5 +1,5 @@
-import gzip
 import ast
+import gzip
 import logging
 from pathlib import Path
 from typing import Optional
@@ -8,6 +8,7 @@ import pandas as pd
 import requests
 
 logger = logging.getLogger("miraw_utils")
+
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
@@ -53,8 +54,12 @@ def download_file(
         return output_path
 
     logger.info("Downloading %s: %s", resource_label, relative_path)
-    response = requests.get(url, params=params, timeout=timeout)
-    response.raise_for_status()
+    try:
+        response = requests.get(url, params=params, timeout=timeout)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Failed to download {resource_label} from {url}: {exc}") from exc
+
     if not response.content.strip():
         raise RuntimeError(f"Failed to download {resource_label}: empty response from {url}")
 
@@ -69,36 +74,24 @@ def download_file(
 
 def create_mirna_name_to_mimat_mapping(mature_fa_path: Path) -> dict[str, str]:
     mapping: dict[str, str] = {}
-
-    with open(mature_fa_path, "r", encoding="utf-8") as handle:
+    with mature_fa_path.open("r", encoding="utf-8") as handle:
         for line in handle:
             if not line.startswith(">"):
                 continue
-
             parts = line[1:].strip().split()
             if len(parts) < 2:
-                raise ValueError(
-                    f"{mature_fa_path}: invalid FASTA header; {line.strip()}"
-                )
-
+                raise ValueError(f"{mature_fa_path}: invalid FASTA header; {line.strip()}")
             mirna_name, mimat_id = parts[0], parts[1]
-
             if not mirna_name.startswith("hsa-"):
                 continue
-
             if not mimat_id.startswith("MIMAT"):
-                raise ValueError(
-                    f"{mature_fa_path}: invalid MIMAT ID; {line.strip()}"
-                )
-
+                raise ValueError(f"{mature_fa_path}: invalid MIMAT ID; {line.strip()}")
             if mirna_name in mapping and mapping[mirna_name] != mimat_id:
                 raise ValueError(
                     f"{mature_fa_path}: conflicting MIMAT for {mirna_name}: "
                     f"{mapping[mirna_name]} vs {mimat_id}"
                 )
-
             mapping[mirna_name] = mimat_id
-
     logger.info("Loaded %d human miRNA->MIMAT mappings", len(mapping))
     return mapping
 
@@ -108,7 +101,7 @@ def _strip_ensembl_version(value: object) -> str:
 
 
 def _parse_gtf_attributes(raw_attrs: str) -> dict[str, str]:
-    attrs = {}
+    attrs: dict[str, str] = {}
     for part in [item.strip() for item in raw_attrs.strip().split(";") if item.strip()]:
         if " " not in part:
             continue
@@ -138,9 +131,7 @@ def create_ensembl_to_gene_name_mapping_from_gtf(gtf_gz_path: Path) -> dict[str,
             if not gene_id or not gene_name:
                 continue
             gene_id = _strip_ensembl_version(gene_id)
-            gene_name = str(gene_name).strip()
-            if not gene_id or not gene_name:
-                continue
+            gene_name = gene_name.strip()
             if gene_id in mapping and mapping[gene_id] != gene_name:
                 n_conflicting += 1
                 continue
@@ -158,7 +149,7 @@ def create_ensembl_to_gene_name_mapping_from_gtf(gtf_gz_path: Path) -> dict[str,
 def _open_text_auto(path: Path):
     if path.suffix == ".gz":
         return gzip.open(path, "rt", encoding="utf-8", errors="replace")
-    return open(path, "r", encoding="utf-8", errors="replace")
+    return path.open("r", encoding="utf-8", errors="replace")
 
 
 def _extract_raw_gene_name_suffix(raw_gene_value: str) -> Optional[str]:
@@ -168,84 +159,6 @@ def _extract_raw_gene_name_suffix(raw_gene_value: str) -> Optional[str]:
     if not suffix or suffix.startswith("biotype="):
         return None
     return suffix
-
-def _parse_miraw_line(line: str, line_no: int, predictions_path: Path) -> Optional[dict[str, object]]:
-    try:
-        record = ast.literal_eval(line)
-    except (SyntaxError, ValueError) as exc:
-        logger.debug(
-            "Skipping unparsable miRAW line %d in %s: %s",
-            line_no,
-            predictions_path,
-            exc,
-        )
-        return None
-
-    if not isinstance(record, dict):
-        logger.debug(
-            "Skipping miRAW line %d in %s because it is not a dictionary",
-            line_no,
-            predictions_path,
-        )
-        return None
-
-    required_keys = {"GeneName", "miRNA", "Prediction"}
-    missing_keys = required_keys - set(record)
-    if missing_keys:
-        logger.debug(
-            "Skipping miRAW line %d in %s because it is missing keys: %s",
-            line_no,
-            predictions_path,
-            sorted(missing_keys),
-        )
-        return None
-
-    raw_gene = str(record["GeneName"]).strip()
-    mirna_name = str(record["miRNA"]).strip()
-    score_raw = record["Prediction"]
-
-    if "__" not in raw_gene:
-        logger.debug(
-            "Skipping miRAW line %d in %s because GeneName does not contain '__': %s",
-            line_no,
-            predictions_path,
-            raw_gene,
-        )
-        return None
-
-    ensembl_id = _strip_ensembl_version(raw_gene.split("__", 1)[0])
-
-    return {
-        "Raw_Gene_Field": raw_gene,
-        "Ensembl_ID": ensembl_id,
-        "Raw_Gene_Name": _extract_raw_gene_name_suffix(raw_gene),
-        "miRNA_Name": mirna_name,
-        "Score": score_raw,
-    }
-
-
-def _load_preprocessed_miraw_tsv(predictions_path: Path) -> pd.DataFrame:
-    df = pd.read_csv(
-        predictions_path,
-        sep="\t",
-        dtype={
-            "Ensembl_ID": "string",
-            "Raw_Gene_Name": "string",
-            "miRNA_Name": "string",
-        },
-        keep_default_na=False,
-    )
-    required_columns = {"Ensembl_ID", "Raw_Gene_Name", "miRNA_Name", "Score"}
-    missing_columns = required_columns - set(df.columns)
-    if missing_columns:
-        raise ValueError(
-            f"{predictions_path}: missing required preprocessed miRAW columns: "
-            f"{sorted(missing_columns)}"
-        )
-
-    df = df.loc[:, ["Ensembl_ID", "Raw_Gene_Name", "miRNA_Name", "Score"]].copy()
-    logger.info("Loaded %d preprocessed miRAW TSV rows from %s", len(df), predictions_path)
-    return _clean_loaded_miraw_predictions(df, duplicate_subset=["Ensembl_ID", "miRNA_Name", "Score"])
 
 
 def _clean_loaded_miraw_predictions(
@@ -268,18 +181,121 @@ def _clean_loaded_miraw_predictions(
     return df
 
 
-def _is_preprocessed_miraw_tsv(predictions_path: Path) -> bool:
+def _read_header(predictions_path: Path) -> list[str]:
     with _open_text_auto(predictions_path) as handle:
-        first_line = handle.readline().rstrip("\n")
-    return first_line.split("\t")[:4] == ["Ensembl_ID", "Raw_Gene_Name", "miRNA_Name", "Score"]
+        return handle.readline().rstrip("\n").split("\t")
+
+
+def _load_preprocessed_miraw_tsv(predictions_path: Path) -> pd.DataFrame:
+    df = pd.read_csv(
+        predictions_path,
+        sep="\t",
+        dtype={
+            "Ensembl_ID": "string",
+            "Raw_Gene_Name": "string",
+            "miRNA_Name": "string",
+        },
+        keep_default_na=False,
+    )
+    required_columns = {"Ensembl_ID", "Raw_Gene_Name", "miRNA_Name", "Score"}
+    missing_columns = required_columns - set(df.columns)
+    if missing_columns:
+        raise ValueError(
+            f"{predictions_path}: missing required preprocessed miRAW columns: "
+            f"{sorted(missing_columns)}"
+        )
+    df = df.loc[:, ["Ensembl_ID", "Raw_Gene_Name", "miRNA_Name", "Score"]].copy()
+    logger.info("Loaded %d preprocessed miRAW TSV rows from %s", len(df), predictions_path)
+    return _clean_loaded_miraw_predictions(
+        df,
+        duplicate_subset=["Ensembl_ID", "miRNA_Name", "Score"],
+    )
+
+
+def _load_figshare_miraw_tsv(predictions_path: Path) -> pd.DataFrame:
+    df = pd.read_csv(
+        predictions_path,
+        sep="\t",
+        dtype={
+            "Target_ENSG": "string",
+            "GeneName": "string",
+            "miRNA": "string",
+        },
+        keep_default_na=False,
+    )
+    required_columns = {"Target_ENSG", "GeneName", "miRNA", "Prediction"}
+    missing_columns = required_columns - set(df.columns)
+    if missing_columns:
+        raise ValueError(
+            f"{predictions_path}: missing required Figshare miRAW columns: "
+            f"{sorted(missing_columns)}"
+        )
+
+    raw_gene_field = df["GeneName"].astype(str).str.strip()
+    target_ensg = df["Target_ENSG"].astype(str).str.strip()
+    ensembl_id = target_ensg.str.split("__", n=1).str[0]
+
+    out = pd.DataFrame(
+        {
+            "Raw_Gene_Field": raw_gene_field,
+            "Ensembl_ID": ensembl_id,
+            "Raw_Gene_Name": raw_gene_field.map(_extract_raw_gene_name_suffix),
+            "miRNA_Name": df["miRNA"],
+            "Score": df["Prediction"],
+        }
+    )
+    logger.info("Loaded %d Figshare miRAW TSV rows from %s", len(out), predictions_path)
+    return _clean_loaded_miraw_predictions(
+        out,
+        duplicate_subset=["Ensembl_ID", "miRNA_Name", "Score", "Raw_Gene_Field"],
+    )
+
+
+def _parse_miraw_line(
+    line: str,
+    line_no: int,
+    predictions_path: Path,
+) -> Optional[dict[str, object]]:
+    try:
+        record = ast.literal_eval(line)
+    except (SyntaxError, ValueError) as exc:
+        logger.debug(
+            "Skipping unparsable miRAW line %d in %s: %s",
+            line_no,
+            predictions_path,
+            exc,
+        )
+        return None
+
+    if not isinstance(record, dict):
+        return None
+    required_keys = {"GeneName", "miRNA", "Prediction"}
+    if required_keys - set(record):
+        return None
+
+    raw_gene = str(record["GeneName"]).strip()
+    if "__" not in raw_gene:
+        return None
+
+    return {
+        "Raw_Gene_Field": raw_gene,
+        "Ensembl_ID": raw_gene.split("__", 1)[0],
+        "Raw_Gene_Name": _extract_raw_gene_name_suffix(raw_gene),
+        "miRNA_Name": str(record["miRNA"]).strip(),
+        "Score": record["Prediction"],
+    }
 
 
 def load_miraw_predictions(predictions_path: Path) -> pd.DataFrame:
     if not predictions_path.exists():
         raise FileNotFoundError(f"Missing prediction file: {predictions_path}")
 
-    if _is_preprocessed_miraw_tsv(predictions_path):
+    header = _read_header(predictions_path)
+    if header[:4] == ["Ensembl_ID", "Raw_Gene_Name", "miRNA_Name", "Score"]:
         return _load_preprocessed_miraw_tsv(predictions_path)
+
+    if {"Target_ENSG", "GeneName", "miRNA", "Prediction"}.issubset(header):
+        return _load_figshare_miraw_tsv(predictions_path)
 
     rows: list[dict[str, object]] = []
     bad_lines = 0
@@ -292,17 +308,18 @@ def load_miraw_predictions(predictions_path: Path) -> pd.DataFrame:
             if parsed_row is None:
                 bad_lines += 1
                 continue
-
             rows.append(parsed_row)
 
     if not rows:
-        raise RuntimeError("No miRAW prediction rows could be parsed from the input file")
+        raise RuntimeError(
+            "No miRAW prediction rows could be parsed from the input file. "
+            f"Detected header: {header}"
+        )
 
     df = pd.DataFrame(rows)
-    logger.info("Loaded %d parsed miRAW rows from %s", len(df), predictions_path)
+    logger.info("Loaded %d parsed legacy miRAW rows from %s", len(df), predictions_path)
     if bad_lines:
         logger.warning("Skipped %d unparsable input lines", bad_lines)
-
     return _clean_loaded_miraw_predictions(
         df,
         duplicate_subset=["Ensembl_ID", "miRNA_Name", "Score", "Raw_Gene_Field"],
@@ -316,9 +333,11 @@ def collapse_to_best_score_per_pair(
     score_column: str,
 ) -> pd.DataFrame:
     before = len(df)
-    sort_cols = [ensembl_id_column, mirna_name_column, score_column]
     out = (
-        df.sort_values(sort_cols, ascending=[True, True, False])
+        df.sort_values(
+            [ensembl_id_column, mirna_name_column, score_column],
+            ascending=[True, True, False],
+        )
         .drop_duplicates(subset=[ensembl_id_column, mirna_name_column], keep="first")
         .copy()
     )
@@ -358,24 +377,20 @@ def map_ensembl_to_gene_name(
     out = df.copy()
     out[gene_name_column] = out[ensembl_id_column].map(ensembl_to_gene_name_map).astype("string")
 
-    # Fallback to the raw suffix when it looks like an actual gene symbol.
     raw_gene_name = out[raw_gene_name_column].fillna("").astype("string").str.strip()
     needs_fallback = out[gene_name_column].isna() & (raw_gene_name != "")
-    out.loc[needs_fallback, gene_name_column] = out.loc[needs_fallback, raw_gene_name_column].astype("string")
+    out.loc[needs_fallback, gene_name_column] = raw_gene_name[needs_fallback]
 
-    missing_or_empty_after_fallback = out[gene_name_column].isna() | (
+    missing = out[gene_name_column].isna() | (
         out[gene_name_column].astype("string").str.strip() == ""
     )
-    missing_after_fallback = int(missing_or_empty_after_fallback.sum())
-    if missing_after_fallback:
+    if missing.any():
         logger.info(
             "Gene names missing after Ensembl v115/raw suffix annotation: %d rows; "
             "using Ensembl_ID as Gene_Name placeholder",
-            missing_after_fallback,
+            int(missing.sum()),
         )
-        out.loc[missing_or_empty_after_fallback, gene_name_column] = out.loc[
-            missing_or_empty_after_fallback, ensembl_id_column
-        ].astype("string")
+        out.loc[missing, gene_name_column] = out.loc[missing, ensembl_id_column].astype("string")
 
     before = len(out)
     out = out[out[gene_name_column].astype(str).str.strip() != ""].copy()
@@ -395,7 +410,6 @@ def build_output_table(
     score_column: str,
 ) -> pd.DataFrame:
     out = df.loc[:, final_columns].copy()
-
     before = len(out)
     out = out.dropna(subset=[ensembl_id_column, mimat_column, score_column]).copy()
     for column in final_columns:
