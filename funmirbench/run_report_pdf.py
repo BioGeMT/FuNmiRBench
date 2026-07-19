@@ -457,7 +457,7 @@ def write_publication_run_pdf_report(
     metric_tables,
     combined_outputs,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     predictor_top_fraction,
 ):
     del metric_tables
@@ -480,9 +480,9 @@ def write_publication_run_pdf_report(
                 [
                     "GT positives",
                     (
-                        f"effect > {float(abs_logfc_threshold)}; sign-aware (-logFC Overexpression, +logFC Knockout/Knockdown)"
+                        f"effect > {float(effect_threshold)}; sign-aware (-logFC Overexpression, +logFC Knockout/Knockdown)"
                         if fdr_threshold is None
-                        else f"FDR < {float(fdr_threshold)}; effect > {float(abs_logfc_threshold)}; sign-aware (-logFC Overexpression, +logFC Knockout/Knockdown)"
+                        else f"FDR < {float(fdr_threshold)}; effect > {float(effect_threshold)}; sign-aware (-logFC Overexpression, +logFC Knockout/Knockdown)"
                     ),
                 ],
                 ["Top fraction", f"{predictor_top_fraction:.0%} exact top-k per predictor"],

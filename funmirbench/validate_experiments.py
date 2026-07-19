@@ -144,7 +144,7 @@ def _validate_de_table(
     perturbation: str,
     path: pathlib.Path,
     fdr_threshold: float | None,
-    abs_logfc_threshold: float,
+    effect_threshold: float,
 ) -> list[ValidationIssue]:
     issues = []
     try:
@@ -241,13 +241,13 @@ def _validate_de_table(
     usable = valid_logfc.copy()
     effect = _expected_effect(logfc.astype(float), perturbation)
     if fdr_threshold is None:
-        positive_mask = usable & (effect > float(abs_logfc_threshold))
+        positive_mask = usable & (effect > float(effect_threshold))
     else:
         usable = usable & valid_fdr & (fdr >= 0.0) & (fdr <= 1.0)
-        positive_mask = usable & (fdr < float(fdr_threshold)) & (effect > float(abs_logfc_threshold))
+        positive_mask = usable & (fdr < float(fdr_threshold)) & (effect > float(effect_threshold))
     positives = int(positive_mask.sum())
     negatives = int(usable.sum() - positives)
-    rule = _gt_rule_caption(fdr_threshold, abs_logfc_threshold)
+    rule = _gt_rule_caption(fdr_threshold, effect_threshold)
     if positives == 0:
         issues.append(
             ValidationIssue(
@@ -340,7 +340,7 @@ def validate_experiments(
     root: pathlib.Path | None = None,
     filters: dict | None = None,
     fdr_threshold: float | None = 0.05,
-    abs_logfc_threshold: float = 1.0,
+    effect_threshold: float = 1.0,
 ) -> ValidationSummary:
     experiments_tsv = pathlib.Path(experiments_tsv).expanduser().resolve()
     root = pathlib.Path(root).expanduser().resolve() if root is not None else None
@@ -391,7 +391,7 @@ def validate_experiments(
                 perturbation=perturbation,
                 path=path,
                 fdr_threshold=fdr_threshold,
-                abs_logfc_threshold=abs_logfc_threshold,
+                effect_threshold=effect_threshold,
             )
             nonfatal_notices = [
                 issue
@@ -494,8 +494,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--experiments-tsv", type=pathlib.Path, required=True)
     parser.add_argument("--root", type=pathlib.Path, default=None)
     parser.add_argument("--fdr-threshold", type=float, default=0.05)
-    parser.add_argument("--effect-threshold", type=float, default=None)
-    parser.add_argument("--abs-logfc-threshold", type=float, default=1.0)
+    parser.add_argument("--effect-threshold", type=float, default=1.0)
     parser.add_argument(
         "--log-level",
         default="INFO",
@@ -509,11 +508,7 @@ def main(argv: list[str] | None = None) -> int:
         args.experiments_tsv,
         root=args.root,
         fdr_threshold=args.fdr_threshold,
-        abs_logfc_threshold=(
-            args.effect_threshold
-            if args.effect_threshold is not None
-            else args.abs_logfc_threshold
-        ),
+        effect_threshold=args.effect_threshold,
     )
     log_validation_summary(summary)
     return 0 if summary.ok else 1

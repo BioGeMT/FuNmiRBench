@@ -37,10 +37,10 @@ def _format_summary_value(value, *, percent=False):
     return f"{number:.3f}"
 
 
-def _gt_threshold_box_text(fdr_threshold, abs_logfc_threshold):
+def _gt_threshold_box_text(fdr_threshold, effect_threshold):
     if fdr_threshold is None:
-        return f"no FDR\neffect > {float(abs_logfc_threshold)}"
-    return f"FDR < {float(fdr_threshold)}\neffect > {float(abs_logfc_threshold)}"
+        return f"no FDR\neffect > {float(effect_threshold)}"
+    return f"FDR < {float(fdr_threshold)}\neffect > {float(effect_threshold)}"
 
 
 def _init_run_layout(base_dir):
@@ -254,7 +254,7 @@ def write_run_readme(
     metric_tables,
     combined_outputs,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     predictor_top_fraction,
     protein_coding_filter=None,
 ):
@@ -281,7 +281,7 @@ def write_run_readme(
         f"- Predictors: `{', '.join(display_tool_ids)}`",
         "",
         "## Evaluation Settings",
-        f"- GT positive threshold: {describe_gt_rule(fdr_threshold, abs_logfc_threshold, markdown=True)}",
+        f"- GT positive threshold: {describe_gt_rule(fdr_threshold, effect_threshold, markdown=True)}",
         (
             f"- Predictor agreement top fraction: `{predictor_top_fraction:.0%}`"
             " (exact top-k per predictor, deterministic tie-break)"
@@ -447,7 +447,7 @@ def write_run_pdf_report(
     metric_tables,
     combined_outputs,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     predictor_top_fraction,
 ):
     del metric_tables
@@ -534,7 +534,7 @@ def write_run_pdf_report(
         summary_boxes = [
             ("Datasets", str(len(dataset_outputs))),
             ("Predictors", str(len(tool_ids))),
-            ("GT Threshold", _gt_threshold_box_text(fdr_threshold, abs_logfc_threshold)),
+            ("GT Threshold", _gt_threshold_box_text(fdr_threshold, effect_threshold)),
             ("Top Fraction", f"{predictor_top_fraction:.0%}\nexact top-k"),
         ]
         x_positions = [0.06, 0.29, 0.52, 0.75]
@@ -559,7 +559,7 @@ def write_run_pdf_report(
             ax,
             "Evaluation Settings",
             [
-                f"GT positives: {describe_gt_rule(fdr_threshold, abs_logfc_threshold)}",
+                f"GT positives: {describe_gt_rule(fdr_threshold, effect_threshold)}",
                 "Predictor scores are aligned so that higher always means stronger before evaluation.",
                 "Per-dataset heatmaps and agreement plots use dataset-local tie-aware dense ranks.",
                 "Combined PR/ROC/GSEA plots use only the common set of genes scored by all compared predictors.",
@@ -851,7 +851,7 @@ def finalize_run_bundle(
     joined_frames,
     tool_labels,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     predictor_top_fraction,
     logger_info,
 ):
@@ -867,7 +867,7 @@ def finalize_run_bundle(
         layout["combined_plots_dir"],
         joined_frames=joined_frames,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         predictor_top_fraction=predictor_top_fraction,
         tool_labels=tool_labels,
         logger=logger_info,
@@ -880,7 +880,7 @@ def finalize_run_bundle(
         metric_tables=metric_tables,
         combined_outputs=combined_outputs,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         predictor_top_fraction=predictor_top_fraction,
     )
     report_path = write_run_pdf_report(
@@ -891,7 +891,7 @@ def finalize_run_bundle(
         metric_tables=metric_tables,
         combined_outputs=combined_outputs,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         predictor_top_fraction=predictor_top_fraction,
     )
     summary = {

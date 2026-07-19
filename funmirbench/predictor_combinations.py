@@ -132,7 +132,7 @@ def _iter_tool_combinations(tool_ids, *, max_combination_size=DEFAULT_MAX_COMBIN
             yield tuple(combo)
 
 
-def _prepare_combo_frame(joined, combo, *, fdr_threshold, abs_logfc_threshold):
+def _prepare_combo_frame(joined, combo, *, fdr_threshold, effect_threshold):
     score_cols = [_score_col(tool_id) for tool_id in combo]
     required = {"gene_id", "logFC", "FDR", *score_cols}
     missing = [col for col in required if col not in joined.columns]
@@ -150,7 +150,7 @@ def _prepare_combo_frame(joined, combo, *, fdr_threshold, abs_logfc_threshold):
     work["is_positive"] = _positive_mask(
         work,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     ).astype(int)
     positives_total = int(work["is_positive"].sum())
     total_rows = int(len(work))
@@ -185,14 +185,14 @@ def _evaluate_combo_dataset(
     combo,
     *,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     predictor_top_fraction,
 ):
     prepared = _prepare_combo_frame(
         joined,
         combo,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     )
     if prepared is None:
         return None
@@ -211,7 +211,7 @@ def _evaluate_combo_dataset(
         joined,
         combo,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         predictor_top_fraction=predictor_top_fraction,
     )
     return {
@@ -230,7 +230,7 @@ def _evaluate_top_fraction_intersection_dataset(
     combo,
     *,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     predictor_top_fraction,
 ):
     score_cols = [_score_col(tool_id) for tool_id in combo]
@@ -252,7 +252,7 @@ def _evaluate_top_fraction_intersection_dataset(
     work["is_positive"] = _positive_mask(
         work,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     ).astype(int)
     positives_total = int(work["is_positive"].sum())
     if positives_total <= 0:
@@ -322,7 +322,7 @@ def compute_predictor_combination_summary(
     *,
     tool_ids,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     max_combination_size=DEFAULT_MAX_COMBINATION_SIZE,
     predictor_top_fraction=DEFAULT_PREDICTOR_TOP_FRACTION,
     excluded_tool_ids=None,
@@ -342,7 +342,7 @@ def compute_predictor_combination_summary(
                 joined,
                 combo,
                 fdr_threshold=fdr_threshold,
-                abs_logfc_threshold=abs_logfc_threshold,
+                effect_threshold=effect_threshold,
                 predictor_top_fraction=predictor_top_fraction,
             )
             if result is not None:
@@ -741,7 +741,7 @@ def write_predictor_combination_outputs(
     *,
     tool_ids,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     max_combination_size=DEFAULT_MAX_COMBINATION_SIZE,
     predictor_top_fraction=DEFAULT_PREDICTOR_TOP_FRACTION,
     logger=None,
@@ -754,7 +754,7 @@ def write_predictor_combination_outputs(
         joined_frames,
         tool_ids=tool_ids,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         max_combination_size=max_combination_size,
         predictor_top_fraction=predictor_top_fraction,
         min_dataset_coverage=0.0,
