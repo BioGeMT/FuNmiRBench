@@ -22,6 +22,8 @@ https://mirdb.org/download/miRDB_v6.0_prediction_result_human_all_scores.txt.gz
 
 If this cache file already exists, the pipeline reuses it. Otherwise, it downloads the miRDB v6.0 all-score prediction file and logs whether the resource was reused, downloaded, or failed.
 
+Local prediction-file overrides are not supported. The miRDB download and cache path above are the canonical source for reproducible standardization.
+
 The pipeline also downloads and reuses annotation resources under:
 
 ```text
@@ -119,7 +121,6 @@ Relative CLI paths are resolved from the repository root, so the current working
 
 ```bash
 uv run pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py \
-  --predictions-file pipelines/standardized_predictors/mirdb_mirtarget/data/miRDB_v6.0_prediction_result_human_all_scores.txt.gz \
   --resources-dir pipelines/standardized_predictors/mirdb_mirtarget/data/resources \
   --output data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv \
   --log-file pipelines/standardized_predictors/mirdb_mirtarget/mirdb_mirtarget_pipeline.log \

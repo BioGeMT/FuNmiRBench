@@ -37,12 +37,6 @@ logger = logging.getLogger("pipeline")
 def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Standardize microT-CNN predictions for FuNmiRBench.")
     parser.add_argument(
-        "--predictions-file",
-        type=Path,
-        default=pipeline_dir / "data" / "microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz",
-        help="Raw all-score predictions file from microT-CNN",
-    )
-    parser.add_argument(
         "--tx2gene-file",
         type=Path,
         default=pipeline_dir / "data" / "resources" / "ensembl" / "ensembl115_tx2gene.tsv.gz",
@@ -72,7 +66,6 @@ def main() -> None:
     root = repo_root()
     pipeline_dir = predictor_dir("microt_cnn", root=root)
     args = parse_args(root, pipeline_dir)
-    args.predictions_file = resolve_cli_path(args.predictions_file, root)
     args.tx2gene_file = resolve_cli_path(args.tx2gene_file, root)
     args.ensembl_gtf_file = resolve_cli_path(args.ensembl_gtf_file, root)
     args.resources_dir = resolve_cli_path(args.resources_dir, root)
@@ -94,7 +87,7 @@ def main() -> None:
     microt_cnn_predictions_url = "10.5281/zenodo.20313523"
     raw_predictions_path = download_file(
         microt_cnn_predictions_url,
-        args.predictions_file,
+        pipeline_dir / "data" / "microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz",
         timeout=360,
         resource_label="microT-CNN all-score prediction file",
     )

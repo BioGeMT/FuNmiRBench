@@ -22,7 +22,7 @@ Source URL:
 https://zenodo.org/records/20609975/files/3utrs_mirbind2_predictions.tsv.gz?download=1
 ```
 
-You can still override the input with `--predictions-file` if you want to point the pipeline at a local copy.
+Local prediction-file overrides are not supported. The Zenodo file and cache path above are the canonical source for reproducible standardization.
 
 Its header is:
 

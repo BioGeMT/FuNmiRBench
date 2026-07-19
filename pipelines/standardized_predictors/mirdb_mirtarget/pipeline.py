@@ -37,12 +37,6 @@ logger = logging.getLogger("pipeline")
 def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Standardize miRDB predictions for FuNmiRBench.")
     parser.add_argument(
-        "--predictions-file",
-        type=Path,
-        default=pipeline_dir / "data" / "miRDB_v6.0_prediction_result_human_all_scores.txt.gz",
-        help="Raw all-score predictions file from miRDB",
-    )
-    parser.add_argument(
         "--resources-dir",
         type=Path,
         default=pipeline_dir / "data" / "resources",
@@ -60,7 +54,6 @@ def main() -> None:
     root = repo_root()
     pipeline_dir = predictor_dir("mirdb_mirtarget", root=root)
     args = parse_args(root, pipeline_dir)
-    args.predictions_file = resolve_cli_path(args.predictions_file, root)
     args.resources_dir = resolve_cli_path(args.resources_dir, root)
     args.output = resolve_cli_path(args.output, root)
     args.log_file = resolve_cli_path(args.log_file, root)
@@ -99,7 +92,7 @@ def main() -> None:
     mirdb_predictions_url = "https://mirdb.org/download/miRDB_v6.0_prediction_result_human_all_scores.txt.gz"
     raw_predictions_path = download_file(
         mirdb_predictions_url,
-        args.predictions_file,
+        pipeline_dir / "data" / "miRDB_v6.0_prediction_result_human_all_scores.txt.gz",
         timeout=360,
         resource_label="miRDB v6.0 all-score prediction file",
     )
