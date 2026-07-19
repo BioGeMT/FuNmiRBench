@@ -38,6 +38,7 @@ import logging
 import math
 import re
 import shutil
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -63,6 +64,8 @@ PANEL_CHOICES = ("A", "B", "C", "D", "E", "F", "all")
 DEFAULT_CONSERVATION_TABLE = Path("figure2F_utr_conservation_raw.tsv")
 DEFAULT_GTF = Path("data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz")
 ATTR_RE = re.compile(r'([A-Za-z0-9_]+) "([^"]*)"')
+SVG_NS = "http://www.w3.org/2000/svg"
+XLINK_NS = "http://www.w3.org/1999/xlink"
 INTERSECTION_COLORS = {
     "all_algorithm_intersection": "#7A8798",
 }
@@ -1373,7 +1376,18 @@ def pad_to_shape(
     return canvas
 
 
-def write_combined_figure(panel_outputs: dict[str, dict[str, Path]], *, out_dir: Path, dpi: int) -> None:
+def parse_svg_viewbox(path: Path) -> tuple[float, float, ET.Element]:
+    root = ET.parse(path).getroot()
+    viewbox = root.attrib.get("viewBox")
+    if viewbox is None:
+        raise ValueError(f"SVG is missing a viewBox: {path}")
+    parts = [float(part) for part in viewbox.split()]
+    if len(parts) != 4:
+        raise ValueError(f"Unexpected SVG viewBox for {path}: {viewbox}")
+    return parts[2], parts[3], root
+
+
+def write_combined_png(panel_outputs: dict[str, dict[str, Path]], *, out_dir: Path, dpi: int) -> None:
     required = ("A", "B", "C", "D", "E", "F")
     missing = [panel for panel in required if panel not in panel_outputs or "png" not in panel_outputs[panel]]
     if missing:
@@ -1441,9 +1455,91 @@ def write_combined_figure(panel_outputs: dict[str, dict[str, Path]], *, out_dir:
         bottom=0,
     )
     out_dir.mkdir(parents=True, exist_ok=True)
-    for extension in DEFAULT_FORMATS:
-        fig.savefig(out_dir / f"figure2_combined.{extension}", dpi=dpi, bbox_inches="tight")
+    fig.savefig(out_dir / "figure2_combined.png", dpi=dpi, bbox_inches="tight")
     plt.close(fig)
+
+
+def write_combined_svg(panel_outputs: dict[str, dict[str, Path]], *, out_dir: Path) -> None:
+    required = ("A", "B", "C", "D", "E", "F")
+    missing = [panel for panel in required if panel not in panel_outputs or "svg" not in panel_outputs[panel]]
+    if missing:
+        return
+
+    ET.register_namespace("", SVG_NS)
+    ET.register_namespace("xlink", XLINK_NS)
+    row_pairs = (("A", "B"), ("C", "D"), ("E", "F"))
+    panel_svgs = {
+        panel: parse_svg_viewbox(panel_outputs[panel]["svg"])
+        for panel in required
+    }
+    column_widths = [
+        max(panel_svgs[panel][0] for panel in column_pair)
+        for column_pair in (("A", "C", "E"), ("B", "D", "F"))
+    ]
+    row_heights = [
+        max(panel_svgs[panel][1] for panel in row_pair)
+        for row_pair in row_pairs
+    ]
+    gap_x = 18.0
+    gap_y = 10.0
+    combined_width = sum(column_widths) + gap_x
+    combined_height = sum(row_heights) + gap_y * (len(row_heights) - 1)
+    root = ET.Element(
+        f"{{{SVG_NS}}}svg",
+        {
+            "width": f"{combined_width:g}pt",
+            "height": f"{combined_height:g}pt",
+            "viewBox": f"0 0 {combined_width:g} {combined_height:g}",
+            "version": "1.1",
+        },
+    )
+    ET.SubElement(
+        root,
+        f"{{{SVG_NS}}}rect",
+        {
+            "x": "0",
+            "y": "0",
+            "width": f"{combined_width:g}",
+            "height": f"{combined_height:g}",
+            "fill": "#ffffff",
+        },
+    )
+    for row_index, (left_panel, right_panel) in enumerate(row_pairs):
+        y = sum(row_heights[:row_index]) + gap_y * row_index
+        for column_index, panel in enumerate((left_panel, right_panel)):
+            panel_width, panel_height, panel_root = panel_svgs[panel]
+            x = sum(column_widths[:column_index]) + gap_x * column_index
+            nested = ET.SubElement(
+                root,
+                f"{{{SVG_NS}}}svg",
+                {
+                    "x": f"{x:g}",
+                    "y": f"{y:g}",
+                    "width": f"{panel_width:g}",
+                    "height": f"{panel_height:g}",
+                    "viewBox": panel_root.attrib["viewBox"],
+                },
+            )
+            for child in list(panel_root):
+                nested.append(child)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    svg_path = out_dir / "figure2_combined.svg"
+    ET.ElementTree(root).write(
+        svg_path,
+        encoding="utf-8",
+        xml_declaration=True,
+    )
+    svg_text = "\n".join(
+        line.rstrip()
+        for line in svg_path.read_text(encoding="utf-8").splitlines()
+    )
+    svg_path.write_text(f"{svg_text}\n", encoding="utf-8")
+
+
+def write_combined_figure(panel_outputs: dict[str, dict[str, Path]], *, out_dir: Path, dpi: int) -> None:
+    write_combined_png(panel_outputs, out_dir=out_dir, dpi=dpi)
+    write_combined_svg(panel_outputs, out_dir=out_dir)
     logger.info("Wrote combined Figure 2: %s", out_dir / "figure2_combined")
 
 
