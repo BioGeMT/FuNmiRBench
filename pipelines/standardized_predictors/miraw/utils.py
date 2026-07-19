@@ -228,13 +228,6 @@ def _clean_loaded_miraw_predictions(
         df["Ensembl_ID"].map(lambda value: bool(ENSEMBL_GENE_ID_RE.fullmatch(value)))
         & df["miRNA_Name"].str.startswith("hsa-")
     ].copy()
-    if not df.empty and ((df["Score"] < 0) | (df["Score"] > 1)).any():
-        score_min = float(df["Score"].min())
-        score_max = float(df["Score"].max())
-        raise ValueError(
-            f"miRAW Prediction scores must be probabilities in [0, 1]; observed range "
-            f"[{score_min}, {score_max}]"
-        )
     _log_row_count_change("Validate parsed miRAW rows", before, len(df))
 
     before = len(df)
