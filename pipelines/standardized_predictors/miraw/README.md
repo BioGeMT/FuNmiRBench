@@ -4,8 +4,6 @@ This directory contains the standardization pipeline for miRAW gene-level predic
 
 ## Files
 
-- `miraw_preprocessing.sh`: legacy preprocessing script for local dictionary-like miRAW dumps.
-- `preprocess_miraw.py`: legacy Python reference implementation for the best-per-pair preprocessing logic.
 - `pipeline.py`: CLI entrypoint for the pipeline.
 - `utils.py`: shared helpers for logging, downloads, parsing, cleaning, mapping, and output construction.
 - `miraw_pipeline.log`: log file written by the default run.
@@ -16,21 +14,7 @@ The pipeline downloads the raw miRAW site-level prediction TSV from Figshare DOI
 data/helios_summary.tsv.gz
 ```
 
-The legacy preprocessing scripts are retained only for older local dictionary-like miRAW dumps. They are not part of the default Figshare-based run.
-
-If you need to use the legacy preprocessing path, place the raw dictionary-like miRAW prediction file at:
-
-```text
-data/all_ensgs.txt.gz
-```
-
-and run the legacy preprocessing script to write:
-
-```text
-data/best_per_pair.tsv.gz
-```
-
-The standardization pipeline can still parse legacy preprocessed files internally, but the CLI uses the Figshare source only.
+Local prediction-file overrides and legacy dictionary-like miRAW dumps are not supported by this pipeline. The Figshare file is the canonical source for reproducible standardization.
 
 The default Figshare file is a TSV with site-level miRAW predictions. It contains the columns:
 

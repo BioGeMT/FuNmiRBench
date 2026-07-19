@@ -1,4 +1,3 @@
-import ast
 import gzip
 import logging
 import math
@@ -197,12 +196,6 @@ def create_ensembl_to_gene_name_mapping_from_gtf(gtf_gz_path: Path) -> dict[str,
     return mapping
 
 
-def _open_text_auto(path: Path):
-    if path.suffix == ".gz":
-        return gzip.open(path, "rt", encoding="utf-8", errors="replace")
-    return path.open("r", encoding="utf-8", errors="replace")
-
-
 def _extract_raw_gene_name_suffix(raw_gene_value: str) -> Optional[str]:
     if "__" not in raw_gene_value:
         return None
@@ -236,37 +229,10 @@ def _clean_loaded_miraw_predictions(
     return df
 
 
-def _read_header(predictions_path: Path) -> list[str]:
-    with _open_text_auto(predictions_path) as handle:
-        return handle.readline().rstrip("\n").split("\t")
+def load_miraw_predictions(predictions_path: Path) -> pd.DataFrame:
+    if not predictions_path.exists():
+        raise FileNotFoundError(f"Missing prediction file: {predictions_path}")
 
-
-def _load_preprocessed_miraw_tsv(predictions_path: Path) -> pd.DataFrame:
-    df = pd.read_csv(
-        predictions_path,
-        sep="\t",
-        dtype={
-            "Ensembl_ID": "string",
-            "Raw_Gene_Name": "string",
-            "miRNA_Name": "string",
-        },
-        keep_default_na=False,
-    )
-    required = {"Ensembl_ID", "Raw_Gene_Name", "miRNA_Name", "Score"}
-    missing = required - set(df.columns)
-    if missing:
-        raise ValueError(
-            f"{predictions_path}: missing required preprocessed miRAW columns: {sorted(missing)}"
-        )
-    out = df.loc[:, ["Ensembl_ID", "Raw_Gene_Name", "miRNA_Name", "Score"]].copy()
-    logger.info("Loaded %d preprocessed miRAW rows from %s", len(out), predictions_path)
-    return _clean_loaded_miraw_predictions(
-        out,
-        duplicate_subset=["Ensembl_ID", "miRNA_Name", "Score"],
-    )
-
-
-def _load_figshare_miraw_tsv(predictions_path: Path) -> pd.DataFrame:
     df = pd.read_csv(
         predictions_path,
         sep="\t",
@@ -312,75 +278,6 @@ def _load_figshare_miraw_tsv(predictions_path: Path) -> pd.DataFrame:
     )
     return _clean_loaded_miraw_predictions(
         out,
-        duplicate_subset=["Ensembl_ID", "miRNA_Name", "Score", "Raw_Gene_Field"],
-    )
-
-
-def _parse_miraw_line(
-    line: str,
-    line_no: int,
-    predictions_path: Path,
-) -> Optional[dict[str, object]]:
-    try:
-        record = ast.literal_eval(line)
-    except (SyntaxError, ValueError) as exc:
-        logger.debug(
-            "Skipping unparsable miRAW line %d in %s: %s",
-            line_no,
-            predictions_path,
-            exc,
-        )
-        return None
-    if not isinstance(record, dict):
-        return None
-    required = {"GeneName", "miRNA", "Prediction"}
-    if required - set(record):
-        return None
-    raw_gene = str(record["GeneName"]).strip()
-    if "__" not in raw_gene:
-        return None
-    return {
-        "Raw_Gene_Field": raw_gene,
-        "Ensembl_ID": raw_gene.split("__", 1)[0],
-        "Raw_Gene_Name": _extract_raw_gene_name_suffix(raw_gene),
-        "miRNA_Name": str(record["miRNA"]).strip(),
-        "Score": record["Prediction"],
-    }
-
-
-def load_miraw_predictions(predictions_path: Path) -> pd.DataFrame:
-    if not predictions_path.exists():
-        raise FileNotFoundError(f"Missing prediction file: {predictions_path}")
-
-    header = _read_header(predictions_path)
-    if header[:4] == ["Ensembl_ID", "Raw_Gene_Name", "miRNA_Name", "Score"]:
-        return _load_preprocessed_miraw_tsv(predictions_path)
-    if {"Target_ENSG", "GeneName", "miRNA", "Prediction"}.issubset(header):
-        return _load_figshare_miraw_tsv(predictions_path)
-
-    rows: list[dict[str, object]] = []
-    bad_lines = 0
-    with _open_text_auto(predictions_path) as handle:
-        for line_no, line in enumerate(handle, start=1):
-            line = line.strip()
-            if not line:
-                continue
-            parsed = _parse_miraw_line(line, line_no, predictions_path)
-            if parsed is None:
-                bad_lines += 1
-                continue
-            rows.append(parsed)
-    if not rows:
-        raise RuntimeError(
-            "No miRAW prediction rows could be parsed from the input file. "
-            f"Detected header: {header}"
-        )
-    df = pd.DataFrame(rows)
-    logger.info("Loaded %d legacy miRAW rows from %s", len(df), predictions_path)
-    if bad_lines:
-        logger.warning("Skipped %d unparsable legacy miRAW input lines", bad_lines)
-    return _clean_loaded_miraw_predictions(
-        df,
         duplicate_subset=["Ensembl_ID", "miRNA_Name", "Score", "Raw_Gene_Field"],
     )
 

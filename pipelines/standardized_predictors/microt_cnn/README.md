@@ -67,7 +67,7 @@ uv run pipelines/standardized_predictors/microt_cnn/pipeline.py
 ## CLI Arguments
 
 ```bash
-python pipelines/standardized_predictors/microt_cnn/pipeline.py \
+uv run pipelines/standardized_predictors/microt_cnn/pipeline.py \
   --predictions-file pipelines/standardized_predictors/microt_cnn/data/microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz \
   --tx2gene-file pipelines/standardized_predictors/microt_cnn/data/resources/ensembl/ensembl115_tx2gene.tsv.gz \
   --ensembl-gtf-file pipelines/standardized_predictors/microt_cnn/data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz \
