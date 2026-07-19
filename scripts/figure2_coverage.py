@@ -430,13 +430,12 @@ def style_axis(ax: plt.Axes) -> None:
 
 
 def set_panel_title(ax: plt.Axes, letter: str, title: str) -> None:
-    ax.text(
-        -0.12,
-        1.07,
+    ax.figure.text(
+        0.025,
+        0.965,
         letter,
-        transform=ax.transAxes,
         ha="left",
-        va="bottom",
+        va="top",
         fontsize=15,
         fontweight="bold",
     )
@@ -789,7 +788,7 @@ def plot_metric(
     frame: pd.DataFrame,
     *,
     metric: str,
-    title: str,
+    title: str | None,
     xlabel: str,
     x_upper: float | None = None,
 ) -> None:
@@ -831,13 +830,15 @@ def plot_metric(
     ax.axhline(0, color="#888888", linewidth=0.8)
     ax.axvline(igs.median(), ymin=0.50, ymax=0.88, color=colors["IGS"], linewidth=1.2, linestyle="--", alpha=0.95)
     ax.axvline(non.median(), ymin=0.12, ymax=0.50, color=colors["non-IGS"], linewidth=1.2, linestyle="--", alpha=0.95)
-    ax.set_xlabel(xlabel)
+    ax.set_xlabel(xlabel, fontsize=11)
     ax.set_xlim(lower, upper)
     ax.set_ylim(-0.62, 0.62)
     ax.set_yticks([0.28, -0.28], ["IGS genes", "non-IGS genes"])
+    ax.tick_params(axis="both", labelsize=10)
     ax.set_ylabel("")
-    ax.set_title(title, fontsize=10, fontweight="bold")
-    ax.legend(frameon=False, fontsize=7, loc="upper right")
+    if title:
+        ax.set_title(title, pad=18, fontsize=14, fontweight="bold")
+    ax.legend(frameon=False, fontsize=9, loc="upper right")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_visible(False)
@@ -887,10 +888,11 @@ def panel_e_utr_length(
         ax,
         lengths,
         metric="utr3_length",
-        title="E. 3'UTR length",
+        title=None,
         xlabel="3'UTR length (nt; displayed to 10,000 nt)",
         x_upper=10000.0,
     )
+    set_panel_title(ax, "E", "3'UTR length")
     fig.tight_layout()
     return stats, fig
 
@@ -928,10 +930,11 @@ def panel_f_utr_conservation(
         ax,
         conservation,
         metric="utr3_mean_conservation",
-        title="F. 3'UTR conservation",
+        title=None,
         xlabel="Mean 3'UTR conservation score",
         x_upper=1.0,
     )
+    set_panel_title(ax, "F", "3'UTR conservation")
     fig.tight_layout()
     return stats, fig
 
