@@ -218,20 +218,11 @@ def load_run_thresholds(run_dir: Path) -> tuple[float | None, float]:
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle) or {}
     evaluation = config.get("evaluation") or {}
-    missing = [
-        key
-        for key in ("fdr_threshold", "effect_threshold")
-        if key not in evaluation
-    ]
-    if missing:
-        raise KeyError(
-            f"{config_path} is missing evaluation keys required by Figure 2: {missing}"
-        )
-    raw_fdr_threshold = evaluation["fdr_threshold"]
+    raw_fdr_threshold = evaluation.get("fdr_threshold", 0.05)
     fdr_threshold = (
         None if raw_fdr_threshold is None else float(raw_fdr_threshold)
     )
-    effect_threshold = float(evaluation["effect_threshold"])
+    effect_threshold = float(evaluation.get("effect_threshold", 1.0))
     return fdr_threshold, effect_threshold
 
 
