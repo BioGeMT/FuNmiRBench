@@ -8,7 +8,7 @@ from funmirbench.evaluate_reports import *
 
 def evaluate_joined_dataframe(
     joined, *, plots_dir, reports_dir,
-    fdr_threshold, abs_logfc_threshold, predictor_top_fraction,
+    fdr_threshold, effect_threshold, predictor_top_fraction,
     dataset_id=None, mirna=None, cell_line=None,
     perturbation=None, geo_accession=None,
     de_table_path=None, joined_tsv=None,
@@ -72,7 +72,7 @@ def evaluate_joined_dataframe(
         try:
             scored, coverage_info = _prepare_scored_frame(
                 joined, score_col=score_col,
-                fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
+                fdr_threshold=fdr_threshold, effect_threshold=effect_threshold,
                 perturbation=perturbation,
             )
         except ValueError as exc:
@@ -101,7 +101,7 @@ def evaluate_joined_dataframe(
                 positive_mask = _positive_mask(
                     skip_frame,
                     fdr_threshold=fdr_threshold,
-                    abs_logfc_threshold=abs_logfc_threshold,
+                    effect_threshold=effect_threshold,
                 )
                 positives_total = int(positive_mask.sum())
                 positives_scored = int(positive_mask.loc[skip_frame[score_col].notna()].sum())
@@ -198,7 +198,7 @@ def evaluate_joined_dataframe(
                 roc_curve_png=roc_curve_png,
                 gsea_png=gsea_png,
                 fdr_threshold=fdr_threshold,
-                abs_logfc_threshold=abs_logfc_threshold,
+                effect_threshold=effect_threshold,
             )
         _emit_log(
             logger,
@@ -273,7 +273,7 @@ def evaluate_joined_dataframe(
         rank_cols=plot_local_rank_cols,
         tool_ids=plot_tool_ids,
         dataset_id=dataset_id, out_path=heatmap_png,
-        fdr_threshold=fdr_threshold, abs_logfc_threshold=abs_logfc_threshold,
+        fdr_threshold=fdr_threshold, effect_threshold=effect_threshold,
         perturbation=perturbation,
     )
     dataset_plots["algorithms_vs_genes_heatmap"] = str(heatmap_png)
@@ -287,7 +287,7 @@ def evaluate_joined_dataframe(
         dataset_id=dataset_id,
         out_path=top_positive_heatmap_png,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         positive_fraction=0.10,
         perturbation=perturbation,
     )
@@ -307,7 +307,7 @@ def evaluate_joined_dataframe(
                 joined,
                 score_cols=plot_score_cols,
                 fdr_threshold=fdr_threshold,
-                abs_logfc_threshold=abs_logfc_threshold,
+                effect_threshold=effect_threshold,
                 perturbation=perturbation,
             )
             common_comparisons = [

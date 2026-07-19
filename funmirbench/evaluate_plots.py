@@ -335,7 +335,7 @@ def _plot_predictor_pr_curves_own_scored(comparisons, *, dataset_id, out_path):
 
 
 def _prepare_common_scored_frame(
-    joined, *, score_cols, fdr_threshold, abs_logfc_threshold, perturbation=None,
+    joined, *, score_cols, fdr_threshold, effect_threshold, perturbation=None,
 ):
     required_cols = {"gene_id", "logFC", "FDR", *score_cols}
     missing = [col for col in required_cols if col not in joined.columns]
@@ -355,7 +355,7 @@ def _prepare_common_scored_frame(
     keep["is_positive"] = _positive_mask(
         keep,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     ).astype(int)
     keep = keep.dropna(subset=score_cols).copy()
     if keep.empty:
@@ -606,7 +606,7 @@ def _plot_top_prediction_effect_cdfs(
 
 def _plot_algorithms_vs_genes_heatmap(
     joined, *, score_cols, rank_cols, tool_ids, dataset_id, out_path,
-    fdr_threshold, abs_logfc_threshold, perturbation=None,
+    fdr_threshold, effect_threshold, perturbation=None,
 ):
     keep_cols = ["gene_id", "logFC", "FDR", *score_cols, *rank_cols]
     for optional in FDR_AUXILIARY_COLUMNS:
@@ -617,7 +617,7 @@ def _plot_algorithms_vs_genes_heatmap(
     work["is_positive"] = _positive_mask(
         work,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     ).astype(int)
     work = _sort_heatmap_rows_by_logfc(work)
 
@@ -725,7 +725,7 @@ def _plot_algorithms_vs_genes_heatmap(
 
 def _plot_top_positive_heatmap(
     joined, *, rank_cols, tool_ids, dataset_id, out_path,
-    fdr_threshold, abs_logfc_threshold, positive_fraction, perturbation=None,
+    fdr_threshold, effect_threshold, positive_fraction, perturbation=None,
 ):
     keep_cols = ["gene_id", "logFC", "FDR", *rank_cols]
     for optional in FDR_AUXILIARY_COLUMNS:
@@ -736,7 +736,7 @@ def _plot_top_positive_heatmap(
     work["is_positive"] = _positive_mask(
         work,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     ).astype(int)
     work = work[work["is_positive"] == 1].copy()
     if work.empty:

@@ -164,7 +164,7 @@ def _rank_distribution_metadata(rank_type):
     raise ValueError(f"Unsupported rank distribution type: {rank_type}")
 
 
-def _rank_class_plot_data(joined_frames, *, fdr_threshold, abs_logfc_threshold, rank_type):
+def _rank_class_plot_data(joined_frames, *, fdr_threshold, effect_threshold, rank_type):
     combined = pd.concat(joined_frames, ignore_index=True)
     rank_specs = ev._rank_distribution_specs(combined, rank_types=(rank_type,))
     rank_specs = [
@@ -187,7 +187,7 @@ def _rank_class_plot_data(joined_frames, *, fdr_threshold, abs_logfc_threshold, 
     work["is_positive"] = ev._positive_mask(
         work,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     ).astype(int)
 
     tool_ids = []
@@ -213,12 +213,12 @@ def _rank_class_plot_data(joined_frames, *, fdr_threshold, abs_logfc_threshold, 
 
 
 def _plot_rank_class_distributions(
-    joined_frames, *, out_path, fdr_threshold, abs_logfc_threshold, rank_type
+    joined_frames, *, out_path, fdr_threshold, effect_threshold, rank_type
 ):
     plot_data = _rank_class_plot_data(
         joined_frames,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         rank_type=rank_type,
     )
     if plot_data is None:
@@ -307,12 +307,12 @@ def _plot_rank_class_distributions(
 
 
 def _plot_rank_class_count_distributions(
-    joined_frames, *, out_path, fdr_threshold, abs_logfc_threshold, rank_type
+    joined_frames, *, out_path, fdr_threshold, effect_threshold, rank_type
 ):
     plot_data = _rank_class_plot_data(
         joined_frames,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         rank_type=rank_type,
     )
     if plot_data is None:
@@ -486,7 +486,7 @@ def _plot_positive_recovery_by_prediction_count(
     *,
     out_path,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     max_predictions=300,
     normalized=False,
     endpoint_labels=False,
@@ -518,7 +518,7 @@ def _plot_positive_recovery_by_prediction_count(
     work["is_positive"] = ev._positive_mask(
         work,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     ).astype(int)
     groups = (
         list(work.groupby(dataset_col, sort=True))
@@ -643,7 +643,7 @@ def write_cross_dataset_summaries(
     *,
     joined_frames=None,
     fdr_threshold=0.05,
-    abs_logfc_threshold=1.0,
+    effect_threshold=1.0,
     predictor_top_fraction=0.10,
     tool_labels=None,
     logger=None,
@@ -713,7 +713,7 @@ def write_cross_dataset_summaries(
                 joined_frames,
                 out_path=rank_distribution_path,
                 fdr_threshold=fdr_threshold,
-                abs_logfc_threshold=abs_logfc_threshold,
+                effect_threshold=effect_threshold,
                 rank_type=rank_type,
             )
             if wrote_rank_distribution:
@@ -724,7 +724,7 @@ def write_cross_dataset_summaries(
                 joined_frames,
                 out_path=rank_count_path,
                 fdr_threshold=fdr_threshold,
-                abs_logfc_threshold=abs_logfc_threshold,
+                effect_threshold=effect_threshold,
                 rank_type=rank_type,
             )
             if wrote_rank_count:
@@ -735,7 +735,7 @@ def write_cross_dataset_summaries(
             joined_frames,
             out_path=normalized_recovery_path,
             fdr_threshold=fdr_threshold,
-            abs_logfc_threshold=abs_logfc_threshold,
+            effect_threshold=effect_threshold,
             normalized=True,
             endpoint_labels=True,
             excluded_tool_ids=CONTROL_PLOT_TOOL_IDS,

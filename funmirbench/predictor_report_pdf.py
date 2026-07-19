@@ -281,7 +281,7 @@ def write_publication_predictor_reports(
     metric_rows,
     tool_labels,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     common_prediction_summary=None,
     skipped_tool_rows=None,
 ):
@@ -300,7 +300,7 @@ def write_publication_predictor_reports(
     if not report_rows:
         report_rows = list(metric_rows)
     rows_to_write = [("evaluated", row) for row in report_rows] + [("skipped", row) for row in skipped_rows]
-    gt_rule = _gt_rule_text(fdr_threshold, abs_logfc_threshold)
+    gt_rule = _gt_rule_text(fdr_threshold, effect_threshold)
     for row_status, row in rows_to_write:
         tool_id = str(row.get("tool_id"))
         label = str(tool_labels.get(tool_id, tool_id))
