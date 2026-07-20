@@ -139,21 +139,32 @@ gene_id
 utr3_mean_conservation
 ```
 
-## Generate Figure 3 FGS Performance
+## Generate Performance Figures
 
 Run from the repository root:
 
 ```bash
-uv run python scripts/figure3_performance_fgs.py \
+uv run python scripts/figure3_performance_naive.py \
+  --run-dir results/<results_dir>
+uv run python scripts/figure4_performance_ips.py \
+  --run-dir results/<results_dir>
+uv run python scripts/figure5_performance_fps.py \
   --run-dir results/<results_dir>
 ```
 
-Figure 3 evaluates predictors on the Full Gene Set (FGS). For each dataset and
-predictor, scored miRNA-gene pairs are converted to dataset-local normalized
-ranks where 0 is the weakest scored pair and 1 is the strongest scored pair.
-Tied scores receive average ranks. Unscored pairs stay in the analysis and are
-assigned rank 0, so the FGS leaderboard penalizes predictors for missing
-miRNA-gene pairs.
+These figures evaluate miRNA-gene pair universes:
+
+- Figure 3: algorithm-specific pairs. Each predictor is evaluated only on
+  ground-truth pairs where that predictor supplied a score.
+- Figure 4: Intersection Pair Set (IPS). All predictors are evaluated on the
+  shared ground-truth pairs where every evaluated predictor supplied a score.
+- Figure 5: Full Pair Set (FPS). All ground-truth pairs are evaluated. Missing
+  predictor scores receive the zero-equivalent local rank.
+
+Scores are converted to dataset-local normalized ranks where 0 is the weakest
+scored pair and 1 is the strongest scored pair. Tied scores receive average
+ranks. Figure 4 and Figure 5 include a deterministic random baseline generated
+on the same shared pair universe.
 
 This writes draft Figure 3 assets to:
 
@@ -164,7 +175,11 @@ manuscript_assets/figure3/
 It writes the supporting tables to:
 
 ```text
-manuscript_assets/tables/figure3_fgs_per_experiment_metrics.tsv
-manuscript_assets/tables/figure3_fgs_leaderboard.tsv
-manuscript_assets/tables/figure3_fgs_local_ranks.tsv
+manuscript_assets/tables/figure3_algorithm_specific_per_experiment_metrics.tsv
+manuscript_assets/tables/figure3_algorithm_specific_leaderboard.tsv
+manuscript_assets/tables/figure4_ips_per_experiment_metrics.tsv
+manuscript_assets/tables/figure4_ips_leaderboard.tsv
+manuscript_assets/tables/figure5_fps_per_experiment_metrics.tsv
+manuscript_assets/tables/figure5_fps_leaderboard.tsv
+manuscript_assets/tables/figure5_fps_local_ranks.tsv
 ```

@@ -1,11 +1,9 @@
-#!/usr/bin/env python3
-"""Generate Figure 3 Full Gene Set performance inputs and draft panels.
+"""Shared manuscript performance figure helpers.
 
-Figure 3 evaluates predictors on the Full Gene Set (FGS). For each dataset and
-predictor, scored miRNA-gene pairs are converted to dataset-local normalized
-ranks where 0 is the weakest scored pair and 1 is the strongest scored pair.
-Tied scores receive average ranks. Unscored pairs remain in the FGS analysis and
-are assigned rank 0, which penalizes predictors for gene-selection coverage.
+All universes are miRNA-gene pair universes:
+- algorithm-specific: each predictor is evaluated only on its scored pairs.
+- intersection pair set: all predictors are evaluated on pairs scored by every predictor.
+- full pair set: all ground-truth pairs are evaluated; missing scores receive rank 0.
 """
 
 from __future__ import annotations
@@ -36,6 +34,9 @@ DEFAULT_MANUSCRIPT_OUTPUT_DIR = Path("manuscript_assets/figure3")
 DEFAULT_MANUSCRIPT_TABLES_DIR = Path("manuscript_assets/tables")
 DEFAULT_FORMATS = ("png", "svg")
 RANDOM_TOOL_ID = "random_baseline"
+UNIVERSE_ALGORITHM_SPECIFIC = "algorithm_specific"
+UNIVERSE_INTERSECTION = "intersection_pair_set"
+UNIVERSE_FULL = "full_pair_set"
 METRICS = ("aps", "pr_auc", "auroc", "spearman")
 METRIC_LABELS = {
     "aps": "Average precision",
@@ -64,9 +65,19 @@ class Figure3Inputs:
     effect_threshold: float
 
 
-def parse_args() -> argparse.Namespace:
+@dataclass(frozen=True)
+class FigurePerformanceConfig:
+    figure_id: str
+    universe: str
+    title: str
+    output_prefix: str
+    include_random: bool
+    random_label: str = "Random"
+
+
+def parse_args(config: FigurePerformanceConfig) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate manuscript Figure 3 FGS performance tables and draft panels."
+        description=f"Generate manuscript {config.figure_id} performance tables and draft panels."
     )
     parser.add_argument(
         "--run-dir",
@@ -93,7 +104,7 @@ def parse_args() -> argparse.Namespace:
         "--manuscript-out-dir",
         type=Path,
         default=DEFAULT_MANUSCRIPT_OUTPUT_DIR,
-        help="Stable manuscript figure output directory. Default: manuscript_assets/figure3/.",
+        help=f"Stable manuscript figure output directory. Default: {DEFAULT_MANUSCRIPT_OUTPUT_DIR}/.",
     )
     parser.add_argument(
         "--manuscript-tables-dir",
@@ -126,13 +137,8 @@ def load_run_thresholds(run_dir: Path) -> tuple[float | None, float]:
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle) or {}
     evaluation = config.get("evaluation") or {}
-    missing = [
-        key for key in ("fdr_threshold", "effect_threshold") if key not in evaluation
-    ]
-    if missing:
-        raise KeyError(f"{config_path} is missing evaluation keys: {missing}")
-    fdr = evaluation["fdr_threshold"]
-    return (None if fdr is None else float(fdr), float(evaluation["effect_threshold"]))
+    fdr = evaluation.get("fdr_threshold", 0.05)
+    return (None if fdr is None else float(fdr), float(evaluation.get("effect_threshold", 1.0)))
 
 
 def load_tool_metadata(path: Path) -> tuple[tuple[str, ...], dict[str, str]]:
@@ -266,10 +272,7 @@ def prepare_inputs(
         for dataset in datasets
     )
     tool_colors = evaluation_tool_colors(tool_ids)
-    tool_ids = (*tool_ids, RANDOM_TOOL_ID)
     tool_labels = {tool_id: labels.get(tool_id, tool_id) for tool_id in tool_ids}
-    tool_labels[RANDOM_TOOL_ID] = "Random"
-    tool_colors[RANDOM_TOOL_ID] = "#7A8798"
     return Figure3Inputs(
         run_dir=run_dir,
         datasets=annotated,
@@ -302,9 +305,9 @@ def compute_metrics(y_true: pd.Series, y_score: pd.Series, expected_effect: pd.S
     }
 
 
-def random_rank_series(frame: pd.DataFrame, dataset_id: str) -> pd.Series:
+def random_rank_series(frame: pd.DataFrame, dataset_id: str, universe: str) -> pd.Series:
     seed = int.from_bytes(
-        hashlib.sha256(str(dataset_id).encode("utf-8")).digest()[:8],
+        hashlib.sha256(f"{dataset_id}:{universe}".encode("utf-8")).digest()[:8],
         byteorder="big",
         signed=False,
     )
@@ -312,40 +315,77 @@ def random_rank_series(frame: pd.DataFrame, dataset_id: str) -> pd.Series:
     return _rank_scale_scores(random_scores).fillna(0.0).astype(float)
 
 
-def fgs_rank_series(frame: pd.DataFrame, tool_id: str, *, dataset_id: str) -> pd.Series:
+def rank_series(frame: pd.DataFrame, tool_id: str, *, dataset_id: str, universe: str) -> pd.Series:
     if tool_id == RANDOM_TOOL_ID:
-        return random_rank_series(frame, dataset_id)
+        return random_rank_series(frame, dataset_id, universe)
     ranks = _rank_scale_scores(frame[score_column(tool_id)])
-    return ranks.fillna(0.0).astype(float)
+    if universe == UNIVERSE_FULL:
+        return ranks.fillna(0.0).astype(float)
+    return ranks.astype(float)
 
 
-def compute_fgs_per_experiment_metrics(inputs: Figure3Inputs) -> pd.DataFrame:
+def evaluation_frame(frame: pd.DataFrame, tool_id: str, tool_ids: tuple[str, ...], universe: str) -> pd.DataFrame:
+    if tool_id == RANDOM_TOOL_ID:
+        if universe == UNIVERSE_INTERSECTION:
+            score_cols = [score_column(real_tool_id) for real_tool_id in tool_ids if real_tool_id != RANDOM_TOOL_ID]
+            return frame.loc[frame[score_cols].notna().all(axis=1)].copy()
+        return frame.copy()
+
+    score_col = score_column(tool_id)
+    if universe == UNIVERSE_ALGORITHM_SPECIFIC:
+        return frame.loc[frame[score_col].notna()].copy()
+    if universe == UNIVERSE_INTERSECTION:
+        score_cols = [score_column(real_tool_id) for real_tool_id in tool_ids if real_tool_id != RANDOM_TOOL_ID]
+        return frame.loc[frame[score_cols].notna().all(axis=1)].copy()
+    if universe == UNIVERSE_FULL:
+        return frame.copy()
+    raise ValueError(f"Unsupported performance universe: {universe}")
+
+
+def compute_per_experiment_metrics(inputs: Figure3Inputs, config: FigurePerformanceConfig) -> pd.DataFrame:
     rows = []
+    tool_ids = (*inputs.tool_ids, RANDOM_TOOL_ID) if config.include_random else inputs.tool_ids
     for dataset in inputs.datasets:
         frame = dataset.frame
-        for tool_id in inputs.tool_ids:
+        for tool_id in tool_ids:
             score_col = score_column(tool_id)
             if tool_id != RANDOM_TOOL_ID and score_col not in frame.columns:
                 continue
-            fgs_rank = fgs_rank_series(frame, tool_id, dataset_id=dataset.dataset_id)
+            work = evaluation_frame(frame, tool_id, tool_ids, config.universe)
+            if work.empty:
+                continue
+            scores = rank_series(
+                work,
+                tool_id,
+                dataset_id=dataset.dataset_id,
+                universe=config.universe,
+            )
             metrics = compute_metrics(
-                frame["is_positive"],
-                fgs_rank,
-                frame["expected_effect"],
+                work["is_positive"],
+                scores,
+                work["expected_effect"],
             )
             total = int(len(frame))
             positives_total = int(frame["is_positive"].sum())
-            if tool_id == RANDOM_TOOL_ID:
-                scored = total
-                positives_scored = positives_total
+            if config.universe in {UNIVERSE_ALGORITHM_SPECIFIC, UNIVERSE_INTERSECTION}:
+                scored = int(len(work))
+                positives_scored = int(work["is_positive"].sum())
+                predictor = config.random_label if tool_id == RANDOM_TOOL_ID else inputs.tool_labels[tool_id]
+            elif tool_id == RANDOM_TOOL_ID:
+                scored = int(len(work))
+                positives_scored = int(work["is_positive"].sum())
+                predictor = config.random_label
             else:
                 scored = int(frame[score_col].notna().sum())
                 positives_scored = int(frame.loc[frame[score_col].notna(), "is_positive"].sum())
+                predictor = inputs.tool_labels[tool_id]
             rows.append(
                 {
                     "dataset_id": dataset.dataset_id,
+                    "universe": config.universe,
                     "tool_id": tool_id,
-                    "predictor": inputs.tool_labels[tool_id],
+                    "predictor": predictor,
+                    "pairs_evaluated": int(len(work)),
                     "rows_total": total,
                     "rows_scored": scored,
                     "rows_missing_score": total - scored,
@@ -378,19 +418,21 @@ def compute_leaderboard(metrics: pd.DataFrame) -> pd.DataFrame:
         ascending=[False, False, False],
         kind="mergesort",
     ).reset_index(drop=True)
-    summary.insert(0, "fgs_rank", np.arange(1, len(summary) + 1))
+    summary.insert(0, "rank", np.arange(1, len(summary) + 1))
     return summary
 
 
-def write_rank_table(inputs: Figure3Inputs, out_path: Path) -> None:
+def write_rank_table(inputs: Figure3Inputs, out_path: Path, *, include_random: bool) -> None:
     chunks = []
+    tool_ids = (*inputs.tool_ids, RANDOM_TOOL_ID) if include_random else inputs.tool_ids
     for dataset in inputs.datasets:
         frame = dataset.frame[["dataset_id", "mirna", "perturbation", "gene_id", "is_positive"]].copy()
-        for tool_id in inputs.tool_ids:
-            frame[f"fgs_rank_{tool_id}"] = fgs_rank_series(
+        for tool_id in tool_ids:
+            frame[f"fgs_rank_{tool_id}"] = rank_series(
                 dataset.frame,
                 tool_id,
                 dataset_id=dataset.dataset_id,
+                universe=UNIVERSE_FULL,
             )
         chunks.append(frame)
     out = pd.concat(chunks, ignore_index=True)
@@ -416,13 +458,26 @@ def save_figure(fig: plt.Figure, out_dir: Path, stem: str, *, dpi: int) -> list[
     return paths
 
 
-def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame) -> plt.Figure:
+def tool_label(inputs: Figure3Inputs, tool_id: str) -> str:
+    if tool_id == RANDOM_TOOL_ID:
+        return "Random"
+    return inputs.tool_labels[tool_id]
+
+
+def tool_color(inputs: Figure3Inputs, tool_id: str) -> str:
+    if tool_id == RANDOM_TOOL_ID:
+        return "#7A8798"
+    return inputs.tool_colors[tool_id]
+
+
+def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame, config: FigurePerformanceConfig) -> plt.Figure:
     fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.2))
-    positions = np.arange(1, len(inputs.tool_ids) + 1)
+    plot_tool_ids = tuple(metrics["tool_id"].drop_duplicates().tolist())
+    positions = np.arange(1, len(plot_tool_ids) + 1)
     for ax, metric, letter in zip(axes.ravel(), METRICS, ("A", "B", "C", "D")):
         data = [
             metrics.loc[metrics["tool_id"] == tool_id, metric].dropna().astype(float).to_numpy()
-            for tool_id in inputs.tool_ids
+            for tool_id in plot_tool_ids
         ]
         box = ax.boxplot(
             data,
@@ -435,13 +490,13 @@ def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame) -> p
             capprops={"color": "#6B7280", "linewidth": 1.0},
             boxprops={"edgecolor": "#6B7280", "linewidth": 1.0},
         )
-        for patch, tool_id in zip(box["boxes"], inputs.tool_ids):
-            color = inputs.tool_colors[tool_id]
+        for patch, tool_id in zip(box["boxes"], plot_tool_ids):
+            color = tool_color(inputs, tool_id)
             patch.set_facecolor(color)
             patch.set_edgecolor(color)
             patch.set_alpha(0.28)
 
-        for index, (tool_id, values) in enumerate(zip(inputs.tool_ids, data), start=1):
+        for index, (tool_id, values) in enumerate(zip(plot_tool_ids, data), start=1):
             if values.size == 0:
                 continue
             jitter = np.linspace(-0.09, 0.09, values.size) if values.size > 1 else np.array([0.0])
@@ -449,7 +504,7 @@ def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame) -> p
                 np.full(values.size, index, dtype=float) + jitter,
                 values,
                 s=30,
-                color=inputs.tool_colors[tool_id],
+                color=tool_color(inputs, tool_id),
                 edgecolor="white",
                 linewidth=0.45,
                 alpha=0.75,
@@ -458,7 +513,7 @@ def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame) -> p
         ax.set_title(f"{letter}. {METRIC_LABELS[metric]}", loc="left", fontweight="bold")
         ax.set_xticks(
             positions,
-            [inputs.tool_labels[tool_id] for tool_id in inputs.tool_ids],
+            [tool_label(inputs, tool_id) for tool_id in plot_tool_ids],
             rotation=25,
             ha="right",
         )
@@ -468,7 +523,7 @@ def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame) -> p
         else:
             ax.set_ylim(-1.02, 1.02)
         style_axis(ax)
-    fig.suptitle("Cross-dataset FGS predictor distributions", fontsize=15, fontweight="bold", y=0.995)
+    fig.suptitle(config.title, fontsize=15, fontweight="bold", y=0.995)
     fig.tight_layout()
     return fig
 
@@ -476,7 +531,7 @@ def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame) -> p
 def plot_leaderboard(inputs: Figure3Inputs, leaderboard: pd.DataFrame) -> plt.Figure:
     ordered = leaderboard.sort_values("mean_aps", ascending=True)
     fig, ax = plt.subplots(figsize=(7.2, 4.8))
-    colors = [inputs.tool_colors[tool_id] for tool_id in ordered["tool_id"]]
+    colors = [tool_color(inputs, tool_id) for tool_id in ordered["tool_id"]]
     ax.barh(ordered["predictor"], ordered["mean_aps"], color=colors, alpha=0.45)
     ax.set_xlabel("Mean FGS average precision")
     ax.set_xlim(0.0, max(ordered["mean_aps"].max() * 1.18, 0.05))
@@ -488,8 +543,8 @@ def plot_leaderboard(inputs: Figure3Inputs, leaderboard: pd.DataFrame) -> plt.Fi
     return fig
 
 
-def main() -> None:
-    args = parse_args()
+def run_performance_figure(config: FigurePerformanceConfig) -> None:
+    args = parse_args(config)
     setup_logging(args.log_level)
     run_dir = args.run_dir or find_latest_completed_run(args.results_dir)
     fdr_threshold, effect_threshold = load_run_thresholds(run_dir)
@@ -502,36 +557,33 @@ def main() -> None:
         fdr_threshold=fdr_threshold,
         effect_threshold=effect_threshold,
     )
-    metrics = compute_fgs_per_experiment_metrics(inputs)
+    metrics = compute_per_experiment_metrics(inputs, config)
     leaderboard = compute_leaderboard(metrics)
 
     tables_dir = args.manuscript_tables_dir
     tables_dir.mkdir(parents=True, exist_ok=True)
-    metrics_path = tables_dir / "figure3_fgs_per_experiment_metrics.tsv"
-    leaderboard_path = tables_dir / "figure3_fgs_leaderboard.tsv"
-    rank_path = tables_dir / "figure3_fgs_local_ranks.tsv"
+    metrics_path = tables_dir / f"{config.output_prefix}_per_experiment_metrics.tsv"
+    leaderboard_path = tables_dir / f"{config.output_prefix}_leaderboard.tsv"
+    rank_path = tables_dir / f"{config.output_prefix}_local_ranks.tsv"
     metrics.to_csv(metrics_path, sep="\t", index=False)
     leaderboard.to_csv(leaderboard_path, sep="\t", index=False)
-    write_rank_table(inputs, rank_path)
+    if config.universe == UNIVERSE_FULL:
+        write_rank_table(inputs, rank_path, include_random=config.include_random)
+        logger.info("Wrote %s", rank_path)
     logger.info("Wrote %s", metrics_path)
     logger.info("Wrote %s", leaderboard_path)
-    logger.info("Wrote %s", rank_path)
 
     out_dir = args.manuscript_out_dir
     save_figure(
-        plot_metric_distributions(inputs, metrics),
+        plot_metric_distributions(inputs, metrics, config),
         out_dir,
-        "figure3_fgs_metric_distributions",
+        f"{config.output_prefix}_metric_distributions",
         dpi=args.dpi,
     )
     save_figure(
         plot_leaderboard(inputs, leaderboard),
         out_dir,
-        "figure3_fgs_leaderboard",
+        f"{config.output_prefix}_leaderboard",
         dpi=args.dpi,
     )
-    logger.info("Wrote Figure 3 draft assets under %s", out_dir)
-
-
-if __name__ == "__main__":
-    main()
+    logger.info("Wrote %s draft assets under %s", config.figure_id, out_dir)
