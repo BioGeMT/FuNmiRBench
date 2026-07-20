@@ -411,24 +411,23 @@ def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame) -> p
             boxprops={"edgecolor": "#6B7280", "linewidth": 1.0},
         )
         for patch, tool_id in zip(box["boxes"], inputs.tool_ids):
-            patch.set_facecolor(inputs.tool_colors[tool_id])
+            color = inputs.tool_colors[tool_id]
+            patch.set_facecolor(color)
+            patch.set_edgecolor(color)
             patch.set_alpha(0.28)
 
         for index, (tool_id, values) in enumerate(zip(inputs.tool_ids, data), start=1):
             if values.size == 0:
                 continue
-            jitter = np.linspace(-0.16, 0.16, values.size) if values.size > 1 else np.array([0.0])
-            order = np.argsort(values, kind="mergesort")
-            x = np.full(values.size, index, dtype=float)
-            x[order] += jitter
+            jitter = np.linspace(-0.09, 0.09, values.size) if values.size > 1 else np.array([0.0])
             ax.scatter(
-                x,
+                np.full(values.size, index, dtype=float) + jitter,
                 values,
-                s=18,
+                s=30,
                 color=inputs.tool_colors[tool_id],
                 edgecolor="white",
-                linewidth=0.35,
-                alpha=0.82,
+                linewidth=0.45,
+                alpha=0.75,
                 zorder=3,
             )
         ax.set_title(f"{letter}. {METRIC_LABELS[metric]}", loc="left", fontweight="bold")
