@@ -172,7 +172,7 @@ Spearman R2 leaderboard. The top-100 median effect matches the top-prediction
 CDF implementation used in the benchmark result plots: predictors are sorted by
 score, the top N pairs are selected, and the median expected effect is reported.
 
-These write draft figure assets to:
+These write separate panel assets and combined figure assets to:
 
 ```text
 manuscript_assets/figure3/

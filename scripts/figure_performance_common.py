@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import logging
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -32,12 +33,21 @@ DEFAULT_RESULTS_DIR = Path("results")
 DEFAULT_METADATA_PATH = Path("metadata/predictions_info.tsv")
 DEFAULT_MANUSCRIPT_TABLES_DIR = Path("manuscript_assets/tables")
 DEFAULT_FORMATS = ("png", "svg")
+SVG_NS = "http://www.w3.org/2000/svg"
+XLINK_NS = "http://www.w3.org/1999/xlink"
 RANDOM_TOOL_ID = "random_baseline"
 UNIVERSE_ALGORITHM_SPECIFIC = "algorithm_specific"
 UNIVERSE_INTERSECTION = "intersection_pair_set"
 UNIVERSE_FULL = "full_pair_set"
 METRICS = ("aps", "pr_auc", "top_n_median_effect", "auroc", "spearman", "spearman_r2")
-PLOT_METRICS = ("aps", "top_n_median_effect", "auroc", "spearman")
+PANEL_SPECS = (
+    ("A", "aps", "boxplot"),
+    ("B", "top_n_median_effect", "boxplot"),
+    ("C", "auroc", "boxplot"),
+    ("D", "spearman", "boxplot"),
+    ("E", "aps", "leaderboard"),
+    ("F", "spearman_r2", "leaderboard"),
+)
 METRIC_LABELS = {
     "aps": "Average precision",
     "pr_auc": "PR-AUC",
@@ -524,15 +534,70 @@ def style_axis(ax: plt.Axes) -> None:
     ax.set_axisbelow(True)
 
 
-def save_figure(fig: plt.Figure, out_dir: Path, stem: str, *, dpi: int) -> list[Path]:
+def save_figure(fig: plt.Figure, out_dir: Path, stem: str, *, dpi: int) -> dict[str, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    paths = []
+    paths = {}
     for extension in DEFAULT_FORMATS:
         path = out_dir / f"{stem}.{extension}"
         fig.savefig(path, dpi=dpi, bbox_inches="tight", facecolor="white")
-        paths.append(path)
+        paths[extension] = path
     plt.close(fig)
     return paths
+
+
+def trim_white_border(image: np.ndarray, *, threshold: float = 0.985, pad: int = 16) -> np.ndarray:
+    rgb = image[..., :3]
+    nonwhite = np.any(rgb < threshold, axis=2)
+    if not np.any(nonwhite):
+        return image
+    rows = np.where(nonwhite.any(axis=1))[0]
+    cols = np.where(nonwhite.any(axis=0))[0]
+    top = max(int(rows[0]) - pad, 0)
+    bottom = min(int(rows[-1]) + pad + 1, image.shape[0])
+    left = max(int(cols[0]) - pad, 0)
+    right = min(int(cols[-1]) + pad + 1, image.shape[1])
+    return image[top:bottom, left:right]
+
+
+def pad_to_shape(
+    image: np.ndarray,
+    shape: tuple[int, int],
+    *,
+    vertical: str = "center",
+    horizontal: str = "center",
+) -> np.ndarray:
+    target_height, target_width = shape
+    height, width = image.shape[:2]
+    if height > target_height or width > target_width:
+        raise ValueError("Target shape must be at least as large as the image.")
+
+    channels = image.shape[2] if image.ndim == 3 else 1
+    canvas = np.ones((target_height, target_width, channels), dtype=image.dtype)
+    if vertical == "top":
+        top = 0
+    elif vertical == "bottom":
+        top = target_height - height
+    else:
+        top = (target_height - height) // 2
+    if horizontal == "left":
+        left = 0
+    elif horizontal == "right":
+        left = target_width - width
+    else:
+        left = (target_width - width) // 2
+    canvas[top : top + height, left : left + width, ...] = image
+    return canvas
+
+
+def parse_svg_viewbox(path: Path) -> tuple[float, float, ET.Element]:
+    root = ET.parse(path).getroot()
+    viewbox = root.attrib.get("viewBox")
+    if viewbox is None:
+        raise ValueError(f"SVG is missing a viewBox: {path}")
+    parts = [float(part) for part in viewbox.split()]
+    if len(parts) != 4:
+        raise ValueError(f"Unexpected SVG viewBox for {path}: {viewbox}")
+    return parts[2], parts[3], root
 
 
 def tool_label(inputs: PerformanceInputs, tool_id: str) -> str:
@@ -652,41 +717,238 @@ def draw_leaderboard(
     style_axis(ax)
 
 
-def plot_performance_figure(
+def panel_stem(output_prefix: str, letter: str, metric: str, panel_type: str) -> str:
+    safe_metric = metric.replace("_", "-")
+    return f"{output_prefix}_panel_{letter.lower()}_{panel_type}_{safe_metric}"
+
+
+def plot_metric_panel(
+    inputs: PerformanceInputs,
+    metrics: pd.DataFrame,
+    metric: str,
+    *,
+    letter: str,
+    top_n: int,
+) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(6.6, 4.2))
+    draw_metric_boxplot(ax, inputs, metrics, metric, letter=letter, top_n=top_n)
+    fig.tight_layout()
+    return fig
+
+
+def plot_leaderboard_panel(
+    inputs: PerformanceInputs,
+    leaderboard: pd.DataFrame,
+    *,
+    metric: str,
+    value_col: str,
+    title: str,
+    xlabel: str,
+    letter: str,
+) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(6.6, 3.8))
+    draw_leaderboard(
+        ax,
+        inputs,
+        leaderboard,
+        metric=metric,
+        value_col=value_col,
+        title=title,
+        xlabel=xlabel,
+        letter=letter,
+    )
+    fig.tight_layout()
+    return fig
+
+
+def write_panel_figures(
     inputs: PerformanceInputs,
     metrics: pd.DataFrame,
     leaderboard: pd.DataFrame,
     spearman_r2_leaderboard: pd.DataFrame,
     config: FigurePerformanceConfig,
     *,
+    out_dir: Path,
+    dpi: int,
     top_n: int,
-) -> plt.Figure:
-    fig, axes = plt.subplots(3, 2, figsize=(13.2, 12.0))
-    for ax, metric, letter in zip(axes[:2].ravel(), PLOT_METRICS, ("A", "B", "C", "D")):
-        draw_metric_boxplot(ax, inputs, metrics, metric, letter=letter, top_n=top_n)
-    draw_leaderboard(
-        axes[2, 0],
-        inputs,
-        leaderboard,
-        metric="aps",
-        value_col="mean_aps",
-        title="APS leaderboard",
-        xlabel="Mean average precision",
-        letter="E",
+) -> dict[str, dict[str, Path]]:
+    panel_outputs: dict[str, dict[str, Path]] = {}
+    for letter, metric, panel_type in PANEL_SPECS:
+        if panel_type == "boxplot":
+            fig = plot_metric_panel(inputs, metrics, metric, letter=letter, top_n=top_n)
+        elif metric == "aps":
+            fig = plot_leaderboard_panel(
+                inputs,
+                leaderboard,
+                metric="aps",
+                value_col="mean_aps",
+                title="APS leaderboard",
+                xlabel="Mean average precision",
+                letter=letter,
+            )
+        else:
+            fig = plot_leaderboard_panel(
+                inputs,
+                spearman_r2_leaderboard,
+                metric="spearman_r2",
+                value_col="mean_metric",
+                title="Spearman R2 leaderboard",
+                xlabel="Mean Spearman R2",
+                letter=letter,
+            )
+        panel_outputs[letter] = save_figure(
+            fig,
+            out_dir,
+            panel_stem(config.output_prefix, letter, metric, panel_type),
+            dpi=dpi,
+        )
+    return panel_outputs
+
+
+def write_combined_png(
+    panel_outputs: dict[str, dict[str, Path]],
+    *,
+    out_dir: Path,
+    output_prefix: str,
+    dpi: int,
+) -> None:
+    required = ("A", "B", "C", "D", "E", "F")
+    missing = [panel for panel in required if panel not in panel_outputs or "png" not in panel_outputs[panel]]
+    if missing:
+        raise ValueError(f"Missing PNG panel outputs: {missing}")
+
+    panel_images = {
+        panel: trim_white_border(plt.imread(panel_outputs[panel]["png"]))
+        for panel in required
+    }
+    row_pairs = (("A", "B"), ("C", "D"), ("E", "F"))
+    column_pairs = (("A", "C", "E"), ("B", "D", "F"))
+    row_heights = [
+        max(panel_images[panel].shape[0] for panel in row_pair)
+        for row_pair in row_pairs
+    ]
+    column_widths = [
+        max(panel_images[panel].shape[1] for panel in column_pair)
+        for column_pair in column_pairs
+    ]
+    cells = {
+        panel: pad_to_shape(
+            panel_images[panel],
+            (row_heights[row_index], column_widths[column_index]),
+            vertical="top",
+        )
+        for row_index, row_pair in enumerate(row_pairs)
+        for column_index, panel in enumerate(row_pair)
+    }
+    gap_x = 90
+    gap_y = 20
+    channels = next(iter(cells.values())).shape[2]
+    dtype = next(iter(cells.values())).dtype
+    rows = []
+    for left_panel, right_panel in row_pairs:
+        rows.append(
+            np.hstack(
+                [
+                    cells[left_panel],
+                    np.ones((cells[left_panel].shape[0], gap_x, channels), dtype=dtype),
+                    cells[right_panel],
+                ]
+            )
+        )
+    combined_parts = []
+    for index, row in enumerate(rows):
+        if index:
+            combined_parts.append(np.ones((gap_y, rows[0].shape[1], channels), dtype=dtype))
+        combined_parts.append(row)
+    combined = np.vstack(combined_parts)
+
+    fig_width = 16.2
+    fig_height = fig_width * combined.shape[0] / combined.shape[1]
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    ax.imshow(combined)
+    ax.axis("off")
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_dir / f"{output_prefix}_combined.png", dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
+
+def write_combined_svg(
+    panel_outputs: dict[str, dict[str, Path]],
+    *,
+    out_dir: Path,
+    output_prefix: str,
+) -> None:
+    required = ("A", "B", "C", "D", "E", "F")
+    missing = [panel for panel in required if panel not in panel_outputs or "svg" not in panel_outputs[panel]]
+    if missing:
+        raise ValueError(f"Missing SVG panel outputs: {missing}")
+
+    ET.register_namespace("", SVG_NS)
+    ET.register_namespace("xlink", XLINK_NS)
+    row_pairs = (("A", "B"), ("C", "D"), ("E", "F"))
+    panel_svgs = {panel: parse_svg_viewbox(panel_outputs[panel]["svg"]) for panel in required}
+    column_widths = [
+        max(panel_svgs[panel][0] for panel in column_pair)
+        for column_pair in (("A", "C", "E"), ("B", "D", "F"))
+    ]
+    row_heights = [
+        max(panel_svgs[panel][1] for panel in row_pair)
+        for row_pair in row_pairs
+    ]
+    gap_x = 18.0
+    gap_y = 10.0
+    combined_width = sum(column_widths) + gap_x
+    combined_height = sum(row_heights) + gap_y * (len(row_heights) - 1)
+    root = ET.Element(
+        f"{{{SVG_NS}}}svg",
+        {
+            "width": f"{combined_width:g}pt",
+            "height": f"{combined_height:g}pt",
+            "viewBox": f"0 0 {combined_width:g} {combined_height:g}",
+            "version": "1.1",
+        },
     )
-    draw_leaderboard(
-        axes[2, 1],
-        inputs,
-        spearman_r2_leaderboard,
-        metric="spearman_r2",
-        value_col="mean_metric",
-        title="Spearman R2 leaderboard",
-        xlabel="Mean Spearman R2",
-        letter="F",
+    ET.SubElement(
+        root,
+        f"{{{SVG_NS}}}rect",
+        {"x": "0", "y": "0", "width": f"{combined_width:g}", "height": f"{combined_height:g}", "fill": "#ffffff"},
     )
-    fig.suptitle(config.title, fontsize=FIGURE_TITLE_SIZE, fontweight="bold", y=0.985)
-    fig.tight_layout(rect=(0, 0, 1, 0.965))
-    return fig
+    for row_index, (left_panel, right_panel) in enumerate(row_pairs):
+        y = sum(row_heights[:row_index]) + gap_y * row_index
+        for column_index, panel in enumerate((left_panel, right_panel)):
+            panel_width, panel_height, panel_root = panel_svgs[panel]
+            x = sum(column_widths[:column_index]) + gap_x * column_index
+            nested = ET.SubElement(
+                root,
+                f"{{{SVG_NS}}}svg",
+                {
+                    "x": f"{x:g}",
+                    "y": f"{y:g}",
+                    "width": f"{panel_width:g}",
+                    "height": f"{panel_height:g}",
+                    "viewBox": panel_root.attrib["viewBox"],
+                },
+            )
+            for child in list(panel_root):
+                nested.append(child)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    svg_path = out_dir / f"{output_prefix}_combined.svg"
+    ET.ElementTree(root).write(svg_path, encoding="utf-8", xml_declaration=True)
+    svg_text = "\n".join(line.rstrip() for line in svg_path.read_text(encoding="utf-8").splitlines())
+    svg_path.write_text(f"{svg_text}\n", encoding="utf-8")
+
+
+def write_combined_figure(
+    panel_outputs: dict[str, dict[str, Path]],
+    *,
+    out_dir: Path,
+    output_prefix: str,
+    dpi: int,
+) -> None:
+    write_combined_png(panel_outputs, out_dir=out_dir, output_prefix=output_prefix, dpi=dpi)
+    write_combined_svg(panel_outputs, out_dir=out_dir, output_prefix=output_prefix)
 
 
 def run_performance_figure(config: FigurePerformanceConfig) -> None:
@@ -724,17 +986,15 @@ def run_performance_figure(config: FigurePerformanceConfig) -> None:
     logger.info("Wrote %s", spearman_r2_leaderboard_path)
 
     out_dir = args.manuscript_out_dir
-    save_figure(
-        plot_performance_figure(
-            inputs,
-            metrics,
-            leaderboard,
-            spearman_r2_leaderboard,
-            config,
-            top_n=args.top_n,
-        ),
-        out_dir,
-        f"{config.output_prefix}_combined",
+    panel_outputs = write_panel_figures(
+        inputs,
+        metrics,
+        leaderboard,
+        spearman_r2_leaderboard,
+        config,
+        out_dir=out_dir,
         dpi=args.dpi,
+        top_n=args.top_n,
     )
+    write_combined_figure(panel_outputs, out_dir=out_dir, output_prefix=config.output_prefix, dpi=args.dpi)
     logger.info("Wrote %s draft assets under %s", config.figure_id, out_dir)
