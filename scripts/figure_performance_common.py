@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from scipy.stats import spearmanr
-from sklearn.metrics import average_precision_score, auc, precision_recall_curve, roc_auc_score
+from sklearn.metrics import average_precision_score, auc, precision_recall_curve, r2_score, roc_auc_score
 
 from funmirbench.evaluate_common import CURVE_COLORS, TOP_PREDICTION_CDF_N, _rank_scale_scores
 from funmirbench.logger import setup_logging
@@ -36,7 +36,7 @@ RANDOM_TOOL_ID = "random_baseline"
 UNIVERSE_ALGORITHM_SPECIFIC = "algorithm_specific"
 UNIVERSE_INTERSECTION = "intersection_pair_set"
 UNIVERSE_FULL = "full_pair_set"
-METRICS = ("aps", "pr_auc", "top_n_median_effect", "auroc", "spearman")
+METRICS = ("aps", "pr_auc", "top_n_median_effect", "auroc", "spearman", "r2")
 PLOT_METRICS = ("aps", "top_n_median_effect", "auroc", "spearman")
 METRIC_LABELS = {
     "aps": "Average precision",
@@ -44,6 +44,7 @@ METRIC_LABELS = {
     "top_n_median_effect": "Top-N median effect",
     "auroc": "AUROC",
     "spearman": "Spearman rho",
+    "r2": "R2",
 }
 FIGURE_TITLE_SIZE = 13
 PANEL_TITLE_SIZE = 11
@@ -335,19 +336,23 @@ def compute_metrics(
 ) -> dict[str, float]:
     y_true_array = y_true.astype(int).to_numpy()
     y_score_array = y_score.astype(float).to_numpy()
+    expected_effect_array = expected_effect.astype(float).to_numpy()
+    r2 = r2_score(expected_effect_array, y_score_array) if len(y_score_array) >= 2 else float("nan")
     positives = int(y_true_array.sum())
     negatives = int(len(y_true_array) - positives)
     if positives == 0 or negatives == 0:
         metrics = {metric: float("nan") for metric in METRICS}
         metrics["top_n_median_effect"] = top_n_median_effect_value
+        metrics["r2"] = float(r2)
         return metrics
-    spearman = spearmanr(y_score_array, expected_effect.astype(float).to_numpy()).correlation
+    spearman = spearmanr(y_score_array, expected_effect_array).correlation
     return {
         "aps": float(average_precision_score(y_true_array, y_score_array)),
         "pr_auc": pr_auc_score(y_true_array, y_score_array),
         "top_n_median_effect": top_n_median_effect_value,
         "auroc": float(roc_auc_score(y_true_array, y_score_array)),
         "spearman": float(spearman) if pd.notna(spearman) else float("nan"),
+        "r2": float(r2) if pd.notna(r2) else float("nan"),
     }
 
 
@@ -463,6 +468,7 @@ def compute_leaderboard(metrics: pd.DataFrame) -> pd.DataFrame:
         mean_top_n_median_effect=("top_n_median_effect", "mean"),
         mean_auroc=("auroc", "mean"),
         mean_spearman=("spearman", "mean"),
+        mean_r2=("r2", "mean"),
         mean_coverage=("coverage", "mean"),
         mean_positive_coverage=("positive_coverage", "mean"),
     )
@@ -472,6 +478,22 @@ def compute_leaderboard(metrics: pd.DataFrame) -> pd.DataFrame:
         kind="mergesort",
     ).reset_index(drop=True)
     summary.insert(0, "rank", np.arange(1, len(summary) + 1))
+    return summary
+
+
+def compute_metric_leaderboard(metrics: pd.DataFrame, metric: str) -> pd.DataFrame:
+    summary = (
+        metrics.groupby(["tool_id", "predictor"], as_index=False)
+        .agg(
+            datasets=("dataset_id", "nunique"),
+            mean_metric=(metric, "mean"),
+            median_metric=(metric, "median"),
+        )
+        .sort_values("mean_metric", ascending=False, kind="mergesort")
+        .reset_index(drop=True)
+    )
+    summary.insert(0, "rank", np.arange(1, len(summary) + 1))
+    summary.insert(4, "metric", metric)
     return summary
 
 
@@ -529,90 +551,142 @@ def metric_label(metric: str, *, top_n: int) -> str:
     return METRIC_LABELS[metric]
 
 
-def plot_metric_distributions(
+def draw_metric_boxplot(
+    ax: plt.Axes,
     inputs: PerformanceInputs,
     metrics: pd.DataFrame,
+    metric: str,
+    *,
+    letter: str,
+    top_n: int,
+) -> None:
+    plot_tool_ids = tuple(metrics["tool_id"].drop_duplicates().tolist())
+    positions = np.arange(1, len(plot_tool_ids) + 1)
+    data = [
+        metrics.loc[metrics["tool_id"] == tool_id, metric].dropna().astype(float).to_numpy()
+        for tool_id in plot_tool_ids
+    ]
+    box = ax.boxplot(
+        data,
+        positions=positions,
+        widths=0.56,
+        patch_artist=True,
+        showfliers=False,
+        medianprops={"color": "#2D3748", "linewidth": 1.3},
+        whiskerprops={"color": "#6B7280", "linewidth": 1.0},
+        capprops={"color": "#6B7280", "linewidth": 1.0},
+        boxprops={"edgecolor": "#6B7280", "linewidth": 1.0},
+    )
+    for patch, tool_id in zip(box["boxes"], plot_tool_ids):
+        color = tool_color(inputs, tool_id)
+        patch.set_facecolor(color)
+        patch.set_edgecolor(color)
+        patch.set_alpha(0.28)
+
+    for index, (tool_id, values) in enumerate(zip(plot_tool_ids, data), start=1):
+        if values.size == 0:
+            continue
+        jitter = np.linspace(-0.09, 0.09, values.size) if values.size > 1 else np.array([0.0])
+        ax.scatter(
+            np.full(values.size, index, dtype=float) + jitter,
+            values,
+            s=30,
+            color=tool_color(inputs, tool_id),
+            edgecolor="white",
+            linewidth=0.45,
+            alpha=0.75,
+            zorder=3,
+        )
+    ax.set_title(
+        f"{letter}. {metric_label(metric, top_n=top_n)}",
+        loc="left",
+        fontweight="bold",
+        fontsize=PANEL_TITLE_SIZE,
+    )
+    ax.set_xticks(
+        positions,
+        [tool_label(inputs, tool_id) for tool_id in plot_tool_ids],
+        rotation=25,
+        ha="right",
+        fontsize=TICK_LABEL_SIZE,
+    )
+    ax.set_ylabel(metric_label(metric, top_n=top_n), fontsize=AXIS_LABEL_SIZE)
+    ax.tick_params(axis="y", labelsize=TICK_LABEL_SIZE)
+    if metric in {"aps", "pr_auc", "auroc"}:
+        ax.set_ylim(0.0, 1.02)
+    elif metric == "spearman":
+        ax.set_ylim(-1.02, 1.02)
+    style_axis(ax)
+
+
+def draw_leaderboard(
+    ax: plt.Axes,
+    inputs: PerformanceInputs,
+    leaderboard: pd.DataFrame,
+    *,
+    metric: str,
+    value_col: str,
+    title: str,
+    xlabel: str,
+    letter: str,
+) -> None:
+    ordered = leaderboard.sort_values(value_col, ascending=True)
+    colors = [tool_color(inputs, tool_id) for tool_id in ordered["tool_id"]]
+    ax.barh(ordered["predictor"], ordered[value_col], color=colors, alpha=0.45)
+    ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_SIZE)
+    values = ordered[value_col].dropna()
+    if values.empty:
+        ax.set_xlim(0.0, 1.0)
+    elif metric == "r2":
+        lower = min(float(values.min()) * 1.18, -0.05)
+        upper = max(float(values.max()) * 1.18, 0.05)
+        ax.set_xlim(lower, upper)
+        ax.axvline(0.0, color="#6B7280", linewidth=0.8, linestyle=":")
+    else:
+        ax.set_xlim(0.0, max(float(values.max()) * 1.18, 0.05))
+    ax.set_title(f"{letter}. {title}", loc="left", fontweight="bold", fontsize=PANEL_TITLE_SIZE)
+    ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
+    for y, value in enumerate(ordered[value_col]):
+        if pd.isna(value):
+            continue
+        ax.text(value, y, f" {value:.3f}", va="center", fontsize=TICK_LABEL_SIZE)
+    style_axis(ax)
+
+
+def plot_performance_figure(
+    inputs: PerformanceInputs,
+    metrics: pd.DataFrame,
+    leaderboard: pd.DataFrame,
+    r2_leaderboard: pd.DataFrame,
     config: FigurePerformanceConfig,
     *,
     top_n: int,
 ) -> plt.Figure:
-    fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.2))
-    plot_tool_ids = tuple(metrics["tool_id"].drop_duplicates().tolist())
-    positions = np.arange(1, len(plot_tool_ids) + 1)
-    for ax, metric, letter in zip(axes.ravel(), PLOT_METRICS, ("A", "B", "C", "D")):
-        data = [
-            metrics.loc[metrics["tool_id"] == tool_id, metric].dropna().astype(float).to_numpy()
-            for tool_id in plot_tool_ids
-        ]
-        box = ax.boxplot(
-            data,
-            positions=positions,
-            widths=0.56,
-            patch_artist=True,
-            showfliers=False,
-            medianprops={"color": "#2D3748", "linewidth": 1.3},
-            whiskerprops={"color": "#6B7280", "linewidth": 1.0},
-            capprops={"color": "#6B7280", "linewidth": 1.0},
-            boxprops={"edgecolor": "#6B7280", "linewidth": 1.0},
-        )
-        for patch, tool_id in zip(box["boxes"], plot_tool_ids):
-            color = tool_color(inputs, tool_id)
-            patch.set_facecolor(color)
-            patch.set_edgecolor(color)
-            patch.set_alpha(0.28)
-
-        for index, (tool_id, values) in enumerate(zip(plot_tool_ids, data), start=1):
-            if values.size == 0:
-                continue
-            jitter = np.linspace(-0.09, 0.09, values.size) if values.size > 1 else np.array([0.0])
-            ax.scatter(
-                np.full(values.size, index, dtype=float) + jitter,
-                values,
-                s=30,
-                color=tool_color(inputs, tool_id),
-                edgecolor="white",
-                linewidth=0.45,
-                alpha=0.75,
-                zorder=3,
-            )
-        ax.set_title(
-            f"{letter}. {metric_label(metric, top_n=top_n)}",
-            loc="left",
-            fontweight="bold",
-            fontsize=PANEL_TITLE_SIZE,
-        )
-        ax.set_xticks(
-            positions,
-            [tool_label(inputs, tool_id) for tool_id in plot_tool_ids],
-            rotation=25,
-            ha="right",
-            fontsize=TICK_LABEL_SIZE,
-        )
-        ax.set_ylabel(metric_label(metric, top_n=top_n), fontsize=AXIS_LABEL_SIZE)
-        ax.tick_params(axis="y", labelsize=TICK_LABEL_SIZE)
-        if metric in {"aps", "pr_auc", "auroc"}:
-            ax.set_ylim(0.0, 1.02)
-        elif metric == "spearman":
-            ax.set_ylim(-1.02, 1.02)
-        style_axis(ax)
-    fig.suptitle(config.title, fontsize=FIGURE_TITLE_SIZE, fontweight="bold", y=0.98)
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    return fig
-
-
-def plot_leaderboard(inputs: PerformanceInputs, leaderboard: pd.DataFrame, config: FigurePerformanceConfig) -> plt.Figure:
-    ordered = leaderboard.sort_values("mean_aps", ascending=True)
-    fig, ax = plt.subplots(figsize=(6.8, 4.6))
-    colors = [tool_color(inputs, tool_id) for tool_id in ordered["tool_id"]]
-    ax.barh(ordered["predictor"], ordered["mean_aps"], color=colors, alpha=0.45)
-    ax.set_xlabel("Mean average precision", fontsize=AXIS_LABEL_SIZE)
-    ax.set_xlim(0.0, max(ordered["mean_aps"].max() * 1.18, 0.05))
-    ax.set_title(f"{config.figure_id} leaderboard", loc="left", fontweight="bold", fontsize=PANEL_TITLE_SIZE)
-    ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
-    for y, value in enumerate(ordered["mean_aps"]):
-        ax.text(value, y, f" {value:.3f}", va="center", fontsize=TICK_LABEL_SIZE)
-    style_axis(ax)
-    fig.tight_layout()
+    fig, axes = plt.subplots(3, 2, figsize=(13.2, 12.0))
+    for ax, metric, letter in zip(axes[:2].ravel(), PLOT_METRICS, ("A", "B", "C", "D")):
+        draw_metric_boxplot(ax, inputs, metrics, metric, letter=letter, top_n=top_n)
+    draw_leaderboard(
+        axes[2, 0],
+        inputs,
+        leaderboard,
+        metric="aps",
+        value_col="mean_aps",
+        title="APS leaderboard",
+        xlabel="Mean average precision",
+        letter="E",
+    )
+    draw_leaderboard(
+        axes[2, 1],
+        inputs,
+        r2_leaderboard,
+        metric="r2",
+        value_col="mean_metric",
+        title="R2 leaderboard",
+        xlabel="Mean R2",
+        letter="F",
+    )
+    fig.suptitle(config.title, fontsize=FIGURE_TITLE_SIZE, fontweight="bold", y=0.985)
+    fig.tight_layout(rect=(0, 0, 1, 0.965))
     return fig
 
 
@@ -632,31 +706,29 @@ def run_performance_figure(config: FigurePerformanceConfig) -> None:
     )
     metrics = compute_per_experiment_metrics(inputs, config, top_n=args.top_n)
     leaderboard = compute_leaderboard(metrics)
+    r2_leaderboard = compute_metric_leaderboard(metrics, "r2")
 
     tables_dir = args.manuscript_tables_dir
     tables_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = tables_dir / f"{config.output_prefix}_per_experiment_metrics.tsv"
     leaderboard_path = tables_dir / f"{config.output_prefix}_leaderboard.tsv"
+    r2_leaderboard_path = tables_dir / f"{config.output_prefix}_r2_leaderboard.tsv"
     rank_path = tables_dir / f"{config.output_prefix}_local_ranks.tsv"
     metrics.to_csv(metrics_path, sep="\t", index=False)
     leaderboard.to_csv(leaderboard_path, sep="\t", index=False)
+    r2_leaderboard.to_csv(r2_leaderboard_path, sep="\t", index=False)
     if config.universe == UNIVERSE_FULL:
         write_rank_table(inputs, rank_path, include_random=config.include_random)
         logger.info("Wrote %s", rank_path)
     logger.info("Wrote %s", metrics_path)
     logger.info("Wrote %s", leaderboard_path)
+    logger.info("Wrote %s", r2_leaderboard_path)
 
     out_dir = args.manuscript_out_dir
     save_figure(
-        plot_metric_distributions(inputs, metrics, config, top_n=args.top_n),
+        plot_performance_figure(inputs, metrics, leaderboard, r2_leaderboard, config, top_n=args.top_n),
         out_dir,
-        f"{config.output_prefix}_metric_distributions",
-        dpi=args.dpi,
-    )
-    save_figure(
-        plot_leaderboard(inputs, leaderboard, config),
-        out_dir,
-        f"{config.output_prefix}_leaderboard",
+        f"{config.output_prefix}_combined",
         dpi=args.dpi,
     )
     logger.info("Wrote %s draft assets under %s", config.figure_id, out_dir)
