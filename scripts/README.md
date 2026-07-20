@@ -163,8 +163,8 @@ These figures evaluate miRNA-gene pair universes:
 
 Scores are converted to dataset-local normalized ranks where 0 is the weakest
 scored pair and 1 is the strongest scored pair. Tied scores receive average
-ranks. All three figures include a deterministic random baseline generated on
-the same evaluation universe as the compared predictors.
+ranks. Figure 4 and Figure 5 include a deterministic random baseline generated
+on the same evaluation universe as the compared predictors.
 
 The combined figure panels show average precision, the top-100 median
 perturbation-aware effect, AUROC, Spearman rho, an APS leaderboard, and a

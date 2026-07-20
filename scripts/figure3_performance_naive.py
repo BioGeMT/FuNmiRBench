@@ -17,7 +17,7 @@ CONFIG = FigurePerformanceConfig(
     universe=UNIVERSE_ALGORITHM_SPECIFIC,
     title="Algorithm-specific pair performance",
     output_prefix="figure3_algorithm_specific",
-    include_random=True,
+    include_random=False,
     default_out_dir=Path("manuscript_assets/figure3"),
 )
 
