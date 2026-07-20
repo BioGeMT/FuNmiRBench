@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from figure_performance_common import (
     FigurePerformanceConfig,
     UNIVERSE_FULL,
@@ -13,9 +15,10 @@ from figure_performance_common import (
 CONFIG = FigurePerformanceConfig(
     figure_id="Figure 5",
     universe=UNIVERSE_FULL,
-    title="Cross-dataset full pair set predictor distributions",
+    title="Full pair set performance",
     output_prefix="figure5_fps",
     include_random=True,
+    default_out_dir=Path("manuscript_assets/figure5"),
 )
 
 

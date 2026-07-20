@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_RESULTS_DIR = Path("results")
 DEFAULT_METADATA_PATH = Path("metadata/predictions_info.tsv")
-DEFAULT_MANUSCRIPT_OUTPUT_DIR = Path("manuscript_assets/figure3")
 DEFAULT_MANUSCRIPT_TABLES_DIR = Path("manuscript_assets/tables")
 DEFAULT_FORMATS = ("png", "svg")
 RANDOM_TOOL_ID = "random_baseline"
@@ -44,6 +43,10 @@ METRIC_LABELS = {
     "auroc": "AUROC",
     "spearman": "Spearman rho",
 }
+FIGURE_TITLE_SIZE = 13
+PANEL_TITLE_SIZE = 11
+AXIS_LABEL_SIZE = 10
+TICK_LABEL_SIZE = 9
 OE_ALIASES = {"OE", "OVEREXPRESSION", "OVER_EXPRESSION"}
 LOSS_ALIASES = {"KO", "KD", "KNOCKOUT", "KNOCK_OUT", "KNOCKDOWN", "KNOCK_DOWN"}
 
@@ -55,7 +58,7 @@ class BenchmarkDataset:
 
 
 @dataclass(frozen=True)
-class Figure3Inputs:
+class PerformanceInputs:
     run_dir: Path
     datasets: tuple[BenchmarkDataset, ...]
     tool_ids: tuple[str, ...]
@@ -72,7 +75,8 @@ class FigurePerformanceConfig:
     title: str
     output_prefix: str
     include_random: bool
-    random_label: str = "Random"
+    default_out_dir: Path
+    random_label: str = "Random baseline"
 
 
 def parse_args(config: FigurePerformanceConfig) -> argparse.Namespace:
@@ -103,8 +107,8 @@ def parse_args(config: FigurePerformanceConfig) -> argparse.Namespace:
     parser.add_argument(
         "--manuscript-out-dir",
         type=Path,
-        default=DEFAULT_MANUSCRIPT_OUTPUT_DIR,
-        help=f"Stable manuscript figure output directory. Default: {DEFAULT_MANUSCRIPT_OUTPUT_DIR}/.",
+        default=config.default_out_dir,
+        help=f"Stable manuscript figure output directory. Default: {config.default_out_dir}/.",
     )
     parser.add_argument(
         "--manuscript-tables-dir",
@@ -256,7 +260,7 @@ def prepare_inputs(
     metadata_path: Path,
     fdr_threshold: float | None,
     effect_threshold: float,
-) -> Figure3Inputs:
+) -> PerformanceInputs:
     datasets = load_joined_datasets(run_dir)
     metadata_order, labels = load_tool_metadata(metadata_path)
     tool_ids = available_tool_ids(datasets, metadata_order)
@@ -273,7 +277,7 @@ def prepare_inputs(
     )
     tool_colors = evaluation_tool_colors(tool_ids)
     tool_labels = {tool_id: labels.get(tool_id, tool_id) for tool_id in tool_ids}
-    return Figure3Inputs(
+    return PerformanceInputs(
         run_dir=run_dir,
         datasets=annotated,
         tool_ids=tool_ids,
@@ -342,7 +346,7 @@ def evaluation_frame(frame: pd.DataFrame, tool_id: str, tool_ids: tuple[str, ...
     raise ValueError(f"Unsupported performance universe: {universe}")
 
 
-def compute_per_experiment_metrics(inputs: Figure3Inputs, config: FigurePerformanceConfig) -> pd.DataFrame:
+def compute_per_experiment_metrics(inputs: PerformanceInputs, config: FigurePerformanceConfig) -> pd.DataFrame:
     rows = []
     tool_ids = (*inputs.tool_ids, RANDOM_TOOL_ID) if config.include_random else inputs.tool_ids
     for dataset in inputs.datasets:
@@ -422,13 +426,13 @@ def compute_leaderboard(metrics: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
-def write_rank_table(inputs: Figure3Inputs, out_path: Path, *, include_random: bool) -> None:
+def write_rank_table(inputs: PerformanceInputs, out_path: Path, *, include_random: bool) -> None:
     chunks = []
     tool_ids = (*inputs.tool_ids, RANDOM_TOOL_ID) if include_random else inputs.tool_ids
     for dataset in inputs.datasets:
         frame = dataset.frame[["dataset_id", "mirna", "perturbation", "gene_id", "is_positive"]].copy()
         for tool_id in tool_ids:
-            frame[f"fgs_rank_{tool_id}"] = rank_series(
+            frame[f"fps_rank_{tool_id}"] = rank_series(
                 dataset.frame,
                 tool_id,
                 dataset_id=dataset.dataset_id,
@@ -458,19 +462,19 @@ def save_figure(fig: plt.Figure, out_dir: Path, stem: str, *, dpi: int) -> list[
     return paths
 
 
-def tool_label(inputs: Figure3Inputs, tool_id: str) -> str:
+def tool_label(inputs: PerformanceInputs, tool_id: str) -> str:
     if tool_id == RANDOM_TOOL_ID:
-        return "Random"
+        return "Random baseline"
     return inputs.tool_labels[tool_id]
 
 
-def tool_color(inputs: Figure3Inputs, tool_id: str) -> str:
+def tool_color(inputs: PerformanceInputs, tool_id: str) -> str:
     if tool_id == RANDOM_TOOL_ID:
         return "#7A8798"
     return inputs.tool_colors[tool_id]
 
 
-def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame, config: FigurePerformanceConfig) -> plt.Figure:
+def plot_metric_distributions(inputs: PerformanceInputs, metrics: pd.DataFrame, config: FigurePerformanceConfig) -> plt.Figure:
     fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.2))
     plot_tool_ids = tuple(metrics["tool_id"].drop_duplicates().tolist())
     positions = np.arange(1, len(plot_tool_ids) + 1)
@@ -510,34 +514,42 @@ def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame, conf
                 alpha=0.75,
                 zorder=3,
             )
-        ax.set_title(f"{letter}. {METRIC_LABELS[metric]}", loc="left", fontweight="bold")
+        ax.set_title(
+            f"{letter}. {METRIC_LABELS[metric]}",
+            loc="left",
+            fontweight="bold",
+            fontsize=PANEL_TITLE_SIZE,
+        )
         ax.set_xticks(
             positions,
             [tool_label(inputs, tool_id) for tool_id in plot_tool_ids],
             rotation=25,
             ha="right",
+            fontsize=TICK_LABEL_SIZE,
         )
-        ax.set_ylabel(METRIC_LABELS[metric])
+        ax.set_ylabel(METRIC_LABELS[metric], fontsize=AXIS_LABEL_SIZE)
+        ax.tick_params(axis="y", labelsize=TICK_LABEL_SIZE)
         if metric != "spearman":
             ax.set_ylim(0.0, 1.02)
         else:
             ax.set_ylim(-1.02, 1.02)
         style_axis(ax)
-    fig.suptitle(config.title, fontsize=15, fontweight="bold", y=0.995)
-    fig.tight_layout()
+    fig.suptitle(config.title, fontsize=FIGURE_TITLE_SIZE, fontweight="bold", y=0.98)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
     return fig
 
 
-def plot_leaderboard(inputs: Figure3Inputs, leaderboard: pd.DataFrame) -> plt.Figure:
+def plot_leaderboard(inputs: PerformanceInputs, leaderboard: pd.DataFrame, config: FigurePerformanceConfig) -> plt.Figure:
     ordered = leaderboard.sort_values("mean_aps", ascending=True)
-    fig, ax = plt.subplots(figsize=(7.2, 4.8))
+    fig, ax = plt.subplots(figsize=(6.8, 4.6))
     colors = [tool_color(inputs, tool_id) for tool_id in ordered["tool_id"]]
     ax.barh(ordered["predictor"], ordered["mean_aps"], color=colors, alpha=0.45)
-    ax.set_xlabel("Mean FGS average precision")
+    ax.set_xlabel("Mean average precision", fontsize=AXIS_LABEL_SIZE)
     ax.set_xlim(0.0, max(ordered["mean_aps"].max() * 1.18, 0.05))
-    ax.set_title("FGS leaderboard", loc="left", fontweight="bold")
+    ax.set_title(f"{config.figure_id} leaderboard", loc="left", fontweight="bold", fontsize=PANEL_TITLE_SIZE)
+    ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     for y, value in enumerate(ordered["mean_aps"]):
-        ax.text(value, y, f" {value:.3f}", va="center", fontsize=10)
+        ax.text(value, y, f" {value:.3f}", va="center", fontsize=TICK_LABEL_SIZE)
     style_axis(ax)
     fig.tight_layout()
     return fig
@@ -581,7 +593,7 @@ def run_performance_figure(config: FigurePerformanceConfig) -> None:
         dpi=args.dpi,
     )
     save_figure(
-        plot_leaderboard(inputs, leaderboard),
+        plot_leaderboard(inputs, leaderboard, config),
         out_dir,
         f"{config.output_prefix}_leaderboard",
         dpi=args.dpi,

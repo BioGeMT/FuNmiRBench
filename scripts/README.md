@@ -166,10 +166,12 @@ scored pair and 1 is the strongest scored pair. Tied scores receive average
 ranks. Figure 4 and Figure 5 include a deterministic random baseline generated
 on the same shared pair universe.
 
-This writes draft Figure 3 assets to:
+These write draft figure assets to:
 
 ```text
 manuscript_assets/figure3/
+manuscript_assets/figure4/
+manuscript_assets/figure5/
 ```
 
 It writes the supporting tables to:

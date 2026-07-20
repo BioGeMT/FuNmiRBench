@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from figure_performance_common import (
     FigurePerformanceConfig,
     UNIVERSE_ALGORITHM_SPECIFIC,
@@ -13,9 +15,10 @@ from figure_performance_common import (
 CONFIG = FigurePerformanceConfig(
     figure_id="Figure 3",
     universe=UNIVERSE_ALGORITHM_SPECIFIC,
-    title="Cross-dataset algorithm-specific predictor distributions",
+    title="Algorithm-specific pair performance",
     output_prefix="figure3_algorithm_specific",
     include_random=False,
+    default_out_dir=Path("manuscript_assets/figure3"),
 )
 
 

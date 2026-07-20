@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from figure_performance_common import (
     FigurePerformanceConfig,
     UNIVERSE_INTERSECTION,
@@ -13,9 +15,10 @@ from figure_performance_common import (
 CONFIG = FigurePerformanceConfig(
     figure_id="Figure 4",
     universe=UNIVERSE_INTERSECTION,
-    title="Cross-dataset intersection pair set predictor distributions",
+    title="Intersection pair set performance",
     output_prefix="figure4_ips",
     include_random=True,
+    default_out_dir=Path("manuscript_assets/figure4"),
 )
 
 
