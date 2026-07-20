@@ -167,9 +167,9 @@ ranks. All three figures include a deterministic random baseline generated on
 the same evaluation universe as the compared predictors.
 
 The combined figure panels show average precision, the top-100 median
-perturbation-aware effect, AUROC, Spearman rho, an APS leaderboard, and an R2
-leaderboard. The top-100 median effect matches the top-prediction CDF
-implementation used in the benchmark result plots: predictors are sorted by
+perturbation-aware effect, AUROC, Spearman rho, an APS leaderboard, and a
+Spearman R2 leaderboard. The top-100 median effect matches the top-prediction
+CDF implementation used in the benchmark result plots: predictors are sorted by
 score, the top N pairs are selected, and the median expected effect is reported.
 
 These write draft figure assets to:
@@ -185,12 +185,12 @@ It writes the supporting tables to:
 ```text
 manuscript_assets/tables/figure3_algorithm_specific_per_experiment_metrics.tsv
 manuscript_assets/tables/figure3_algorithm_specific_leaderboard.tsv
-manuscript_assets/tables/figure3_algorithm_specific_r2_leaderboard.tsv
+manuscript_assets/tables/figure3_algorithm_specific_spearman_r2_leaderboard.tsv
 manuscript_assets/tables/figure4_ips_per_experiment_metrics.tsv
 manuscript_assets/tables/figure4_ips_leaderboard.tsv
-manuscript_assets/tables/figure4_ips_r2_leaderboard.tsv
+manuscript_assets/tables/figure4_ips_spearman_r2_leaderboard.tsv
 manuscript_assets/tables/figure5_fps_per_experiment_metrics.tsv
 manuscript_assets/tables/figure5_fps_leaderboard.tsv
-manuscript_assets/tables/figure5_fps_r2_leaderboard.tsv
+manuscript_assets/tables/figure5_fps_spearman_r2_leaderboard.tsv
 manuscript_assets/tables/figure5_fps_local_ranks.tsv
 ```

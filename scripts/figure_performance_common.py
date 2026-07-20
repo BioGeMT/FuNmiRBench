@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from scipy.stats import spearmanr
-from sklearn.metrics import average_precision_score, auc, precision_recall_curve, r2_score, roc_auc_score
+from sklearn.metrics import average_precision_score, auc, precision_recall_curve, roc_auc_score
 
 from funmirbench.evaluate_common import CURVE_COLORS, TOP_PREDICTION_CDF_N, _rank_scale_scores
 from funmirbench.logger import setup_logging
@@ -36,7 +36,7 @@ RANDOM_TOOL_ID = "random_baseline"
 UNIVERSE_ALGORITHM_SPECIFIC = "algorithm_specific"
 UNIVERSE_INTERSECTION = "intersection_pair_set"
 UNIVERSE_FULL = "full_pair_set"
-METRICS = ("aps", "pr_auc", "top_n_median_effect", "auroc", "spearman", "r2")
+METRICS = ("aps", "pr_auc", "top_n_median_effect", "auroc", "spearman", "spearman_r2")
 PLOT_METRICS = ("aps", "top_n_median_effect", "auroc", "spearman")
 METRIC_LABELS = {
     "aps": "Average precision",
@@ -44,7 +44,7 @@ METRIC_LABELS = {
     "top_n_median_effect": "Top-N median effect",
     "auroc": "AUROC",
     "spearman": "Spearman rho",
-    "r2": "R2",
+    "spearman_r2": "Spearman R2",
 }
 FIGURE_TITLE_SIZE = 13
 PANEL_TITLE_SIZE = 11
@@ -337,22 +337,24 @@ def compute_metrics(
     y_true_array = y_true.astype(int).to_numpy()
     y_score_array = y_score.astype(float).to_numpy()
     expected_effect_array = expected_effect.astype(float).to_numpy()
-    r2 = r2_score(expected_effect_array, y_score_array) if len(y_score_array) >= 2 else float("nan")
     positives = int(y_true_array.sum())
     negatives = int(len(y_true_array) - positives)
+    spearman = spearmanr(y_score_array, expected_effect_array).correlation
+    spearman_value = float(spearman) if pd.notna(spearman) else float("nan")
+    spearman_r2 = spearman_value**2 if pd.notna(spearman_value) else float("nan")
     if positives == 0 or negatives == 0:
         metrics = {metric: float("nan") for metric in METRICS}
         metrics["top_n_median_effect"] = top_n_median_effect_value
-        metrics["r2"] = float(r2)
+        metrics["spearman"] = spearman_value
+        metrics["spearman_r2"] = spearman_r2
         return metrics
-    spearman = spearmanr(y_score_array, expected_effect_array).correlation
     return {
         "aps": float(average_precision_score(y_true_array, y_score_array)),
         "pr_auc": pr_auc_score(y_true_array, y_score_array),
         "top_n_median_effect": top_n_median_effect_value,
         "auroc": float(roc_auc_score(y_true_array, y_score_array)),
-        "spearman": float(spearman) if pd.notna(spearman) else float("nan"),
-        "r2": float(r2) if pd.notna(r2) else float("nan"),
+        "spearman": spearman_value,
+        "spearman_r2": spearman_r2,
     }
 
 
@@ -468,7 +470,7 @@ def compute_leaderboard(metrics: pd.DataFrame) -> pd.DataFrame:
         mean_top_n_median_effect=("top_n_median_effect", "mean"),
         mean_auroc=("auroc", "mean"),
         mean_spearman=("spearman", "mean"),
-        mean_r2=("r2", "mean"),
+        mean_spearman_r2=("spearman_r2", "mean"),
         mean_coverage=("coverage", "mean"),
         mean_positive_coverage=("positive_coverage", "mean"),
     )
@@ -637,11 +639,8 @@ def draw_leaderboard(
     values = ordered[value_col].dropna()
     if values.empty:
         ax.set_xlim(0.0, 1.0)
-    elif metric == "r2":
-        lower = min(float(values.min()) * 1.18, -0.05)
-        upper = max(float(values.max()) * 1.18, 0.05)
-        ax.set_xlim(lower, upper)
-        ax.axvline(0.0, color="#6B7280", linewidth=0.8, linestyle=":")
+    elif metric == "spearman_r2":
+        ax.set_xlim(0.0, max(float(values.max()) * 1.18, 0.05))
     else:
         ax.set_xlim(0.0, max(float(values.max()) * 1.18, 0.05))
     ax.set_title(f"{letter}. {title}", loc="left", fontweight="bold", fontsize=PANEL_TITLE_SIZE)
@@ -657,7 +656,7 @@ def plot_performance_figure(
     inputs: PerformanceInputs,
     metrics: pd.DataFrame,
     leaderboard: pd.DataFrame,
-    r2_leaderboard: pd.DataFrame,
+    spearman_r2_leaderboard: pd.DataFrame,
     config: FigurePerformanceConfig,
     *,
     top_n: int,
@@ -678,11 +677,11 @@ def plot_performance_figure(
     draw_leaderboard(
         axes[2, 1],
         inputs,
-        r2_leaderboard,
-        metric="r2",
+        spearman_r2_leaderboard,
+        metric="spearman_r2",
         value_col="mean_metric",
-        title="R2 leaderboard",
-        xlabel="Mean R2",
+        title="Spearman R2 leaderboard",
+        xlabel="Mean Spearman R2",
         letter="F",
     )
     fig.suptitle(config.title, fontsize=FIGURE_TITLE_SIZE, fontweight="bold", y=0.985)
@@ -706,27 +705,34 @@ def run_performance_figure(config: FigurePerformanceConfig) -> None:
     )
     metrics = compute_per_experiment_metrics(inputs, config, top_n=args.top_n)
     leaderboard = compute_leaderboard(metrics)
-    r2_leaderboard = compute_metric_leaderboard(metrics, "r2")
+    spearman_r2_leaderboard = compute_metric_leaderboard(metrics, "spearman_r2")
 
     tables_dir = args.manuscript_tables_dir
     tables_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = tables_dir / f"{config.output_prefix}_per_experiment_metrics.tsv"
     leaderboard_path = tables_dir / f"{config.output_prefix}_leaderboard.tsv"
-    r2_leaderboard_path = tables_dir / f"{config.output_prefix}_r2_leaderboard.tsv"
+    spearman_r2_leaderboard_path = tables_dir / f"{config.output_prefix}_spearman_r2_leaderboard.tsv"
     rank_path = tables_dir / f"{config.output_prefix}_local_ranks.tsv"
     metrics.to_csv(metrics_path, sep="\t", index=False)
     leaderboard.to_csv(leaderboard_path, sep="\t", index=False)
-    r2_leaderboard.to_csv(r2_leaderboard_path, sep="\t", index=False)
+    spearman_r2_leaderboard.to_csv(spearman_r2_leaderboard_path, sep="\t", index=False)
     if config.universe == UNIVERSE_FULL:
         write_rank_table(inputs, rank_path, include_random=config.include_random)
         logger.info("Wrote %s", rank_path)
     logger.info("Wrote %s", metrics_path)
     logger.info("Wrote %s", leaderboard_path)
-    logger.info("Wrote %s", r2_leaderboard_path)
+    logger.info("Wrote %s", spearman_r2_leaderboard_path)
 
     out_dir = args.manuscript_out_dir
     save_figure(
-        plot_performance_figure(inputs, metrics, leaderboard, r2_leaderboard, config, top_n=args.top_n),
+        plot_performance_figure(
+            inputs,
+            metrics,
+            leaderboard,
+            spearman_r2_leaderboard,
+            config,
+            top_n=args.top_n,
+        ),
         out_dir,
         f"{config.output_prefix}_combined",
         dpi=args.dpi,
