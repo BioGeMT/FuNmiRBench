@@ -11,6 +11,7 @@ are assigned rank 0, which penalizes predictors for gene-selection coverage.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,11 +35,9 @@ DEFAULT_METADATA_PATH = Path("metadata/predictions_info.tsv")
 DEFAULT_MANUSCRIPT_OUTPUT_DIR = Path("manuscript_assets/figure3")
 DEFAULT_MANUSCRIPT_TABLES_DIR = Path("manuscript_assets/tables")
 DEFAULT_FORMATS = ("png", "svg")
+RANDOM_TOOL_ID = "random_baseline"
 METRICS = ("aps", "pr_auc", "auroc", "spearman")
-PLOT_METRICS = ("coverage", "positive_coverage", *METRICS)
 METRIC_LABELS = {
-    "coverage": "Coverage",
-    "positive_coverage": "Positive coverage",
     "aps": "Average precision",
     "pr_auc": "PR-AUC",
     "auroc": "AUROC",
@@ -181,6 +180,7 @@ def available_tool_ids(
     common_tool_ids = {
         column.removeprefix("score_") for column in (common_score_columns or set())
     }
+    common_tool_ids.discard(RANDOM_TOOL_ID)
     ordered = tuple(tool_id for tool_id in metadata_order if tool_id in common_tool_ids)
     resolved = ordered + tuple(sorted(common_tool_ids.difference(ordered)))
     if not resolved:
@@ -265,12 +265,17 @@ def prepare_inputs(
         )
         for dataset in datasets
     )
+    tool_colors = evaluation_tool_colors(tool_ids)
+    tool_ids = (*tool_ids, RANDOM_TOOL_ID)
+    tool_labels = {tool_id: labels.get(tool_id, tool_id) for tool_id in tool_ids}
+    tool_labels[RANDOM_TOOL_ID] = "Random"
+    tool_colors[RANDOM_TOOL_ID] = "#7A8798"
     return Figure3Inputs(
         run_dir=run_dir,
         datasets=annotated,
         tool_ids=tool_ids,
-        tool_labels={tool_id: labels.get(tool_id, tool_id) for tool_id in tool_ids},
-        tool_colors=evaluation_tool_colors(tool_ids),
+        tool_labels=tool_labels,
+        tool_colors=tool_colors,
         fdr_threshold=fdr_threshold,
         effect_threshold=effect_threshold,
     )
@@ -297,7 +302,19 @@ def compute_metrics(y_true: pd.Series, y_score: pd.Series, expected_effect: pd.S
     }
 
 
-def fgs_rank_series(frame: pd.DataFrame, tool_id: str) -> pd.Series:
+def random_rank_series(frame: pd.DataFrame, dataset_id: str) -> pd.Series:
+    seed = int.from_bytes(
+        hashlib.sha256(str(dataset_id).encode("utf-8")).digest()[:8],
+        byteorder="big",
+        signed=False,
+    )
+    random_scores = pd.Series(np.random.default_rng(seed).random(len(frame)), index=frame.index)
+    return _rank_scale_scores(random_scores).fillna(0.0).astype(float)
+
+
+def fgs_rank_series(frame: pd.DataFrame, tool_id: str, *, dataset_id: str) -> pd.Series:
+    if tool_id == RANDOM_TOOL_ID:
+        return random_rank_series(frame, dataset_id)
     ranks = _rank_scale_scores(frame[score_column(tool_id)])
     return ranks.fillna(0.0).astype(float)
 
@@ -308,18 +325,22 @@ def compute_fgs_per_experiment_metrics(inputs: Figure3Inputs) -> pd.DataFrame:
         frame = dataset.frame
         for tool_id in inputs.tool_ids:
             score_col = score_column(tool_id)
-            if score_col not in frame.columns:
+            if tool_id != RANDOM_TOOL_ID and score_col not in frame.columns:
                 continue
-            fgs_rank = fgs_rank_series(frame, tool_id)
+            fgs_rank = fgs_rank_series(frame, tool_id, dataset_id=dataset.dataset_id)
             metrics = compute_metrics(
                 frame["is_positive"],
                 fgs_rank,
                 frame["expected_effect"],
             )
-            scored = int(frame[score_col].notna().sum())
             total = int(len(frame))
             positives_total = int(frame["is_positive"].sum())
-            positives_scored = int(frame.loc[frame[score_col].notna(), "is_positive"].sum())
+            if tool_id == RANDOM_TOOL_ID:
+                scored = total
+                positives_scored = positives_total
+            else:
+                scored = int(frame[score_col].notna().sum())
+                positives_scored = int(frame.loc[frame[score_col].notna(), "is_positive"].sum())
             rows.append(
                 {
                     "dataset_id": dataset.dataset_id,
@@ -366,7 +387,11 @@ def write_rank_table(inputs: Figure3Inputs, out_path: Path) -> None:
     for dataset in inputs.datasets:
         frame = dataset.frame[["dataset_id", "mirna", "perturbation", "gene_id", "is_positive"]].copy()
         for tool_id in inputs.tool_ids:
-            frame[f"fgs_rank_{tool_id}"] = fgs_rank_series(dataset.frame, tool_id)
+            frame[f"fgs_rank_{tool_id}"] = fgs_rank_series(
+                dataset.frame,
+                tool_id,
+                dataset_id=dataset.dataset_id,
+            )
         chunks.append(frame)
     out = pd.concat(chunks, ignore_index=True)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -392,9 +417,9 @@ def save_figure(fig: plt.Figure, out_dir: Path, stem: str, *, dpi: int) -> list[
 
 
 def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame) -> plt.Figure:
-    fig, axes = plt.subplots(2, 3, figsize=(13.5, 7.4))
+    fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.2))
     positions = np.arange(1, len(inputs.tool_ids) + 1)
-    for ax, metric, letter in zip(axes.ravel(), PLOT_METRICS, ("A", "B", "C", "D", "E", "F")):
+    for ax, metric, letter in zip(axes.ravel(), METRICS, ("A", "B", "C", "D")):
         data = [
             metrics.loc[metrics["tool_id"] == tool_id, metric].dropna().astype(float).to_numpy()
             for tool_id in inputs.tool_ids
