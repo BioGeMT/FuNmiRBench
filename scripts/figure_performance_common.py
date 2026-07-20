@@ -22,7 +22,7 @@ import yaml
 from scipy.stats import spearmanr
 from sklearn.metrics import average_precision_score, auc, precision_recall_curve, roc_auc_score
 
-from funmirbench.evaluate_common import CURVE_COLORS, _rank_scale_scores
+from funmirbench.evaluate_common import CURVE_COLORS, TOP_PREDICTION_CDF_N, _rank_scale_scores
 from funmirbench.logger import setup_logging
 
 
@@ -36,10 +36,12 @@ RANDOM_TOOL_ID = "random_baseline"
 UNIVERSE_ALGORITHM_SPECIFIC = "algorithm_specific"
 UNIVERSE_INTERSECTION = "intersection_pair_set"
 UNIVERSE_FULL = "full_pair_set"
-METRICS = ("aps", "pr_auc", "auroc", "spearman")
+METRICS = ("aps", "pr_auc", "top_n_median_effect", "auroc", "spearman")
+PLOT_METRICS = ("aps", "top_n_median_effect", "auroc", "spearman")
 METRIC_LABELS = {
     "aps": "Average precision",
     "pr_auc": "PR-AUC",
+    "top_n_median_effect": "Top-N median effect",
     "auroc": "AUROC",
     "spearman": "Spearman rho",
 }
@@ -117,6 +119,12 @@ def parse_args(config: FigurePerformanceConfig) -> argparse.Namespace:
         help="Stable manuscript table output directory. Default: manuscript_assets/tables/.",
     )
     parser.add_argument("--dpi", type=int, default=300, help="Raster output resolution.")
+    parser.add_argument(
+        "--top-n",
+        type=int,
+        default=TOP_PREDICTION_CDF_N,
+        help=f"Number of top predictions used for the CDF-derived median effect metric. Default: {TOP_PREDICTION_CDF_N}.",
+    )
     parser.add_argument("--log-level", default="INFO", help="Logging level. Default: INFO.")
     return parser.parse_args()
 
@@ -293,17 +301,51 @@ def pr_auc_score(y_true: np.ndarray, y_score: np.ndarray) -> float:
     return float(auc(recall, precision))
 
 
-def compute_metrics(y_true: pd.Series, y_score: pd.Series, expected_effect: pd.Series) -> dict[str, float]:
+def top_n_median_effect(
+    frame: pd.DataFrame,
+    scores: pd.Series,
+    *,
+    top_n: int,
+) -> float:
+    if top_n <= 0:
+        raise ValueError("--top-n must be greater than 0.")
+    work = frame[["expected_effect"]].copy()
+    work["score"] = scores.astype(float)
+    if "gene_id" in frame.columns:
+        work["gene_id"] = frame["gene_id"]
+    work = work.dropna(subset=["score", "expected_effect"])
+    if work.empty:
+        return float("nan")
+    sort_cols = ["score"]
+    ascending = [False]
+    if "gene_id" in work.columns:
+        sort_cols.append("gene_id")
+        ascending.append(True)
+    work = work.sort_values(sort_cols, ascending=ascending, kind="mergesort")
+    top_values = work["expected_effect"].head(min(int(top_n), len(work)))
+    return float(np.nanmedian(top_values))
+
+
+def compute_metrics(
+    y_true: pd.Series,
+    y_score: pd.Series,
+    expected_effect: pd.Series,
+    *,
+    top_n_median_effect_value: float,
+) -> dict[str, float]:
     y_true_array = y_true.astype(int).to_numpy()
     y_score_array = y_score.astype(float).to_numpy()
     positives = int(y_true_array.sum())
     negatives = int(len(y_true_array) - positives)
     if positives == 0 or negatives == 0:
-        return {metric: float("nan") for metric in METRICS}
+        metrics = {metric: float("nan") for metric in METRICS}
+        metrics["top_n_median_effect"] = top_n_median_effect_value
+        return metrics
     spearman = spearmanr(y_score_array, expected_effect.astype(float).to_numpy()).correlation
     return {
         "aps": float(average_precision_score(y_true_array, y_score_array)),
         "pr_auc": pr_auc_score(y_true_array, y_score_array),
+        "top_n_median_effect": top_n_median_effect_value,
         "auroc": float(roc_auc_score(y_true_array, y_score_array)),
         "spearman": float(spearman) if pd.notna(spearman) else float("nan"),
     }
@@ -346,7 +388,12 @@ def evaluation_frame(frame: pd.DataFrame, tool_id: str, tool_ids: tuple[str, ...
     raise ValueError(f"Unsupported performance universe: {universe}")
 
 
-def compute_per_experiment_metrics(inputs: PerformanceInputs, config: FigurePerformanceConfig) -> pd.DataFrame:
+def compute_per_experiment_metrics(
+    inputs: PerformanceInputs,
+    config: FigurePerformanceConfig,
+    *,
+    top_n: int,
+) -> pd.DataFrame:
     rows = []
     tool_ids = (*inputs.tool_ids, RANDOM_TOOL_ID) if config.include_random else inputs.tool_ids
     for dataset in inputs.datasets:
@@ -368,6 +415,7 @@ def compute_per_experiment_metrics(inputs: PerformanceInputs, config: FigurePerf
                 work["is_positive"],
                 scores,
                 work["expected_effect"],
+                top_n_median_effect_value=top_n_median_effect(work, scores, top_n=top_n),
             )
             total = int(len(frame))
             positives_total = int(frame["is_positive"].sum())
@@ -412,6 +460,7 @@ def compute_leaderboard(metrics: pd.DataFrame) -> pd.DataFrame:
         mean_aps=("aps", "mean"),
         median_aps=("aps", "median"),
         mean_pr_auc=("pr_auc", "mean"),
+        mean_top_n_median_effect=("top_n_median_effect", "mean"),
         mean_auroc=("auroc", "mean"),
         mean_spearman=("spearman", "mean"),
         mean_coverage=("coverage", "mean"),
@@ -474,11 +523,23 @@ def tool_color(inputs: PerformanceInputs, tool_id: str) -> str:
     return inputs.tool_colors[tool_id]
 
 
-def plot_metric_distributions(inputs: PerformanceInputs, metrics: pd.DataFrame, config: FigurePerformanceConfig) -> plt.Figure:
+def metric_label(metric: str, *, top_n: int) -> str:
+    if metric == "top_n_median_effect":
+        return f"Top-{top_n} median effect"
+    return METRIC_LABELS[metric]
+
+
+def plot_metric_distributions(
+    inputs: PerformanceInputs,
+    metrics: pd.DataFrame,
+    config: FigurePerformanceConfig,
+    *,
+    top_n: int,
+) -> plt.Figure:
     fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.2))
     plot_tool_ids = tuple(metrics["tool_id"].drop_duplicates().tolist())
     positions = np.arange(1, len(plot_tool_ids) + 1)
-    for ax, metric, letter in zip(axes.ravel(), METRICS, ("A", "B", "C", "D")):
+    for ax, metric, letter in zip(axes.ravel(), PLOT_METRICS, ("A", "B", "C", "D")):
         data = [
             metrics.loc[metrics["tool_id"] == tool_id, metric].dropna().astype(float).to_numpy()
             for tool_id in plot_tool_ids
@@ -515,7 +576,7 @@ def plot_metric_distributions(inputs: PerformanceInputs, metrics: pd.DataFrame, 
                 zorder=3,
             )
         ax.set_title(
-            f"{letter}. {METRIC_LABELS[metric]}",
+            f"{letter}. {metric_label(metric, top_n=top_n)}",
             loc="left",
             fontweight="bold",
             fontsize=PANEL_TITLE_SIZE,
@@ -527,11 +588,11 @@ def plot_metric_distributions(inputs: PerformanceInputs, metrics: pd.DataFrame, 
             ha="right",
             fontsize=TICK_LABEL_SIZE,
         )
-        ax.set_ylabel(METRIC_LABELS[metric], fontsize=AXIS_LABEL_SIZE)
+        ax.set_ylabel(metric_label(metric, top_n=top_n), fontsize=AXIS_LABEL_SIZE)
         ax.tick_params(axis="y", labelsize=TICK_LABEL_SIZE)
-        if metric != "spearman":
+        if metric in {"aps", "pr_auc", "auroc"}:
             ax.set_ylim(0.0, 1.02)
-        else:
+        elif metric == "spearman":
             ax.set_ylim(-1.02, 1.02)
         style_axis(ax)
     fig.suptitle(config.title, fontsize=FIGURE_TITLE_SIZE, fontweight="bold", y=0.98)
@@ -569,7 +630,7 @@ def run_performance_figure(config: FigurePerformanceConfig) -> None:
         fdr_threshold=fdr_threshold,
         effect_threshold=effect_threshold,
     )
-    metrics = compute_per_experiment_metrics(inputs, config)
+    metrics = compute_per_experiment_metrics(inputs, config, top_n=args.top_n)
     leaderboard = compute_leaderboard(metrics)
 
     tables_dir = args.manuscript_tables_dir
@@ -587,7 +648,7 @@ def run_performance_figure(config: FigurePerformanceConfig) -> None:
 
     out_dir = args.manuscript_out_dir
     save_figure(
-        plot_metric_distributions(inputs, metrics, config),
+        plot_metric_distributions(inputs, metrics, config, top_n=args.top_n),
         out_dir,
         f"{config.output_prefix}_metric_distributions",
         dpi=args.dpi,

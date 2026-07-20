@@ -166,6 +166,12 @@ scored pair and 1 is the strongest scored pair. Tied scores receive average
 ranks. Figure 4 and Figure 5 include a deterministic random baseline generated
 on the same shared pair universe.
 
+The distribution panels show average precision, the top-100 median
+perturbation-aware effect, AUROC, and Spearman rho. The top-100 median effect
+matches the top-prediction CDF implementation used in the benchmark result
+plots: predictors are sorted by score, the top N pairs are selected, and the
+median expected effect is reported.
+
 These write draft figure assets to:
 
 ```text
