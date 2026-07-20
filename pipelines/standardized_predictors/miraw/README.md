@@ -35,7 +35,7 @@ This includes:
 
 If either cache file already exists, the pipeline reuses it. Otherwise, it downloads miRBase `mature.fa` version 22.1 and the Ensembl v115 GTF, logging whether each resource was reused, downloaded, or failed.
 
-miRAW produces site-level predictions. Therefore, the same Ensembl gene-miRNA pair can appear many times with different `Prediction` scores. The Python standardization pipeline collapses these rows internally and keeps the highest score for each `(Ensembl_ID, miRNA_Name)` pair.
+miRAW produces site-level predictions. Therefore, the same Ensembl gene-miRNA pair can appear many times with different `Prediction` scores. The Python standardization pipeline retains site-level rows through annotation and keeps the highest score only when writing the final standardized `(Ensembl_ID, miRNA_ID)` output.
 
 ## What The Pipeline Does
 
@@ -55,18 +55,17 @@ The pipeline:
    - `miRNA_Name`
    - `Score`
 8. Deduplicates exact duplicate parsed rows.
-9. Collapses rows to the best `Prediction` score per `(Ensembl_ID, miRNA_Name)` pair as an additional safety check.
-10. Builds a miRNA mapping from human miRBase names (`hsa-*`) to `MIMAT` IDs.
-11. Builds an Ensembl gene ID to `Gene_Name` mapping from Ensembl v115 `gene` features.
-12. Maps:
+9. Builds a miRNA mapping from human miRBase names (`hsa-*`) to `MIMAT` IDs.
+10. Builds an Ensembl gene ID to `Gene_Name` mapping from Ensembl v115 `gene` features.
+11. Maps:
     - `miRNA_Name` to `miRNA_ID`
     - `Ensembl_ID` to `Gene_Name`
-13. Drops genes absent from Ensembl release 115.
-14. Converts `Prediction` to numeric `Score`.
-15. Keeps one highest-scoring final row per:
+12. Drops genes absent from Ensembl release 115.
+13. Converts `Prediction` to numeric `Score`.
+14. Keeps one highest-scoring final row per:
     - `Ensembl_ID`
     - `miRNA_ID`
-16. Writes the standardized output table.
+15. Writes the standardized output table.
 
 ## Output Schema
 

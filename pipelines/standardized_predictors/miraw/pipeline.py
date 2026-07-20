@@ -22,7 +22,6 @@ from common import (  # noqa: E402
 )
 from utils import (  # noqa: E402
     build_output_table,
-    collapse_to_best_score_per_pair,
     create_ensembl_to_gene_name_mapping_from_gtf,
     create_mirna_name_to_mimat_mapping,
     download_file,
@@ -102,7 +101,7 @@ def main() -> None:
 
     configure_file_logging(args.log_file, args.log_level)
     logger.info("Starting miRAW standardization pipeline")
-    total_steps = 9
+    total_steps = 8
 
     log_step(logger, 1, total_steps, "Download or reuse raw site-level miRAW predictions")
     miraw_download_url = resolve_figshare_download_url(
@@ -147,26 +146,13 @@ def main() -> None:
         logger,
         4,
         total_steps,
-        "Collapse site-level rows to the highest score per Ensembl gene and miRNA name",
-    )
-    pred_df = collapse_to_best_score_per_pair(
-        pred_df,
-        ensembl_id_column="Ensembl_ID",
-        mirna_name_column="miRNA_Name",
-        score_column="Score",
-    )
-
-    log_step(
-        logger,
-        5,
-        total_steps,
         f"Build miRNA-name-to-MIMAT mapping from miRBase {TARGET_MIRBASE_RELEASE}",
     )
     mirna_name_to_mimat_map = create_mirna_name_to_mimat_mapping(mirbase_path)
 
     log_step(
         logger,
-        6,
+        5,
         total_steps,
         f"Build ENSG-to-gene-name mapping from Ensembl release {TARGET_ENSEMBL_RELEASE}",
     )
@@ -174,7 +160,7 @@ def main() -> None:
 
     log_step(
         logger,
-        7,
+        6,
         total_steps,
         f"Retain and annotate miRNAs present in miRBase {TARGET_MIRBASE_RELEASE}",
     )
@@ -187,7 +173,7 @@ def main() -> None:
 
     log_step(
         logger,
-        8,
+        7,
         total_steps,
         f"Retain and annotate genes present in Ensembl release {TARGET_ENSEMBL_RELEASE}",
     )
@@ -201,7 +187,7 @@ def main() -> None:
 
     log_step(
         logger,
-        9,
+        8,
         total_steps,
         "Finalize one highest-scoring standardized row per Ensembl_ID-miRNA_ID pair",
     )
