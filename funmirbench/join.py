@@ -41,24 +41,34 @@ def _elapsed(start: float) -> float:
 
 def _compute_global_rank_percentile(series: pd.Series) -> pd.Series:
     values = series.astype(float)
-    ranks = values.rank(method="dense", ascending=True)
+    ranks = values.rank(method="average", ascending=True)
+    min_rank = ranks.min(skipna=True)
     max_rank = ranks.max(skipna=True)
-    if pd.isna(max_rank):
+    if pd.isna(min_rank) or pd.isna(max_rank):
         return pd.Series(float("nan"), index=series.index)
-    if float(max_rank) <= 1.0:
+    if float(max_rank) <= float(min_rank):
         return pd.Series(1.0, index=series.index, dtype=float)
-    return (ranks - 1.0) / (float(max_rank) - 1.0)
+    return (ranks - float(min_rank)) / (float(max_rank) - float(min_rank))
 
 
 def _global_rank_percentile_map(scores: pd.Series) -> dict[float, float]:
     values = pd.to_numeric(scores, errors="coerce").dropna().astype(float)
     if values.empty:
         return {}
-    ordered = pd.Series(values.unique()).sort_values(kind="mergesort").reset_index(drop=True)
-    if len(ordered) <= 1:
-        return {float(value): 1.0 for value in ordered}
-    denominator = float(len(ordered) - 1)
-    return {float(value): float(index / denominator) for index, value in enumerate(ordered)}
+    ranks = values.rank(method="average", ascending=True)
+    min_rank = ranks.min(skipna=True)
+    max_rank = ranks.max(skipna=True)
+    if pd.isna(min_rank) or pd.isna(max_rank):
+        return {}
+    if float(max_rank) <= float(min_rank):
+        return {float(value): 1.0 for value in values.unique()}
+    normalized = (ranks - float(min_rank)) / (float(max_rank) - float(min_rank))
+    return {
+        float(score): float(rank)
+        for score, rank in pd.DataFrame(
+            {"score": values, "rank": normalized}
+        ).drop_duplicates("score").itertuples(index=False)
+    }
 
 
 def _normalize_scores(scores: pd.Series, *, score_direction: str, tool_id: str) -> pd.Series:

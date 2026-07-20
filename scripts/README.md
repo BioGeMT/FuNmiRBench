@@ -138,3 +138,33 @@ The table must contain:
 gene_id
 utr3_mean_conservation
 ```
+
+## Generate Figure 3 FGS Performance
+
+Run from the repository root:
+
+```bash
+uv run python scripts/figure3_performance_fgs.py \
+  --run-dir results/<results_dir>
+```
+
+Figure 3 evaluates predictors on the Full Gene Set (FGS). For each dataset and
+predictor, scored miRNA-gene pairs are converted to dataset-local normalized
+ranks where 0 is the weakest scored pair and 1 is the strongest scored pair.
+Tied scores receive average ranks. Unscored pairs stay in the analysis and are
+assigned rank 0, so the FGS leaderboard penalizes predictors for missing
+miRNA-gene pairs.
+
+This writes draft Figure 3 assets to:
+
+```text
+manuscript_assets/figure3/
+```
+
+It writes the supporting tables to:
+
+```text
+manuscript_assets/tables/figure3_fgs_per_experiment_metrics.tsv
+manuscript_assets/tables/figure3_fgs_leaderboard.tsv
+manuscript_assets/tables/figure3_fgs_local_ranks.tsv
+```

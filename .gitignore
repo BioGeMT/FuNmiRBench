@@ -32,6 +32,10 @@ data/resources/conservation/*
 # Benchmark results
 results/
 
+# Generated manuscript assets
+manuscript_assets/figure*/
+manuscript_assets/tables/
+
 # GEO pipeline outputs
 pipelines/geo/configs/*
 !pipelines/geo/configs/*.example.yaml

@@ -150,7 +150,7 @@ def _rank_distribution_metadata(rank_type):
             "title": "Positive vs background local rank distributions",
             "axis_label": "Local rank within dataset",
             "subtitle": (
-                "Dense ranks are dataset-local; GT positives use predictor colors."
+                "Ranks are dataset-local among scored pairs; ties use average rank."
             ),
         }
     if rank_type == "global":
@@ -158,7 +158,7 @@ def _rank_distribution_metadata(rank_type):
             "title": "Positive vs background global rank distributions",
             "axis_label": "Global rank across predictor file",
             "subtitle": (
-                "Dense ranks use each full predictor file; GT positives use predictor colors."
+                "Ranks use each full predictor file among scored pairs; ties use average rank."
             ),
         }
     raise ValueError(f"Unsupported rank distribution type: {rank_type}")
