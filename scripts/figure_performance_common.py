@@ -57,9 +57,9 @@ METRIC_LABELS = {
     "spearman_r2": "Spearman R2",
 }
 FIGURE_TITLE_SIZE = 13
-PANEL_TITLE_SIZE = 11
 AXIS_LABEL_SIZE = 10
 TICK_LABEL_SIZE = 9
+PANEL_FIGSIZE = (7.2, 4.8)
 OE_ALIASES = {"OE", "OVEREXPRESSION", "OVER_EXPRESSION"}
 LOSS_ALIASES = {"KO", "KD", "KNOCKOUT", "KNOCK_OUT", "KNOCKDOWN", "KNOCK_DOWN"}
 
@@ -534,6 +534,19 @@ def style_axis(ax: plt.Axes) -> None:
     ax.set_axisbelow(True)
 
 
+def set_panel_title(ax: plt.Axes, letter: str, title: str) -> None:
+    ax.figure.text(
+        0.025,
+        0.965,
+        letter,
+        ha="left",
+        va="top",
+        fontsize=15,
+        fontweight="bold",
+    )
+    ax.set_title(title, pad=18, fontsize=14, fontweight="bold")
+
+
 def save_figure(fig: plt.Figure, out_dir: Path, stem: str, *, dpi: int) -> dict[str, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = {}
@@ -664,12 +677,7 @@ def draw_metric_boxplot(
             alpha=0.75,
             zorder=3,
         )
-    ax.set_title(
-        f"{letter}. {metric_label(metric, top_n=top_n)}",
-        loc="left",
-        fontweight="bold",
-        fontsize=PANEL_TITLE_SIZE,
-    )
+    set_panel_title(ax, letter, metric_label(metric, top_n=top_n))
     ax.set_xticks(
         positions,
         [tool_label(inputs, tool_id) for tool_id in plot_tool_ids],
@@ -708,7 +716,7 @@ def draw_leaderboard(
         ax.set_xlim(0.0, max(float(values.max()) * 1.18, 0.05))
     else:
         ax.set_xlim(0.0, max(float(values.max()) * 1.18, 0.05))
-    ax.set_title(f"{letter}. {title}", loc="left", fontweight="bold", fontsize=PANEL_TITLE_SIZE)
+    set_panel_title(ax, letter, title)
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     for y, value in enumerate(ordered[value_col]):
         if pd.isna(value):
@@ -730,7 +738,7 @@ def plot_metric_panel(
     letter: str,
     top_n: int,
 ) -> plt.Figure:
-    fig, ax = plt.subplots(figsize=(6.6, 4.2))
+    fig, ax = plt.subplots(figsize=PANEL_FIGSIZE)
     draw_metric_boxplot(ax, inputs, metrics, metric, letter=letter, top_n=top_n)
     fig.tight_layout()
     return fig
@@ -746,7 +754,7 @@ def plot_leaderboard_panel(
     xlabel: str,
     letter: str,
 ) -> plt.Figure:
-    fig, ax = plt.subplots(figsize=(6.6, 3.8))
+    fig, ax = plt.subplots(figsize=PANEL_FIGSIZE)
     draw_leaderboard(
         ax,
         inputs,
