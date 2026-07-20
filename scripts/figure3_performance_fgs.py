@@ -35,7 +35,10 @@ DEFAULT_MANUSCRIPT_OUTPUT_DIR = Path("manuscript_assets/figure3")
 DEFAULT_MANUSCRIPT_TABLES_DIR = Path("manuscript_assets/tables")
 DEFAULT_FORMATS = ("png", "svg")
 METRICS = ("aps", "pr_auc", "auroc", "spearman")
+PLOT_METRICS = ("coverage", "positive_coverage", *METRICS)
 METRIC_LABELS = {
+    "coverage": "Coverage",
+    "positive_coverage": "Positive coverage",
     "aps": "Average precision",
     "pr_auc": "PR-AUC",
     "auroc": "AUROC",
@@ -389,23 +392,48 @@ def save_figure(fig: plt.Figure, out_dir: Path, stem: str, *, dpi: int) -> list[
 
 
 def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame) -> plt.Figure:
-    fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.2), sharex=True)
-    for ax, metric, letter in zip(axes.ravel(), METRICS, ("A", "B", "C", "D")):
+    fig, axes = plt.subplots(2, 3, figsize=(13.5, 7.4))
+    positions = np.arange(1, len(inputs.tool_ids) + 1)
+    for ax, metric, letter in zip(axes.ravel(), PLOT_METRICS, ("A", "B", "C", "D", "E", "F")):
         data = [
             metrics.loc[metrics["tool_id"] == tool_id, metric].dropna().astype(float).to_numpy()
             for tool_id in inputs.tool_ids
         ]
-        parts = ax.violinplot(data, showmeans=False, showmedians=True, widths=0.72)
-        for body, tool_id in zip(parts["bodies"], inputs.tool_ids):
-            body.set_facecolor(inputs.tool_colors[tool_id])
-            body.set_edgecolor(inputs.tool_colors[tool_id])
-            body.set_alpha(0.32)
-        for key in ("cbars", "cmins", "cmaxes", "cmedians"):
-            parts[key].set_color("#3C4858")
-            parts[key].set_linewidth(1.0)
+        box = ax.boxplot(
+            data,
+            positions=positions,
+            widths=0.56,
+            patch_artist=True,
+            showfliers=False,
+            medianprops={"color": "#2D3748", "linewidth": 1.3},
+            whiskerprops={"color": "#6B7280", "linewidth": 1.0},
+            capprops={"color": "#6B7280", "linewidth": 1.0},
+            boxprops={"edgecolor": "#6B7280", "linewidth": 1.0},
+        )
+        for patch, tool_id in zip(box["boxes"], inputs.tool_ids):
+            patch.set_facecolor(inputs.tool_colors[tool_id])
+            patch.set_alpha(0.28)
+
+        for index, (tool_id, values) in enumerate(zip(inputs.tool_ids, data), start=1):
+            if values.size == 0:
+                continue
+            jitter = np.linspace(-0.16, 0.16, values.size) if values.size > 1 else np.array([0.0])
+            order = np.argsort(values, kind="mergesort")
+            x = np.full(values.size, index, dtype=float)
+            x[order] += jitter
+            ax.scatter(
+                x,
+                values,
+                s=18,
+                color=inputs.tool_colors[tool_id],
+                edgecolor="white",
+                linewidth=0.35,
+                alpha=0.82,
+                zorder=3,
+            )
         ax.set_title(f"{letter}. {METRIC_LABELS[metric]}", loc="left", fontweight="bold")
         ax.set_xticks(
-            np.arange(1, len(inputs.tool_ids) + 1),
+            positions,
             [inputs.tool_labels[tool_id] for tool_id in inputs.tool_ids],
             rotation=25,
             ha="right",
@@ -416,7 +444,7 @@ def plot_metric_distributions(inputs: Figure3Inputs, metrics: pd.DataFrame) -> p
         else:
             ax.set_ylim(-1.02, 1.02)
         style_axis(ax)
-    fig.suptitle("Figure 3 FGS performance", fontsize=15, fontweight="bold", y=0.995)
+    fig.suptitle("Cross-dataset FGS predictor distributions", fontsize=15, fontweight="bold", y=0.995)
     fig.tight_layout()
     return fig
 
@@ -428,7 +456,7 @@ def plot_leaderboard(inputs: Figure3Inputs, leaderboard: pd.DataFrame) -> plt.Fi
     ax.barh(ordered["predictor"], ordered["mean_aps"], color=colors, alpha=0.45)
     ax.set_xlabel("Mean FGS average precision")
     ax.set_xlim(0.0, max(ordered["mean_aps"].max() * 1.18, 0.05))
-    ax.set_title("E. FGS leaderboard", loc="left", fontweight="bold")
+    ax.set_title("FGS leaderboard", loc="left", fontweight="bold")
     for y, value in enumerate(ordered["mean_aps"]):
         ax.text(value, y, f" {value:.3f}", va="center", fontsize=10)
     style_axis(ax)
@@ -475,7 +503,7 @@ def main() -> None:
     save_figure(
         plot_leaderboard(inputs, leaderboard),
         out_dir,
-        "figure3E_fgs_leaderboard",
+        "figure3_fgs_leaderboard",
         dpi=args.dpi,
     )
     logger.info("Wrote Figure 3 draft assets under %s", out_dir)
