@@ -11,7 +11,7 @@ from typing import Collection
 import pandas as pd
 
 from funmirbench import DatasetMeta
-from funmirbench.benchmark_config import resolve_predictor_output_path
+from funmirbench.benchmark_config import clean_optional_string, resolve_predictor_output_path
 from funmirbench.de_table import find_gene_id_column, read_de_table
 from funmirbench.gene_ids import strip_ensembl_version
 
@@ -183,8 +183,9 @@ def load_predictor_scores(
 ) -> LoadedPredictor:
     start = time.perf_counter()
     path = resolve_predictor_output_path(tool_meta["predictor_output_path"], root)
-    score_direction = str(
-        tool_meta.get("score_direction", "higher_is_stronger") or "higher_is_stronger"
+    score_direction = clean_optional_string(
+        tool_meta.get("score_direction"),
+        default="higher_is_stronger",
     )
 
     header = pd.read_csv(path, sep="\t", nrows=0)
@@ -330,7 +331,10 @@ def load_tool_scores(
 ) -> tuple[pd.DataFrame, Path]:
     start = time.perf_counter()
     path = resolve_predictor_output_path(tool_meta["predictor_output_path"], root)
-    score_direction = str(tool_meta.get("score_direction", "higher_is_stronger") or "higher_is_stronger")
+    score_direction = clean_optional_string(
+        tool_meta.get("score_direction"),
+        default="higher_is_stronger",
+    )
 
     df, rank_map, rows_read = _read_relevant_tool_scores(
         path,

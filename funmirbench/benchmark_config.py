@@ -12,6 +12,13 @@ import pandas as pd
 from funmirbench import DatasetMeta
 
 
+def clean_optional_string(value, default=""):
+    if value is None or pd.isna(value):
+        return default
+    text = str(value).strip()
+    return text if text else default
+
+
 def build_run_dir_name(*, experiments, tool_ids, eval_cfg, tags=None, run_date=None):
     """Return the timestamp-based run directory name.
     """
@@ -48,10 +55,10 @@ def load_experiments(tsv_path, root, filters):
             DatasetMeta(
                 id=str(row["id"]),
                 miRNA=str(row["mirna_name"]),
-                cell_line=str(row.get("tested_cell_line", "") or ""),
-                tissue=str(row.get("tissue", "") or ""),
-                perturbation=str(row.get("experiment_type", "") or ""),
-                organism=str(row.get("organism", "") or ""),
+                cell_line=clean_optional_string(row.get("tested_cell_line")),
+                tissue=clean_optional_string(row.get("tissue")),
+                perturbation=clean_optional_string(row.get("experiment_type")),
+                organism=clean_optional_string(row.get("organism")),
                 geo_accession=geo,
                 data_path=str(row["de_table_path"]),
                 root=root,
