@@ -54,6 +54,8 @@ pipelines/standardized_predictors/microt_cnn/data/resources/mirbase/mature.fa
 pipelines/standardized_predictors/microt_cnn/data/microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz
 ```
 
+Local prediction-file overrides are not supported. The Zenodo source and cache path above are the canonical source for reproducible standardization.
+
 The log notes whether each resource was reused from cache or downloaded.
 
 ## Run
@@ -67,8 +69,7 @@ uv run pipelines/standardized_predictors/microt_cnn/pipeline.py
 ## CLI Arguments
 
 ```bash
-python pipelines/standardized_predictors/microt_cnn/pipeline.py \
-  --predictions-file pipelines/standardized_predictors/microt_cnn/data/microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz \
+uv run pipelines/standardized_predictors/microt_cnn/pipeline.py \
   --tx2gene-file pipelines/standardized_predictors/microt_cnn/data/resources/ensembl/ensembl115_tx2gene.tsv.gz \
   --ensembl-gtf-file pipelines/standardized_predictors/microt_cnn/data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz \
   --resources-dir pipelines/standardized_predictors/microt_cnn/data/resources \

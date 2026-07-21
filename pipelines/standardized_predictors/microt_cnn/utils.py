@@ -99,7 +99,7 @@ def download_file(
                 available = [_file_name(f) for f in files]
                 raise RuntimeError(
                     f"Zenodo record {record_id} contains multiple files: {available}. "
-                    "Set `--predictions-file` to the desired filename or pass a direct URL."
+                    f"Expected cached filename: {target}."
                 )
 
         filename = _file_name(chosen)

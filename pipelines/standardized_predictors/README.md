@@ -20,9 +20,7 @@ The predictor outputs are written in a shared TSV format with the columns:
 - `miRNA_Name`
 - `Score`
 
-The shared annotation schema uses Ensembl v115 (GRCh38) and miRBase release 22.1.
-
-Not every pipeline currently populates every column, but they all write this schema.
+The shared annotation schema uses Ensembl v115 (GRCh38) and miRBase release 22.1. Each standardized predictor table is expected to populate all five columns.
 
 ## Pipelines
 

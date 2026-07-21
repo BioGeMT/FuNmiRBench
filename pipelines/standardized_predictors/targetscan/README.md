@@ -56,19 +56,19 @@ No score-based duplicate collapse is applied in the final output step. If duplic
 
 ## Run
 
-From this directory:
+From the repository root:
 
 ```bash
-uv run pipeline.py
+uv run pipelines/standardized_predictors/targetscan/pipeline.py
 ```
 
 ## CLI Arguments
 
 ```bash
-uv run pipeline.py --log-level INFO
+uv run pipelines/standardized_predictors/targetscan/pipeline.py --log-level INFO
 ```
 
 ## Logging
 
-Logging is written both to stdout and to `targetscan_pipeline.log`.
+Logging is written both to stdout and to `pipelines/standardized_predictors/targetscan/targetscan_pipeline.log`.
 The duplicate summary distinguishes provisional duplicate gene-miRNA pairs seen before the TargetScan/Ensembl mismatch filter from any duplicate pairs that survive after filtering.
