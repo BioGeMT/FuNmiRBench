@@ -35,7 +35,7 @@ from funmirbench.evaluate import (
     evaluate_joined_dataframe,
 )
 from funmirbench.experiment_store import sync_zenodo_experiments
-from funmirbench.join import build_joined
+from funmirbench.join import build_joined, load_predictor_score_cache
 from funmirbench.logger import parse_log_level, setup_logging
 from funmirbench.predictor_combinations import write_predictor_combination_outputs
 from funmirbench.protein_coding import (
@@ -84,6 +84,13 @@ def _optional_bool(value, default=False):
         if normalized in {"0", "false", "no", "n", "off"}:
             return False
     raise ValueError(f"Expected a boolean value, got {value!r}")
+
+
+def _positive_int(value, *, name):
+    parsed = int(value)
+    if parsed < 1:
+        raise ValueError(f"{name} must be >= 1, got {value!r}")
+    return parsed
 
 
 def clear_dataset_outputs(dataset_id, plots_dir, reports_dir):
@@ -219,6 +226,10 @@ def run_benchmark(config_path):
         eval_cfg.get("report_min_common_coverage", eval_cfg.get("publication_min_common_coverage", 0.10))
     )
     protein_coding_only = _optional_bool(eval_cfg.get("protein_coding_only"), True)
+    predictor_load_workers = _positive_int(
+        eval_cfg.get("predictor_load_workers", 1),
+        name="evaluation.predictor_load_workers",
+    )
 
     logger.info("Loading predictors...")
     predictions = load_predictions(
@@ -310,6 +321,14 @@ def run_benchmark(config_path):
     common_prediction_summaries = []
     logger.info(f"Experiments: {len(experiments)}")
     logger.info(f"Predictors:  {tool_ids}")
+    logger.info("Loading predictor score files once for this run with %d worker(s)...", predictor_load_workers)
+    predictor_cache = load_predictor_score_cache(
+        tool_ids,
+        predictions,
+        root,
+        max_workers=predictor_load_workers,
+        logger=logger.info,
+    )
 
     for meta in experiments:
         logger.info(f"Dataset: {meta.id} | {meta.miRNA} | {meta.cell_line}")
@@ -325,6 +344,7 @@ def run_benchmark(config_path):
             predictions,
             root,
             protein_coding_gene_ids=protein_coding_gene_ids,
+            predictor_cache=predictor_cache,
             logger=logger.info,
         )
         joined_path = dataset_dir / "joined.tsv"

@@ -11,7 +11,7 @@ predictions_tsv: metadata/predictions_info.tsv
 # The default repo config ships with a small 2-dataset demo selection.
 # Edit or comment these active rows to benchmark other subsets.
 experiments:
-  id: [GSE124411_OE_miR_150_5p_2, GSE129076_OE_miR_450a_5p_1]
+  id: [GSE168484_OE_miR_20b_5p, GSE202135_OE_miR_130b_3p]
   # mirna_name: [hsa-miR-375-3p]
   # tested_cell_line: [HUV-EC-C]
   # tissue: [Cervix]
@@ -23,6 +23,7 @@ predictors:
   tool_id: [targetscan, mirdb_mirtarget, microt_cnn, mirbind2, miraw]
 
 evaluation:
+  predictor_load_workers: 2
   fdr_threshold: null
   effect_threshold: 1.0
   predictor_top_fraction: 0.10
