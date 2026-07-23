@@ -13,14 +13,6 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
-from funmirbench.logger import (
-    DEFAULT_DATE_FORMAT,
-    DEFAULT_LOG_FORMAT,
-    parse_log_level,
-    setup_logging as setup_root_logging,
-)
-
-
 logger = logging.getLogger(__name__)
 
 MIRBASE_RELEASE = "22.1"
@@ -68,22 +60,6 @@ def assert_fasta(path: pathlib.Path) -> None:
                 raise RuntimeError(f"Not FASTA (first line: {s[:120]})")
             return
     raise RuntimeError("FASTA check failed: file appears empty.")
-
-
-def configure_logging(log_path: pathlib.Path, *, log_level: str) -> logging.Logger:
-    setup_root_logging(parse_log_level(log_level))
-
-    root_logger = logging.getLogger()
-    file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
-    file_handler.setLevel(root_logger.level)
-    file_handler.setFormatter(
-        logging.Formatter(
-            fmt=DEFAULT_LOG_FORMAT,
-            datefmt=DEFAULT_DATE_FORMAT,
-        )
-    )
-    root_logger.addHandler(file_handler)
-    return logging.getLogger(__name__)
 
 
 def step1_download_targetscan_files(
@@ -550,7 +526,7 @@ def step_write_standardized_predictions(
     tx_index: Dict[str, Any],
     ensembl_tables: Dict[str, Dict[str, str]],
     mirna_annotations: Dict[str, MirnaEntry],
-    out_predictions_dir: pathlib.Path,
+    output_path: pathlib.Path,
     species_id: str = "9606",
 ) -> None:
     logger.info("\n=== Write standardized predictions (%s) ===", PREDICTOR_NAME)
@@ -566,12 +542,8 @@ def step_write_standardized_predictions(
         for tx, _tags, _sym in reps
     }
 
-    out_predictions_dir = pathlib.Path(out_predictions_dir)
-    out_predictions_dir.mkdir(parents=True, exist_ok=True)
-
-    out_dir = out_predictions_dir / PREDICTOR_NAME
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{PREDICTOR_NAME}_standardized.tsv"
+    output_path = pathlib.Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     stats = Counter()
     mismatch_examples = []
@@ -717,7 +689,7 @@ def step_write_standardized_predictions(
             f"Sample rows: {details}"
         )
 
-    with out_path.open("w", encoding="utf-8", newline="") as handle:
+    with output_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
             handle,
             fieldnames=["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score"],
@@ -737,14 +709,14 @@ def step_write_standardized_predictions(
         PREDICTOR_NAME,
         len(unique_rows),
         stats["rows_after_filters"],
-        out_path,
+        output_path,
     )
 
 
-def compute_final_statistics(predictions_root: pathlib.Path) -> None:
+def compute_final_statistics(predictions_path: pathlib.Path) -> None:
     logger.info("\n=== FINAL STATISTICS ===")
 
-    predictions_path = predictions_root / PREDICTOR_NAME / f"{PREDICTOR_NAME}_standardized.tsv"
+    predictions_path = pathlib.Path(predictions_path)
     genes = set()
     mirs = set()
     n_rows = 0

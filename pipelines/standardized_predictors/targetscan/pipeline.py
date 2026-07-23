@@ -9,10 +9,16 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import add_log_level_arg, log_step, predictor_dir, repo_root  # noqa: E402
+from common import (  # noqa: E402
+    add_standard_io_args,
+    configure_file_logging,
+    log_step,
+    predictor_dir,
+    repo_root,
+    resolve_cli_path,
+)
 from utils import (  # noqa: E402
     compute_final_statistics,
-    configure_logging,
     parse_mirbase_mature,
     step1_download_targetscan_files,
     step2_build_representative_transcript_index,
@@ -28,24 +34,27 @@ from utils import (  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(root: Path) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Standardize TargetScan predictions for FuNmiRBench.")
-    add_log_level_arg(parser)
+    add_standard_io_args(
+        parser,
+        default_output=root / "data" / "predictions" / "targetscan" / "targetscan_standardized.tsv",
+        default_log_file=root / "data" / "predictions" / "targetscan" / "targetscan_pipeline.log",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
-    args = parse_args()
     root = repo_root()
+    args = parse_args(root)
+    args.output = resolve_cli_path(args.output, root)
+    args.log_file = resolve_cli_path(args.log_file, root)
     targetscan_dir = predictor_dir("targetscan", root=root)
-    log_file = targetscan_dir / "targetscan_pipeline.log"
 
-    global logger
-    logger = configure_logging(log_file, log_level=args.log_level)
-    logger.info("Logging to file: %s", log_file)
+    configure_file_logging(args.log_file, args.log_level)
+    logger.info("Logging to file: %s", args.log_file)
 
     data_dir = targetscan_dir / "data"
-    out_predictions_dir = root / "data" / "predictions"
     total_steps = 8
 
     log_step(logger, 1, total_steps, "Download and unzip TargetScan inputs")
@@ -87,11 +96,11 @@ def main() -> None:
         tx_index=tx_index,
         ensembl_tables=ensembl_tables,
         mirna_annotations=mirna_annotations,
-        out_predictions_dir=out_predictions_dir,
+        output_path=args.output,
         species_id="9606",
     )
 
-    compute_final_statistics(out_predictions_dir)
+    compute_final_statistics(args.output)
 
 
 if __name__ == "__main__":
