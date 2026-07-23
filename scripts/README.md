@@ -100,7 +100,13 @@ manuscript_assets/tables/figure2F_utr_conservation.tsv
 manuscript_assets/tables/figure2F_utr_conservation_raw.tsv
 manuscript_assets/tables/figure2_supplementary_coverage_table.tsv
 manuscript_assets/tables/figure2_gene_set_overlap.tsv
+manuscript_assets/tables/figure2_supplement_gene_set_overlap_mirna_coverage.tsv
 ```
+
+The manuscript-focused supplement table
+`figure2_supplement_gene_set_overlap_mirna_coverage.tsv` reports predictor
+gene-set intersections and unions, plus the mean number of tested miRNAs scored
+per covered gene for each predictor in the combination.
 
 Panels:
 
