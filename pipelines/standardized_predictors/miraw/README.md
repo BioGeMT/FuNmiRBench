@@ -6,7 +6,7 @@ This directory contains the standardization pipeline for miRAW gene-level predic
 
 - `pipeline.py`: CLI entrypoint for the pipeline.
 - `utils.py`: shared helpers for logging, downloads, parsing, cleaning, mapping, and output construction.
-- `miraw_pipeline.log`: log file written by the default run.
+- `data/predictions/miraw/miraw_pipeline.log`: log file written by the default run, relative to the repository root.
 
 The pipeline downloads the raw miRAW site-level prediction TSV from Figshare DOI `10.6084/m9.figshare.32982218` and caches it at:
 
@@ -105,10 +105,10 @@ Relative CLI paths are resolved from the repository root, so the current working
 uv run pipelines/standardized_predictors/miraw/pipeline.py \
   --resources-dir pipelines/standardized_predictors/miraw/data/resources \
   --output data/predictions/miraw/miraw_standardized.tsv \
-  --log-file pipelines/standardized_predictors/miraw/miraw_pipeline.log \
+  --log-file data/predictions/miraw/miraw_pipeline.log \
   --log-level INFO
 ```
 
 ## Logging
 
-Logging is written both to stdout and to the log file passed via `--log-file`.
+Logging is written both to stdout and to the log file passed via `--log-file`. By default, the log is written to `data/predictions/miraw/miraw_pipeline.log`.

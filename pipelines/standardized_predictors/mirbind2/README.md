@@ -6,7 +6,7 @@ This directory contains the standardization pipeline for miRBind2 human 3UTR pre
 
 - `pipeline.py`: CLI entrypoint for the pipeline.
 - `utils.py`: helpers for logging, cleaning, mapping, score conversion, and output construction.
-- `mirbind2_pipeline.log`: example log from a completed run.
+- `data/predictions/mirbind2/mirbind2_pipeline.log`: example log from a completed run, relative to the repository root.
 
 ## Inputs
 
@@ -102,10 +102,10 @@ Relative CLI paths are resolved from the repository root.
 uv run pipelines/standardized_predictors/mirbind2/pipeline.py \
   --mirbase-mature data/resources/mirbase/mature.fa \
   --output data/predictions/mirbind2/mirbind2_standardized.tsv \
-  --log-file pipelines/standardized_predictors/mirbind2/mirbind2_pipeline.log \
+  --log-file data/predictions/mirbind2/mirbind2_pipeline.log \
   --log-level INFO
 ```
 
 ## Logging
 
-Logging is written both to stdout and to the log file passed via `--log-file`. Main processing stages are logged as numbered steps and row-count changes are logged in a `before -> after` format.
+Logging is written both to stdout and to the log file passed via `--log-file`. By default, the log is written to `data/predictions/mirbind2/mirbind2_pipeline.log`. Main processing stages are logged as numbered steps and row-count changes are logged in a `before -> after` format.

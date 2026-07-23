@@ -45,7 +45,11 @@ def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     add_standard_io_args(
         parser,
         default_output=root / "data" / "predictions" / "mirdb_mirtarget" / "mirdb_mirtarget_standardized.tsv",
-        default_log_file=pipeline_dir / "mirdb_mirtarget_pipeline.log",
+        default_log_file=root
+        / "data"
+        / "predictions"
+        / "mirdb_mirtarget"
+        / "mirdb_mirtarget_pipeline.log",
     )
     return parser.parse_args()
 

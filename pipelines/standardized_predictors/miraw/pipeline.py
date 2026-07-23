@@ -86,7 +86,7 @@ def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     add_standard_io_args(
         parser,
         default_output=root / "data" / "predictions" / "miraw" / "miraw_standardized.tsv",
-        default_log_file=pipeline_dir / "miraw_pipeline.log",
+        default_log_file=root / "data" / "predictions" / "miraw" / "miraw_pipeline.log",
     )
     return parser.parse_args()
 

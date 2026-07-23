@@ -45,6 +45,8 @@ pipelines/standardized_predictors/mirbind2/unified_human_mirbase_mane_select_3ut
 pipelines/standardized_predictors/mirbind2/3utrs_mirbind2_predictions_no_sequences.tsv
 pipelines/standardized_predictors/mirbind2/3utrs_mirbind2_predictions.tsv
 
-# Track standardized predictor pipeline logs
+# Ignore logs globally, but track standardized predictor pipeline logs alongside outputs
 *.log
-!pipelines/standardized_predictors/**/*_pipeline.log
+!data/predictions/*/
+data/predictions/*/*
+!data/predictions/*/*_pipeline.log

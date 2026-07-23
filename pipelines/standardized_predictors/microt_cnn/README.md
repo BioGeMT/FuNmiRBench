@@ -6,7 +6,7 @@ This directory contains the standardization pipeline for microT-CNN gene-level p
 
 - `pipeline.py`: CLI entrypoint for the pipeline.
 - `utils.py`: helpers for logging, downloads, mapping, score conversion, and output construction.
-- `microt_cnn_pipeline.log`: example log from a completed run (created when you run the pipeline).
+- `data/predictions/microt_cnn/microt_cnn_pipeline.log`: example log from a completed run, relative to the repository root.
 
 ## What The Pipeline Does
 
@@ -74,7 +74,7 @@ uv run pipelines/standardized_predictors/microt_cnn/pipeline.py \
   --ensembl-gtf-file pipelines/standardized_predictors/microt_cnn/data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz \
   --resources-dir pipelines/standardized_predictors/microt_cnn/data/resources \
   --output data/predictions/microt_cnn/microt_cnn_standardized.tsv \
-  --log-file pipelines/standardized_predictors/microt_cnn/microt_cnn_pipeline.log \
+  --log-file data/predictions/microt_cnn/microt_cnn_pipeline.log \
   --log-level INFO
 ```
 
@@ -82,4 +82,4 @@ Relative CLI paths are resolved from the repository root.
 
 ## Logging
 
-Logging is written to stdout and to the file passed via `--log-file`. Main processing stages are logged as numbered steps and row-count changes are logged in a `before -> after` format.
+Logging is written to stdout and to the file passed via `--log-file`. By default, the log is written to `data/predictions/microt_cnn/microt_cnn_pipeline.log`. Main processing stages are logged as numbered steps and row-count changes are logged in a `before -> after` format.

@@ -6,7 +6,7 @@ This directory contains the standardization pipeline for miRDB gene-level predic
 
 - `pipeline.py`: CLI entrypoint for the pipeline.
 - `utils.py`: shared helpers for logging, downloads, cleaning, mapping, and output construction.
-- `mirdb_mirtarget_pipeline.log`: log file written by the default run.
+- `data/predictions/mirdb_mirtarget/mirdb_mirtarget_pipeline.log`: log file written by the default run, relative to the repository root.
 
 The pipeline downloads and reuses the raw miRDB predictions file at:
 
@@ -123,10 +123,10 @@ Relative CLI paths are resolved from the repository root, so the current working
 uv run pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py \
   --resources-dir pipelines/standardized_predictors/mirdb_mirtarget/data/resources \
   --output data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv \
-  --log-file pipelines/standardized_predictors/mirdb_mirtarget/mirdb_mirtarget_pipeline.log \
+  --log-file data/predictions/mirdb_mirtarget/mirdb_mirtarget_pipeline.log \
   --log-level INFO
 ```
 
 ## Logging
 
-Logging is written both to stdout and to the log file passed via `--log-file`.
+Logging is written both to stdout and to the log file passed via `--log-file`. By default, the log is written to `data/predictions/mirdb_mirtarget/mirdb_mirtarget_pipeline.log`.
