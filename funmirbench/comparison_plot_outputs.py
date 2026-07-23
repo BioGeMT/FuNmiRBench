@@ -48,7 +48,7 @@ def write_publication_common_comparison_plots(
     plots_dir,
     dataset_id,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     perturbation=None,
     min_common_coverage: float = DEFAULT_MIN_COMMON_COVERAGE,
     logger=None,
@@ -81,7 +81,7 @@ def write_publication_common_comparison_plots(
             joined,
             score_cols=score_cols,
             fdr_threshold=fdr_threshold,
-            abs_logfc_threshold=abs_logfc_threshold,
+            effect_threshold=effect_threshold,
             perturbation=perturbation,
         )
     except ValueError as exc:

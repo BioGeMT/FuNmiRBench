@@ -348,19 +348,19 @@ def _plot_items(combined_outputs):
         {
             "positive_background_local_rank_distributions": (
                 "Local Rank Distributions",
-                "GT positives and background genes by dataset-local rank.",
+                "GT positives and background genes by dataset-local rank among scored pairs; tied scores use average rank.",
             ),
             "positive_background_local_rank_counts": (
                 "Local Rank Counts",
-                "Binned gene counts by dataset-local rank.",
+                "Binned gene counts by dataset-local rank among scored pairs.",
             ),
             "positive_background_global_rank_distributions": (
                 "Global Rank Distributions",
-                "GT positives and background genes by predictor-file rank.",
+                "GT positives and background genes by predictor-file rank among scored pairs; tied scores use average rank.",
             ),
             "positive_background_global_rank_counts": (
                 "Global Rank Counts",
-                "Binned gene counts by predictor-file rank.",
+                "Binned gene counts by predictor-file rank among scored pairs.",
             ),
             "positive_recovery_fraction_by_prediction_count": (
                 "GT-Positive Recovery by Prediction Count",
@@ -457,7 +457,7 @@ def write_publication_run_pdf_report(
     metric_tables,
     combined_outputs,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     predictor_top_fraction,
 ):
     del metric_tables
@@ -480,9 +480,9 @@ def write_publication_run_pdf_report(
                 [
                     "GT positives",
                     (
-                        f"effect > {float(abs_logfc_threshold)}; sign-aware (-logFC Overexpression, +logFC Knockout/Knockdown)"
+                        f"effect > {float(effect_threshold)}; sign-aware (-logFC Overexpression, +logFC Knockout/Knockdown)"
                         if fdr_threshold is None
-                        else f"FDR < {float(fdr_threshold)}; effect > {float(abs_logfc_threshold)}; sign-aware (-logFC Overexpression, +logFC Knockout/Knockdown)"
+                        else f"FDR < {float(fdr_threshold)}; effect > {float(effect_threshold)}; sign-aware (-logFC Overexpression, +logFC Knockout/Knockdown)"
                     ),
                 ],
                 ["Top fraction", f"{predictor_top_fraction:.0%} exact top-k per predictor"],
@@ -497,8 +497,8 @@ def write_publication_run_pdf_report(
             "Evaluation design",
             [
                 "Higher aligned scores mean stronger predicted targeting.",
-                "Dataset plots use dataset-local, tie-aware dense ranks.",
-                "Cross-dataset global ranks use each full standardized predictor file.",
+                "Dataset plots rank only scored pairs; tied scores use average rank.",
+                "Cross-dataset global ranks use scored pairs from each full standardized predictor file.",
             ],
             x=0.04,
             y=0.57,

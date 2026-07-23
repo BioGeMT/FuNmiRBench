@@ -90,8 +90,8 @@ _PERTURBATION_EFFECT_SIGN = {
 }
 
 
-def describe_gt_rule(fdr_threshold, abs_logfc_threshold, *, markdown=False):
-    effect_text = f"perturbation-aware effect > {_format_threshold_value(abs_logfc_threshold)}"
+def describe_gt_rule(fdr_threshold, effect_threshold, *, markdown=False):
+    effect_text = f"perturbation-aware effect > {_format_threshold_value(effect_threshold)}"
     suffix = (
         "(`-logFC` for Overexpression, `+logFC` for Knockout/Knockdown)"
         if markdown
@@ -110,8 +110,8 @@ def describe_gt_rule(fdr_threshold, abs_logfc_threshold, *, markdown=False):
     return f"{fdr_text} and {effect_text} {suffix}"
 
 
-def _positive_mask(df, *, fdr_threshold, abs_logfc_threshold):
-    effect_mask = df["expected_effect"] > float(abs_logfc_threshold)
+def _positive_mask(df, *, fdr_threshold, effect_threshold):
+    effect_mask = df["expected_effect"] > float(effect_threshold)
     if fdr_threshold is None:
         return effect_mask
     fdr = df["benchmark_FDR"] if "benchmark_FDR" in df.columns else df["FDR"]
@@ -340,13 +340,14 @@ def _annotate_ground_truth(df, *, perturbation=None):
 
 def _rank_scale_scores(series):
     values = series.astype(float)
-    ranks = values.rank(method="dense", ascending=True)
+    ranks = values.rank(method="average", ascending=True)
+    min_rank = ranks.min(skipna=True)
     max_rank = ranks.max(skipna=True)
-    if pd.isna(max_rank):
+    if pd.isna(min_rank) or pd.isna(max_rank):
         return pd.Series(float("nan"), index=series.index)
-    if float(max_rank) <= 1.0:
+    if float(max_rank) <= float(min_rank):
         return pd.Series(1.0, index=series.index, dtype=float)
-    return (ranks - 1.0) / (float(max_rank) - 1.0)
+    return (ranks - float(min_rank)) / (float(max_rank) - float(min_rank))
 
 
 def _tool_id_from_score_col(score_col):
@@ -406,7 +407,7 @@ def _top_fraction_mask(series, fraction, *, tie_breaker=None):
 
 
 def _prepare_scored_frame(
-    joined, *, score_col, fdr_threshold, abs_logfc_threshold, perturbation=None,
+    joined, *, score_col, fdr_threshold, effect_threshold, perturbation=None,
 ):
     required_cols = {"gene_id", "logFC", "FDR", score_col}
     missing = [col for col in required_cols if col not in joined.columns]
@@ -428,7 +429,7 @@ def _prepare_scored_frame(
     keep["is_positive"] = _positive_mask(
         keep,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     ).astype(int)
     positives_total = int(keep["is_positive"].sum())
 

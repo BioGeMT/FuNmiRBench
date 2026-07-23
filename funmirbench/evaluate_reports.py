@@ -26,7 +26,7 @@ def _build_tool_report_markdown(
     de_table_path, joined_tsv,
     tool_id, predictor_output_path, metrics, coverage_info,
     scatter_png, pr_curve_png, roc_curve_png, gsea_png,
-    fdr_threshold, abs_logfc_threshold,
+    fdr_threshold, effect_threshold,
 ):
     coverage_percent = coverage_info["coverage"] * 100.0
     positive_coverage_percent = coverage_info["positive_coverage"] * 100.0
@@ -53,7 +53,7 @@ def _build_tool_report_markdown(
         f"- spearman: `{metrics['spearman']:.6f}`",
         "",
         "## Evaluation Rule",
-        f"- GT positives: {describe_gt_rule(fdr_threshold, abs_logfc_threshold, markdown=True)}",
+        f"- GT positives: {describe_gt_rule(fdr_threshold, effect_threshold, markdown=True)}",
         "- Predictor scores are aligned so that higher always means stronger before evaluation",
         "- Pearson and Spearman compare predictor score against perturbation-aware expected effect",
         "- APS, PR-AUC, AUROC, and GSEA are computed on scored rows only",
@@ -106,7 +106,7 @@ def _render_tool_report_pdf(
     metrics,
     coverage_info,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     scatter_png=None,
     pr_curve_png=None,
     roc_curve_png=None,
@@ -208,7 +208,7 @@ def _render_tool_report_pdf(
             ax,
             "Evaluation Rule",
             [
-                f"GT positives: {describe_gt_rule(fdr_threshold, abs_logfc_threshold)}",
+                f"GT positives: {describe_gt_rule(fdr_threshold, effect_threshold)}",
                 "Predictor scores are aligned so that higher always means stronger before evaluation.",
                 "Pearson and Spearman compare score against perturbation-aware expected effect.",
                 "APS, PR-AUC, AUROC, and GSEA are computed on scored rows only.",
@@ -317,7 +317,7 @@ def _write_tool_report(
     *, dataset_id, mirna, cell_line, perturbation, geo_accession,
     de_table_path, joined_tsv,
     tool_id, predictor_output_path, metrics, markdown_path, pdf_path, coverage_info,
-    scatter_png, pr_curve_png, roc_curve_png, gsea_png, fdr_threshold, abs_logfc_threshold,
+    scatter_png, pr_curve_png, roc_curve_png, gsea_png, fdr_threshold, effect_threshold,
 ):
     report_dir = markdown_path.parent
     markdown_text = _build_tool_report_markdown(
@@ -337,7 +337,7 @@ def _write_tool_report(
         roc_curve_png=_relative_report_path(roc_curve_png, report_dir=report_dir),
         gsea_png=_relative_report_path(gsea_png, report_dir=report_dir),
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     )
     markdown_path.write_text(markdown_text + "\n", encoding="utf-8")
     _render_tool_report_pdf(
@@ -352,7 +352,7 @@ def _write_tool_report(
         metrics=metrics,
         coverage_info=coverage_info,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         scatter_png=scatter_png,
         pr_curve_png=pr_curve_png,
         roc_curve_png=roc_curve_png,

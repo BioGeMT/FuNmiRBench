@@ -335,7 +335,7 @@ def _plot_predictor_pr_curves_own_scored(comparisons, *, dataset_id, out_path):
 
 
 def _prepare_common_scored_frame(
-    joined, *, score_cols, fdr_threshold, abs_logfc_threshold, perturbation=None,
+    joined, *, score_cols, fdr_threshold, effect_threshold, perturbation=None,
 ):
     required_cols = {"gene_id", "logFC", "FDR", *score_cols}
     missing = [col for col in required_cols if col not in joined.columns]
@@ -355,7 +355,7 @@ def _prepare_common_scored_frame(
     keep["is_positive"] = _positive_mask(
         keep,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     ).astype(int)
     keep = keep.dropna(subset=score_cols).copy()
     if keep.empty:
@@ -527,7 +527,7 @@ def _plot_top_prediction_effect_cdfs(
     if work.empty:
         raise ValueError("No usable rows remain for top-prediction effect CDF plot.")
 
-    fig, ax = plt.subplots(figsize=(8.6, 5.6))
+    fig, ax = plt.subplots(figsize=(8.0, 5.2))
     _style_axes(ax, grid_axis="both")
 
     background_x, background_y = _ecdf(work["expected_effect"])
@@ -535,14 +535,15 @@ def _plot_top_prediction_effect_cdfs(
         background_x,
         background_y,
         where="post",
-        color=NEUTRAL_COLOR,
+        color="black",
         linewidth=1.7,
         linestyle="--",
         alpha=0.9,
         label=f"All genes (n={len(work):,})",
     )
 
-    medians = []
+    plot_values = [work["expected_effect"].to_numpy(dtype=float)]
+    median_rows = []
     for score_col, tool_id in zip(score_cols, tool_ids):
         scored = work[work[score_col].notna()].copy()
         if scored.empty:
@@ -556,7 +557,8 @@ def _plot_top_prediction_effect_cdfs(
         top_count = min(int(top_n), len(scored))
         top_values = scored["expected_effect"].head(top_count).to_numpy(dtype=float)
         median_effect = float(np.nanmedian(top_values))
-        medians.append(median_effect)
+        plot_values.append(top_values)
+        median_rows.append((_tool_label(tool_id), median_effect, top_count, _tool_color(tool_id)))
         x_values, y_values = _ecdf(top_values)
         ax.step(
             x_values,
@@ -564,49 +566,71 @@ def _plot_top_prediction_effect_cdfs(
             where="post",
             color=_tool_color(tool_id),
             linewidth=2.2,
-            label=f"{_tool_label(tool_id)} top {top_count} | med {median_effect:.2f}",
+            label=_tool_label(tool_id),
         )
 
     ax.axvline(0.0, color=NEUTRAL_COLOR, linewidth=1.0, linestyle=":", alpha=0.8)
-    if medians:
-        ax.axvline(
-            float(np.nanmedian(work["expected_effect"])),
-            color="#7A8798",
-            linewidth=1.0,
-            linestyle="--",
-            alpha=0.7,
-            label="all-gene median",
-        )
-        limit = _nice_symmetric_limit(
-            np.concatenate([work["expected_effect"].to_numpy(dtype=float), np.asarray(medians)]),
-            floor=1.0,
-        )
-        ax.set_xlim(-limit, limit)
+    all_gene_median = float(np.nanmedian(work["expected_effect"]))
+    ax.axvline(
+        all_gene_median,
+        color="#7A8798",
+        linewidth=1.0,
+        linestyle="--",
+        alpha=0.75,
+        label="All-gene median",
+    )
+    combined_values = np.concatenate(plot_values)
+    lower, upper = np.nanpercentile(combined_values, [0.5, 99.5])
+    lower = min(float(lower), all_gene_median, 0.0)
+    upper = max(float(upper), all_gene_median, 0.0)
+    pad = max((upper - lower) * 0.06, 0.25)
+    ax.set_xlim(lower - pad, upper + pad)
     ax.set_xlabel("Perturbation-aware effect", fontsize=PLOT_AXIS_LABEL_SIZE)
     ax.set_ylabel("Cumulative fraction", fontsize=PLOT_AXIS_LABEL_SIZE)
     ax.set_ylim(0, 1.02)
+    ax.set_title(_dataset_caption(dataset_id), fontsize=12.5, fontweight="bold", pad=10)
+    if median_rows:
+        median_rows = sorted(median_rows, key=lambda item: item[1], reverse=True)
+        summary_lines = [
+            f"{label}: {median_effect:.2f}"
+            for label, median_effect, _, _ in median_rows
+        ]
+        summary_text = "Top-100 median effect\n" + "\n".join(summary_lines)
+        ax.text(
+            0.02,
+            0.98,
+            summary_text,
+            transform=ax.transAxes,
+            va="top",
+            ha="left",
+            fontsize=8.5,
+            linespacing=1.25,
+            bbox={
+                "boxstyle": "round,pad=0.35",
+                "facecolor": "white",
+                "edgecolor": GRID_COLOR,
+                "alpha": 0.92,
+            },
+        )
     _add_figure_heading(
         fig,
-        title="Top predicted-target effect distributions",
-        subtitle=(
-            f"{_dataset_caption(dataset_id)}"
-            f"  |  top {int(top_n)} per predictor"
-            "  |  higher values indicate stronger perturbation-consistent effect"
-        ),
+        title="",
+        subtitle="",
     )
     ax.legend(
         frameon=False,
-        fontsize=PLOT_LEGEND_SIZE,
-        loc="upper left",
-        bbox_to_anchor=(1.02, 1.0),
-        borderaxespad=0.0,
+        fontsize=9.0,
+        loc="lower right",
+        ncol=2,
+        columnspacing=0.9,
+        handlelength=2.1,
     )
     _save_figure(fig, out_path)
 
 
 def _plot_algorithms_vs_genes_heatmap(
     joined, *, score_cols, rank_cols, tool_ids, dataset_id, out_path,
-    fdr_threshold, abs_logfc_threshold, perturbation=None,
+    fdr_threshold, effect_threshold, perturbation=None,
 ):
     keep_cols = ["gene_id", "logFC", "FDR", *score_cols, *rank_cols]
     for optional in FDR_AUXILIARY_COLUMNS:
@@ -617,7 +641,7 @@ def _plot_algorithms_vs_genes_heatmap(
     work["is_positive"] = _positive_mask(
         work,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     ).astype(int)
     work = _sort_heatmap_rows_by_logfc(work)
 
@@ -725,7 +749,7 @@ def _plot_algorithms_vs_genes_heatmap(
 
 def _plot_top_positive_heatmap(
     joined, *, rank_cols, tool_ids, dataset_id, out_path,
-    fdr_threshold, abs_logfc_threshold, positive_fraction, perturbation=None,
+    fdr_threshold, effect_threshold, positive_fraction, perturbation=None,
 ):
     keep_cols = ["gene_id", "logFC", "FDR", *rank_cols]
     for optional in FDR_AUXILIARY_COLUMNS:
@@ -736,7 +760,7 @@ def _plot_top_positive_heatmap(
     work["is_positive"] = _positive_mask(
         work,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     ).astype(int)
     work = work[work["is_positive"] == 1].copy()
     if work.empty:

@@ -26,7 +26,7 @@ def _overview_heatmap_height(row_count):
     return max(4.6, min(11.0, 2.0 + 0.030 * float(row_count)))
 
 
-def _prepare_heatmap_work(joined, *, required_cols, fdr_threshold, abs_logfc_threshold, perturbation):
+def _prepare_heatmap_work(joined, *, required_cols, fdr_threshold, effect_threshold, perturbation):
     """Prepare the same usable rows and positives used by evaluation."""
     keep_cols = list(required_cols)
     for optional in FDR_AUXILIARY_COLUMNS:
@@ -38,7 +38,7 @@ def _prepare_heatmap_work(joined, *, required_cols, fdr_threshold, abs_logfc_thr
     work["is_positive"] = _positive_mask(
         work,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     ).astype(int)
     return work
 
@@ -145,13 +145,13 @@ def _draw_heatmap(
 
 def _plot_algorithms_vs_genes_heatmap(
     joined, *, score_cols, rank_cols, tool_ids, dataset_id, out_path,
-    fdr_threshold, abs_logfc_threshold, perturbation=None,
+    fdr_threshold, effect_threshold, perturbation=None,
 ):
     work = _prepare_heatmap_work(
         joined,
         required_cols=["gene_id", "logFC", "FDR", *score_cols, *rank_cols],
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         perturbation=perturbation,
     )
     if work.empty:
@@ -174,13 +174,13 @@ def _plot_algorithms_vs_genes_heatmap(
 
 def _plot_top_positive_heatmap(
     joined, *, rank_cols, tool_ids, dataset_id, out_path,
-    fdr_threshold, abs_logfc_threshold, positive_fraction, perturbation=None,
+    fdr_threshold, effect_threshold, positive_fraction, perturbation=None,
 ):
     work = _prepare_heatmap_work(
         joined,
         required_cols=["gene_id", "logFC", "FDR", *rank_cols],
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         perturbation=perturbation,
     )
     work = work[work["is_positive"] == 1].copy()

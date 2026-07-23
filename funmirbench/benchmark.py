@@ -108,6 +108,7 @@ def _finalize_run_bundle(
     *,
     out_root,
     config_path,
+    config_snapshot_path,
     tags,
     dataset_outputs,
     tool_ids,
@@ -116,7 +117,7 @@ def _finalize_run_bundle(
     common_prediction_summaries,
     tool_labels,
     fdr_threshold,
-    abs_logfc_threshold,
+    effect_threshold,
     predictor_top_fraction,
     protein_coding_filter,
 ):
@@ -132,7 +133,7 @@ def _finalize_run_bundle(
         layout["combined_plots_dir"],
         joined_frames=joined_frames,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         predictor_top_fraction=predictor_top_fraction,
         tool_labels=tool_labels,
         logger=logger.info,
@@ -148,7 +149,7 @@ def _finalize_run_bundle(
         layout["combined_plots_dir"],
         tool_ids=tool_ids,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         predictor_top_fraction=predictor_top_fraction,
         logger=logger.info,
     )
@@ -162,7 +163,7 @@ def _finalize_run_bundle(
         metric_tables=metric_tables,
         combined_outputs=combined_outputs,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         predictor_top_fraction=predictor_top_fraction,
         protein_coding_filter=protein_coding_filter,
     )
@@ -174,11 +175,12 @@ def _finalize_run_bundle(
         metric_tables=metric_tables,
         combined_outputs=combined_outputs,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         predictor_top_fraction=predictor_top_fraction,
     )
     summary = {
         "config": str(config_path),
+        "config_snapshot": str(config_snapshot_path),
         "out_root": str(out_root),
         "out_dir": str(out_dir),
         "run_dir_name": out_dir.name,
@@ -217,9 +219,7 @@ def run_benchmark(config_path):
     eval_cfg = config.get("evaluation", {})
     raw_fdr_threshold = eval_cfg.get("fdr_threshold", 0.05)
     fdr_threshold = None if raw_fdr_threshold is None else float(raw_fdr_threshold)
-    abs_logfc_threshold = float(
-        eval_cfg.get("effect_threshold", eval_cfg.get("abs_logfc_threshold", 1.0))
-    )
+    effect_threshold = float(eval_cfg.get("effect_threshold", 1.0))
     predictor_top_fraction = float(eval_cfg.get("predictor_top_fraction", 0.10))
     write_top_prediction_cdfs = _optional_bool(eval_cfg.get("write_top_prediction_cdfs"), True)
     report_min_common_coverage = float(
@@ -253,7 +253,7 @@ def run_benchmark(config_path):
         root=root,
         filters=experiment_filters,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
     )
     log_validation_summary(validation_summary)
     if not validation_summary.ok:
@@ -309,6 +309,9 @@ def run_benchmark(config_path):
     logger.info(f"Results root: {out_root}")
     logger.info(f"Run output dir: {out_dir}")
     main_layout = _init_run_layout(out_dir)
+    config_snapshot_path = out_dir / "benchmark_config.yaml"
+    shutil.copy2(config_path, config_snapshot_path)
+    logger.info(f"Wrote benchmark config snapshot: {config_snapshot_path}")
 
     tool_ids = list(predictions)
     tool_labels = {
@@ -357,7 +360,7 @@ def run_benchmark(config_path):
             plots_dir=dataset_dir / "plots",
             reports_dir=dataset_dir / "reports",
             fdr_threshold=fdr_threshold,
-            abs_logfc_threshold=abs_logfc_threshold,
+            effect_threshold=effect_threshold,
             predictor_top_fraction=predictor_top_fraction,
             dataset_id=meta.id,
             mirna=meta.miRNA,
@@ -378,7 +381,7 @@ def run_benchmark(config_path):
             plots_dir=dataset_dir / "plots",
             dataset_id=meta.id,
             fdr_threshold=fdr_threshold,
-            abs_logfc_threshold=abs_logfc_threshold,
+            effect_threshold=effect_threshold,
             perturbation=meta.perturbation,
             min_common_coverage=report_min_common_coverage,
             logger=logger.info,
@@ -405,7 +408,7 @@ def run_benchmark(config_path):
             skipped_tool_rows=evaluation.get("skipped_tool_rows", []),
             tool_labels=tool_labels,
             fdr_threshold=fdr_threshold,
-            abs_logfc_threshold=abs_logfc_threshold,
+            effect_threshold=effect_threshold,
             common_prediction_summary=common_prediction_summary,
         )
         joined_frames.append(joined.copy())
@@ -433,6 +436,7 @@ def run_benchmark(config_path):
         out_dir,
         out_root=out_root,
         config_path=config_path,
+        config_snapshot_path=config_snapshot_path,
         tags=config.get("tags"),
         dataset_outputs=dataset_outputs,
         tool_ids=tool_ids,
@@ -441,7 +445,7 @@ def run_benchmark(config_path):
         common_prediction_summaries=common_prediction_summaries,
         tool_labels=tool_labels,
         fdr_threshold=fdr_threshold,
-        abs_logfc_threshold=abs_logfc_threshold,
+        effect_threshold=effect_threshold,
         predictor_top_fraction=predictor_top_fraction,
         protein_coding_filter=protein_coding_filter,
     )
