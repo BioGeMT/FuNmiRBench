@@ -14,9 +14,12 @@ from matplotlib.patches import Patch
 from figure_performance_common import (
     DEFAULT_METADATA_PATH,
     DEFAULT_RESULTS_DIR,
+    UNIVERSE_ALGORITHM_SPECIFIC,
+    evaluation_frame,
     find_latest_completed_run,
     load_run_thresholds,
-    load_tool_metadata,
+    prepare_inputs,
+    rank_series,
     save_figure,
 )
 from funmirbench import evaluate_common as ev
@@ -70,33 +73,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def score_column(tool_id: str) -> str:
-    return f"score_{tool_id}"
-
-
-def load_metadata(path: Path) -> tuple[tuple[str, ...], dict[str, str], dict[str, str]]:
-    tool_ids, labels = load_tool_metadata(path)
-    metadata = pd.read_csv(path, sep="	", dtype=str)
-    if "score_direction" not in metadata.columns:
-        raise ValueError(f"{path} is missing column: score_direction")
-    directions = dict(zip(metadata["tool_id"].astype(str), metadata["score_direction"].astype(str)))
-    return tool_ids, labels, directions
-
-
-def local_rank_scale(scores: pd.Series, *, direction: str) -> pd.Series:
-    values = scores.astype(float)
-    ascending = direction == "lower_is_stronger"
-    ranks = values.rank(method="average", ascending=ascending)
-    min_rank = ranks.min(skipna=True)
-    max_rank = ranks.max(skipna=True)
-    if pd.isna(min_rank) or pd.isna(max_rank):
-        return pd.Series(float("nan"), index=scores.index)
-    if float(max_rank) <= float(min_rank):
-        return pd.Series(1.0, index=scores.index, dtype=float)
-    # Scale so 1.0 is the strongest rank and 0.0 is the weakest rank within the dataset.
-    return 1.0 - ((ranks - float(min_rank)) / (float(max_rank) - float(min_rank)))
-
-
 def load_rank_data(
     *,
     run_dir: Path,
@@ -104,50 +80,41 @@ def load_rank_data(
     fdr_threshold: float | None,
     effect_threshold: float,
 ) -> tuple[tuple[str, ...], dict[str, str], dict[str, str], dict[str, list[float]], dict[str, list[float]]]:
-    metadata_order, labels, directions = load_metadata(metadata_path)
-    joined_paths = sorted(run_dir.glob("datasets/*/joined.tsv"))
-    if not joined_paths:
-        raise FileNotFoundError(f"No datasets/*/joined.tsv files found in {run_dir}")
+    inputs = prepare_inputs(
+        run_dir=run_dir,
+        metadata_path=metadata_path,
+        fdr_threshold=fdr_threshold,
+        effect_threshold=effect_threshold,
+    )
+    positive_data = {tool_id: [] for tool_id in inputs.tool_ids}
+    background_data = {tool_id: [] for tool_id in inputs.tool_ids}
 
-    available = set()
-    for path in joined_paths:
-        columns = pd.read_csv(path, sep="	", nrows=0).columns
-        available.update(column.removeprefix("score_") for column in columns if column.startswith("score_"))
-    tool_ids = tuple(tool_id for tool_id in metadata_order if tool_id in available)
-    if not tool_ids:
-        raise ValueError("No score_<tool_id> columns were found in joined datasets.")
-
-    positive_data = {tool_id: [] for tool_id in tool_ids}
-    background_data = {tool_id: [] for tool_id in tool_ids}
-    required = {"logFC", "FDR", "perturbation"}
-    score_cols = [score_column(tool_id) for tool_id in tool_ids]
-    for path in joined_paths:
-        frame = pd.read_csv(path, sep="	", low_memory=False)
-        missing = required.difference(frame.columns)
-        if missing:
-            raise ValueError(f"{path} is missing columns: {sorted(missing)}")
-        work = ev._filter_usable_gt_rows(frame[["logFC", "FDR", "perturbation", *score_cols]], fdr_threshold=fdr_threshold)
-        if work.empty:
-            continue
-        work = ev._annotate_ground_truth(work)
-        is_positive = ev._positive_mask(
-            work,
-            fdr_threshold=fdr_threshold,
-            effect_threshold=effect_threshold,
-        )
-        for tool_id in tool_ids:
-            col = score_column(tool_id)
-            if col not in work.columns:
+    for dataset in inputs.datasets:
+        for tool_id in inputs.tool_ids:
+            work = evaluation_frame(
+                dataset.frame,
+                tool_id,
+                inputs.tool_ids,
+                UNIVERSE_ALGORITHM_SPECIFIC,
+            )
+            if work.empty:
                 continue
-            ranks = local_rank_scale(work[col], direction=directions.get(tool_id, "higher_is_stronger"))
-            positive_data[tool_id].extend(ranks.loc[is_positive].dropna().astype(float).tolist())
-            background_data[tool_id].extend(ranks.loc[~is_positive].dropna().astype(float).tolist())
+            ranks = rank_series(
+                work,
+                tool_id,
+                dataset_id=dataset.dataset_id,
+                universe=UNIVERSE_ALGORITHM_SPECIFIC,
+            )
+            positive_data[tool_id].extend(
+                ranks.loc[work["is_positive"]].dropna().astype(float).tolist()
+            )
+            background_data[tool_id].extend(
+                ranks.loc[~work["is_positive"]].dropna().astype(float).tolist()
+            )
 
     if not any(positive_data.values()) or not any(background_data.values()):
         raise ValueError("No local-rank data were available for positives and background pairs.")
-    colors = {tool_id: ev.CURVE_COLORS[index % len(ev.CURVE_COLORS)] for index, tool_id in enumerate(tool_ids)}
-    return tool_ids, labels, colors, positive_data, background_data
-
+    return inputs.tool_ids, inputs.tool_labels, inputs.tool_colors, positive_data, background_data
 
 def wrap_label(label: str) -> str:
     if label == "TargetScan v8":
