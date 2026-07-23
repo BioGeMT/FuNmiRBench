@@ -195,6 +195,35 @@ manuscript_assets/tables/figure5_fps_spearman_r2_leaderboard.tsv
 manuscript_assets/tables/figure5_fps_local_ranks.tsv
 ```
 
+## Generate Figure 6 FPS Recovery
+
+Run from the repository root:
+
+```bash
+uv run python scripts/figure6_fps_recovery.py \
+  --run-dir results/<results_dir>
+```
+
+Figure 6 evaluates practical recovery under the Full Pair Set (FPS), using the
+same rank-zero convention for missing predictor scores as Figure 5. It reports
+positive-pair recovery by prediction budget, the best per-experiment precision
+at a fixed recall target, and the corresponding false positives per true
+positive.
+
+This writes:
+
+```text
+manuscript_assets/figure6/figure6_fps_recovery_panel_a_recovery_budget.png
+manuscript_assets/figure6/figure6_fps_recovery_panel_b_best_precision.png
+manuscript_assets/figure6/figure6_fps_recovery_panel_c_validation_burden.png
+manuscript_assets/figure6/figure6_fps_recovery_panel_d_legend.png
+manuscript_assets/figure6/figure6_fps_recovery_combined.png
+manuscript_assets/figure6/figure6_fps_recovery_combined.svg
+manuscript_assets/tables/figure6_fps_recovery_by_budget.tsv
+manuscript_assets/tables/figure6_fps_precision_at_recall.tsv
+manuscript_assets/tables/figure6_fps_best_precision_at_recall.tsv
+```
+
 ## Generate Supplementary Top-Effect CDF Figure
 
 After running the benchmark with `evaluation.write_top_prediction_cdfs: true`,
