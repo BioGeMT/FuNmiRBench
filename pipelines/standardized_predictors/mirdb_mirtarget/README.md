@@ -24,16 +24,16 @@ If this cache file already exists, the pipeline reuses it. Otherwise, it downloa
 
 Local prediction-file overrides are not supported. The miRDB download and cache path above are the canonical source for reproducible standardization.
 
-The pipeline also downloads and reuses annotation resources under:
+The pipeline also downloads and reuses annotation resources under its predictor-local cache:
 
 ```text
-data/resources/
+pipelines/standardized_predictors/mirdb_mirtarget/data/resources/
 ```
 
 This includes:
 
-- `mirbase/mature.fa` at `data/resources/mirbase/mature.fa`
-- `biomart/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv` at `data/resources/biomart/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv`
+- `mirbase/mature.fa` at `pipelines/standardized_predictors/mirdb_mirtarget/data/resources/mirbase/mature.fa`
+- `hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv` at `pipelines/standardized_predictors/mirdb_mirtarget/data/resources/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv`
 
 If either cache file already exists, the pipeline reuses it. Otherwise, it downloads miRBase `mature.fa` version 22.1 and the BioMart NCBI Gene ID/RefSeq-to-Ensembl mapping table, logging whether each resource was reused, downloaded, or failed.
 

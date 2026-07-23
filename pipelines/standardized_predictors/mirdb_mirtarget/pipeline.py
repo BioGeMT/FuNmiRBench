@@ -40,7 +40,10 @@ def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
         "--resources-dir",
         type=Path,
         default=pipeline_dir / "data" / "resources",
-        help="Directory for downloaded miRBase/BioMart files",
+        help=(
+            "Directory for downloaded miRBase/BioMart files. "
+            "Default: pipelines/standardized_predictors/mirdb_mirtarget/data/resources"
+        ),
     )
     add_standard_io_args(
         parser,
@@ -87,7 +90,7 @@ def main() -> None:
     biomart_url = "https://Sep2025.archive.ensembl.org/biomart/martservice"
     biomart_path = download_file(
         biomart_url,
-        args.resources_dir / "biomart" / "hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv",
+        args.resources_dir / "hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv",
         params={"query": biomart_query},
         timeout=360,
         resource_label="BioMart NCBI Gene ID/RefSeq-to-Ensembl mapping table",
