@@ -43,7 +43,7 @@ def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     parser.add_argument(
         "--tx2gene-file",
         type=Path,
-        default=pipeline_dir / "data" / "resources" / "ensembl" / "ensembl115_tx2gene.tsv.gz",
+        default=pipeline_dir / "data" / "ensembl115_tx2gene.tsv.gz",
         help="Ensembl transcript-to-gene mapping TSV, optionally gzipped",
     )
     parser.add_argument(

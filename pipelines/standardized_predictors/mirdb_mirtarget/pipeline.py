@@ -47,10 +47,10 @@ def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     parser.add_argument(
         "--resources-dir",
         type=Path,
-        default=pipeline_dir / "data" / "resources",
+        default=pipeline_dir / "data",
         help=(
-            "Directory for downloaded miRBase/BioMart files. "
-            "Default: pipelines/standardized_predictors/mirdb_mirtarget/data/resources"
+            "Directory for predictor-specific BioMart data. "
+            "Default: pipelines/standardized_predictors/mirdb_mirtarget/data"
         ),
     )
     add_standard_io_args(

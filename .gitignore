@@ -40,7 +40,7 @@ pipelines/geo/runs/*
 pipelines/experiments/runs/*
 
 # Predictor pipeline generated data (downloads + intermediate tables)
-pipelines/standardized_predictors/*/data/*
+pipelines/standardized_predictors/*/data/
 pipelines/standardized_predictors/mirbind2/unified_human_mirbase_mane_select_3utrs_selected_18_mirnas_mirbind2_predictions.tsv
 pipelines/standardized_predictors/mirbind2/3utrs_mirbind2_predictions_no_sequences.tsv
 pipelines/standardized_predictors/mirbind2/3utrs_mirbind2_predictions.tsv
