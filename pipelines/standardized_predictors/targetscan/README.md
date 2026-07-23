@@ -7,7 +7,14 @@ This directory contains the standardization pipeline for TargetScan v8 gene-leve
 - `pipeline.py`: CLI entrypoint for the pipeline.
 - `utils.py`: shared helpers for logging, downloads, parsing, QC, mapping, and output construction.
 - `data/predictions/targetscan/targetscan_pipeline.log`: example log from a completed run, relative to the repository root.
-- `data/`: cached TargetScan, Ensembl, and miRBase resources used by the pipeline.
+- `data/`: cached TargetScan inputs and derived Ensembl lookup tables.
+
+Shared miRBase and Ensembl annotations are downloaded to:
+
+```text
+data/common_resources/mirbase/mature.fa
+data/common_resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz
+```
 
 ## What The Pipeline Does
 

@@ -10,7 +10,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (  # noqa: E402
+    MIRBASE_MATURE_RELATIVE_PATH,
     add_standard_io_args,
+    common_resources_dir,
     configure_file_logging,
     log_step,
     predictor_dir,
@@ -37,6 +39,12 @@ logger = logging.getLogger("pipeline")
 def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Standardize miRDB predictions for FuNmiRBench.")
     parser.add_argument(
+        "--mirbase-mature",
+        type=Path,
+        default=common_resources_dir(root=root) / MIRBASE_MATURE_RELATIVE_PATH,
+        help="Shared miRBase 22.1 mature.fa path",
+    )
+    parser.add_argument(
         "--resources-dir",
         type=Path,
         default=pipeline_dir / "data" / "resources",
@@ -61,6 +69,7 @@ def main() -> None:
     root = repo_root()
     pipeline_dir = predictor_dir("mirdb_mirtarget", root=root)
     args = parse_args(root, pipeline_dir)
+    args.mirbase_mature = resolve_cli_path(args.mirbase_mature, root)
     args.resources_dir = resolve_cli_path(args.resources_dir, root)
     args.output = resolve_cli_path(args.output, root)
     args.log_file = resolve_cli_path(args.log_file, root)
@@ -73,7 +82,7 @@ def main() -> None:
     mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"
     mirbase_path = download_file(
         mirbase_url,
-        args.resources_dir / "mirbase" / "mature.fa",
+        args.mirbase_mature,
         resource_label="miRBase mature.fa resource",
     )
 

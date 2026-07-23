@@ -24,18 +24,21 @@ If this cache file already exists, the pipeline reuses it. Otherwise, it downloa
 
 Local prediction-file overrides are not supported. The miRDB download and cache path above are the canonical source for reproducible standardization.
 
-The pipeline also downloads and reuses annotation resources under its predictor-local cache:
+The pipeline downloads and reuses miRBase from the shared annotation cache:
 
 ```text
-pipelines/standardized_predictors/mirdb_mirtarget/data/resources/
+data/common_resources/mirbase/mature.fa
 ```
 
-This includes:
+The predictor-specific BioMart mapping remains under:
 
-- `mirbase/mature.fa` at `pipelines/standardized_predictors/mirdb_mirtarget/data/resources/mirbase/mature.fa`
-- `hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv` at `pipelines/standardized_predictors/mirdb_mirtarget/data/resources/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv`
+```text
+pipelines/standardized_predictors/mirdb_mirtarget/data/resources/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv
+```
 
-If either cache file already exists, the pipeline reuses it. Otherwise, it downloads miRBase `mature.fa` version 22.1 and the BioMart NCBI Gene ID/RefSeq-to-Ensembl mapping table, logging whether each resource was reused, downloaded, or failed.
+If either cache file already exists, the pipeline reuses it. Otherwise, it downloads miRBase
+`mature.fa` version 22.1 and the BioMart NCBI Gene ID/RefSeq-to-Ensembl mapping table, logging
+whether each resource was reused, downloaded, or failed.
 
 The raw miRDB file is gzip-compressed and is treated as a 4-column tab-separated table without a header:
 
@@ -121,6 +124,7 @@ Relative CLI paths are resolved from the repository root, so the current working
 
 ```bash
 uv run pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py \
+  --mirbase-mature data/common_resources/mirbase/mature.fa \
   --resources-dir pipelines/standardized_predictors/mirdb_mirtarget/data/resources \
   --output data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv \
   --log-file data/predictions/mirdb_mirtarget/mirdb_mirtarget_pipeline.log \

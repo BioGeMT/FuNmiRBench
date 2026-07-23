@@ -16,6 +16,8 @@ from typing import Any, Iterable
 
 LOG_LEVEL_CHOICES = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 STANDARDIZED_COLUMNS = ["Ensembl_ID", "Gene_Name", "miRNA_ID", "miRNA_Name", "Score"]
+MIRBASE_MATURE_RELATIVE_PATH = Path("mirbase") / "mature.fa"
+ENSEMBL_GTF_RELATIVE_PATH = Path("ensembl") / "Homo_sapiens.GRCh38.115.gtf.gz"
 
 
 def repo_root() -> Path:
@@ -33,6 +35,11 @@ from funmirbench.logger import parse_log_level, setup_logging  # noqa: E402
 def predictor_dir(tool_id: str, *, root: Path | None = None) -> Path:
     """Return ``pipelines/standardized_predictors/<tool_id>``."""
     return (root or ROOT) / "pipelines" / "standardized_predictors" / tool_id
+
+
+def common_resources_dir(*, root: Path | None = None) -> Path:
+    """Return the shared downloaded-annotation cache directory."""
+    return (root or ROOT) / "data" / "common_resources"
 
 
 def resolve_cli_path(path: str | Path, root: Path | None = None) -> Path:

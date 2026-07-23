@@ -10,7 +10,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (  # noqa: E402
+    ENSEMBL_GTF_RELATIVE_PATH,
+    MIRBASE_MATURE_RELATIVE_PATH,
     add_standard_io_args,
+    common_resources_dir,
     configure_file_logging,
     log_step,
     predictor_dir,
@@ -50,6 +53,7 @@ def main() -> None:
     args.output = resolve_cli_path(args.output, root)
     args.log_file = resolve_cli_path(args.log_file, root)
     targetscan_dir = predictor_dir("targetscan", root=root)
+    shared_resources_dir = common_resources_dir(root=root)
 
     configure_file_logging(args.log_file, args.log_level)
     logger.info("Logging to file: %s", args.log_file)
@@ -64,7 +68,10 @@ def main() -> None:
     tx_index = step2_build_representative_transcript_index(files["Gene_info.txt"], species_id="9606")
 
     log_step(logger, 3, total_steps, "Download Ensembl v115 GTF")
-    ensembl_gtf = step3_download_ensembl115_gtf(data_dir, force=False)
+    ensembl_gtf = step3_download_ensembl115_gtf(
+        shared_resources_dir / ENSEMBL_GTF_RELATIVE_PATH,
+        force=False,
+    )
 
     log_step(logger, 4, total_steps, "Build/cache Ensembl v115 tables")
     ensembl_tables = step4_build_and_cache_ensembl115_tables(
@@ -80,7 +87,10 @@ def main() -> None:
     )
 
     log_step(logger, 6, total_steps, "Download and parse miRBase mature annotations")
-    mirbase_fa = step6_download_mirbase_mature(data_dir, force=False)
+    mirbase_fa = step6_download_mirbase_mature(
+        shared_resources_dir / MIRBASE_MATURE_RELATIVE_PATH,
+        force=False,
+    )
     mirbase_acc2name = parse_mirbase_mature(mirbase_fa)
 
     log_step(logger, 7, total_steps, "Build human miRNA annotations")

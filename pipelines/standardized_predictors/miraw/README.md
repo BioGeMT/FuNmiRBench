@@ -25,13 +25,13 @@ Target_ENSG, GeneName, miRNA, Prediction
 The pipeline downloads and reuses annotation resources under:
 
 ```text
-data/resources/
+data/common_resources/
 ```
 
 This includes:
 
-- `mirbase/mature.fa` at `data/resources/mirbase/mature.fa`
-- `ensembl/Homo_sapiens.GRCh38.115.gtf.gz` at `data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz`
+- `mirbase/mature.fa` at `data/common_resources/mirbase/mature.fa`
+- `ensembl/Homo_sapiens.GRCh38.115.gtf.gz` at `data/common_resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz`
 
 If either cache file already exists, the pipeline reuses it. Otherwise, it downloads miRBase `mature.fa` version 22.1 and the Ensembl v115 GTF, logging whether each resource was reused, downloaded, or failed.
 
@@ -103,7 +103,7 @@ Relative CLI paths are resolved from the repository root, so the current working
 
 ```bash
 uv run pipelines/standardized_predictors/miraw/pipeline.py \
-  --resources-dir pipelines/standardized_predictors/miraw/data/resources \
+  --resources-dir data/common_resources \
   --output data/predictions/miraw/miraw_standardized.tsv \
   --log-file data/predictions/miraw/miraw_pipeline.log \
   --log-level INFO

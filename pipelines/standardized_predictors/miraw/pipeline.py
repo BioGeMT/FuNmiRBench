@@ -12,7 +12,10 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (  # noqa: E402
+    ENSEMBL_GTF_RELATIVE_PATH,
+    MIRBASE_MATURE_RELATIVE_PATH,
     add_standard_io_args,
+    common_resources_dir,
     configure_file_logging,
     log_step,
     predictor_dir,
@@ -77,7 +80,7 @@ def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     parser.add_argument(
         "--resources-dir",
         type=Path,
-        default=pipeline_dir / "data" / "resources",
+        default=common_resources_dir(root=root),
         help=(
             f"Directory where miRBase {TARGET_MIRBASE_RELEASE} and Ensembl release "
             f"{TARGET_ENSEMBL_RELEASE} annotation resources are cached"
@@ -124,7 +127,7 @@ def main() -> None:
     mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"
     mirbase_path = download_file(
         mirbase_url,
-        args.resources_dir / "mirbase" / "mature.fa",
+        args.resources_dir / MIRBASE_MATURE_RELATIVE_PATH,
         resource_label=f"miRBase {TARGET_MIRBASE_RELEASE} mature.fa resource",
     )
 
@@ -134,7 +137,7 @@ def main() -> None:
     )
     ensembl_gtf_path = download_file(
         ensembl_gtf_url,
-        args.resources_dir / "ensembl" / "Homo_sapiens.GRCh38.115.gtf.gz",
+        args.resources_dir / ENSEMBL_GTF_RELATIVE_PATH,
         timeout=360,
         resource_label=f"Ensembl release {TARGET_ENSEMBL_RELEASE} Homo sapiens GTF",
     )

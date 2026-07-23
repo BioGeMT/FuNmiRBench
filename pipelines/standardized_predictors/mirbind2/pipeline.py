@@ -9,7 +9,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (  # noqa: E402
+    MIRBASE_MATURE_RELATIVE_PATH,
     add_standard_io_args,
+    common_resources_dir,
     configure_file_logging,
     log_step,
     predictor_dir,
@@ -34,7 +36,7 @@ def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     parser.add_argument(
         "--mirbase-mature",
         type=Path,
-        default=root / "data" / "resources" / "mirbase" / "mature.fa",
+        default=common_resources_dir(root=root) / MIRBASE_MATURE_RELATIVE_PATH,
         help="miRBase 22.1 mature.fa file",
     )
     add_standard_io_args(
@@ -73,7 +75,13 @@ def main() -> None:
     mirbind2_predictions_url = "https://zenodo.org/records/20609975/files/3utrs_mirbind2_predictions.tsv.gz?download=1"
     total_steps = 6
 
-    log_step(logger, 1, total_steps, "Download or resolve raw miRBind2 predictions")
+    log_step(logger, 1, total_steps, "Download or resolve shared miRBase and raw miRBind2 predictions")
+    mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"
+    mirbase_path = download_file(
+        mirbase_url,
+        args.mirbase_mature,
+        resource_label="miRBase mature.fa resource",
+    )
     raw_predictions_path = download_file(
         mirbind2_predictions_url,
         pipeline_dir / "data" / "3utrs_mirbind2_predictions.tsv.gz",
@@ -92,7 +100,7 @@ def main() -> None:
     )
 
     log_step(logger, 3, total_steps, "Create miRNA name-to-MIMAT mapping from miRBase mature.fa")
-    mirna_name_to_mimat = create_mirna_name_to_mimat_mapping(args.mirbase_mature)
+    mirna_name_to_mimat = create_mirna_name_to_mimat_mapping(mirbase_path)
 
     log_step(logger, 4, total_steps, "Annotate raw miRNA names to MIMAT IDs")
     pred_df = map_mirna_names_to_mimat(

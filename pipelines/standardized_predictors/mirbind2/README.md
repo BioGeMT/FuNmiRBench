@@ -41,10 +41,12 @@ The pipeline reads the raw miRBind2 score from `miRBind2_3UTR_prediction`, but t
 The pipeline uses the existing shared miRBase resource:
 
 ```text
-data/resources/mirbase/mature.fa
+data/common_resources/mirbase/mature.fa
 ```
 
-This is miRBase release 22.1. The raw miRBind2 table already contains Ensembl gene IDs and gene symbols, so no BioMart remapping is performed.
+This is miRBase release 22.1. The pipeline downloads it when missing and reuses the shared cache
+on later runs. The raw miRBind2 table already contains Ensembl gene IDs and gene symbols, so no
+BioMart remapping is performed.
 
 ## What The Pipeline Does
 
@@ -100,7 +102,7 @@ Relative CLI paths are resolved from the repository root.
 
 ```bash
 uv run pipelines/standardized_predictors/mirbind2/pipeline.py \
-  --mirbase-mature data/resources/mirbase/mature.fa \
+  --mirbase-mature data/common_resources/mirbase/mature.fa \
   --output data/predictions/mirbind2/mirbind2_standardized.tsv \
   --log-file data/predictions/mirbind2/mirbind2_pipeline.log \
   --log-level INFO

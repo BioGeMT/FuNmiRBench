@@ -10,7 +10,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (  # noqa: E402
+    ENSEMBL_GTF_RELATIVE_PATH,
+    MIRBASE_MATURE_RELATIVE_PATH,
     add_standard_io_args,
+    common_resources_dir,
     configure_file_logging,
     log_step,
     predictor_dir,
@@ -36,6 +39,7 @@ logger = logging.getLogger("pipeline")
 
 def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Standardize microT-CNN predictions for FuNmiRBench.")
+    shared_resources_dir = common_resources_dir(root=root)
     parser.add_argument(
         "--tx2gene-file",
         type=Path,
@@ -45,14 +49,14 @@ def parse_args(root: Path, pipeline_dir: Path) -> argparse.Namespace:
     parser.add_argument(
         "--ensembl-gtf-file",
         type=Path,
-        default=pipeline_dir / "data" / "resources" / "ensembl" / "Homo_sapiens.GRCh38.115.gtf.gz",
+        default=shared_resources_dir / ENSEMBL_GTF_RELATIVE_PATH,
         help="Ensembl v115 GTF used to build --tx2gene-file when the mapping cache is missing",
     )
     parser.add_argument(
         "--resources-dir",
         type=Path,
-        default=pipeline_dir / "data" / "resources",
-        help="Directory for downloaded miRBase files",
+        default=shared_resources_dir,
+        help="Shared directory for downloaded annotation resources",
     )
     add_standard_io_args(
         parser,
@@ -80,7 +84,7 @@ def main() -> None:
     mirbase_url = "https://mirbase.org/download_version_files/22.1/mature.fa"
     mirbase_path = download_file(
         mirbase_url,
-        args.resources_dir / "mirbase" / "mature.fa",
+        args.resources_dir / MIRBASE_MATURE_RELATIVE_PATH,
         resource_label="miRBase mature.fa resource",
     )
 

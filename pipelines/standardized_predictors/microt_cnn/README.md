@@ -50,7 +50,8 @@ relative to the repository root.
 The pipeline downloads external resources only when the expected cache files are missing. By default, the cache files are:
 
 ```
-pipelines/standardized_predictors/microt_cnn/data/resources/mirbase/mature.fa
+data/common_resources/mirbase/mature.fa
+data/common_resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz
 pipelines/standardized_predictors/microt_cnn/data/microT_CNN_prediction_result_human_all_scores_gene_level.tsv.gz
 ```
 
@@ -71,8 +72,8 @@ uv run pipelines/standardized_predictors/microt_cnn/pipeline.py
 ```bash
 uv run pipelines/standardized_predictors/microt_cnn/pipeline.py \
   --tx2gene-file pipelines/standardized_predictors/microt_cnn/data/resources/ensembl/ensembl115_tx2gene.tsv.gz \
-  --ensembl-gtf-file pipelines/standardized_predictors/microt_cnn/data/resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz \
-  --resources-dir pipelines/standardized_predictors/microt_cnn/data/resources \
+  --ensembl-gtf-file data/common_resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz \
+  --resources-dir data/common_resources \
   --output data/predictions/microt_cnn/microt_cnn_standardized.tsv \
   --log-file data/predictions/microt_cnn/microt_cnn_pipeline.log \
   --log-level INFO

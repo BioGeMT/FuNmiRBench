@@ -26,7 +26,7 @@ data/predictions/perfect/*
 data/joined/
 data/plots/
 data/experiments/raw/refs/*
-data/resources/ensembl/*
+data/common_resources/
 
 # Benchmark results
 results/

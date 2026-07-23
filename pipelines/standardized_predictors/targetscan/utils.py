@@ -214,17 +214,15 @@ def step2_build_representative_transcript_index(
 
 
 def step3_download_ensembl115_gtf(
-    data_dir: pathlib.Path,
+    destination: pathlib.Path,
     *,
     force: bool = False,
 ) -> pathlib.Path:
     logger.info("\n=== STEP 3/7: Download Ensembl v115 GTF (GRCh38) ===")
 
-    data_dir = pathlib.Path(data_dir).resolve()
-    data_dir.mkdir(parents=True, exist_ok=True)
-
     url = "https://ftp.ensembl.org/pub/release-115/gtf/homo_sapiens/Homo_sapiens.GRCh38.115.gtf.gz"
-    dest = data_dir / "Homo_sapiens.GRCh38.115.gtf.gz"
+    dest = pathlib.Path(destination).resolve()
+    dest.parent.mkdir(parents=True, exist_ok=True)
 
     if dest.exists() and not force:
         logger.info("Skipping %s (already exists)", dest.name)
@@ -399,16 +397,14 @@ def step5_qc_targetscan_vs_ensembl_transcripts(
 
 
 def step6_download_mirbase_mature(
-    data_dir: pathlib.Path,
+    destination: pathlib.Path,
     *,
     force: bool = False,
 ) -> pathlib.Path:
     logger.info("\n=== STEP 6/7: Download miRBase mature.fa (pinned release %s) ===", MIRBASE_RELEASE)
 
-    data_dir = pathlib.Path(data_dir).resolve()
-    data_dir.mkdir(parents=True, exist_ok=True)
-
-    dest = data_dir / f"mirbase_mature_v{MIRBASE_RELEASE}.fa"
+    dest = pathlib.Path(destination).resolve()
+    dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and not force:
         logger.info("Skipping miRBase mature.fa (already exists): %s", dest)
         return dest
