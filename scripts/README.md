@@ -244,3 +244,25 @@ manuscript_assets/supplement/supplement_top_100_effect_cdfs_part2.png
 manuscript_assets/supplement/supplement_top_100_effect_cdfs_part2.svg
 manuscript_assets/tables/supplement_top_100_effect_cdfs_manifest.tsv
 ```
+
+## Generate Supplementary Figure 6 Recovery Panels
+
+After generating Figure 6, make the supporting supplementary FPS recovery
+figures from the Figure 6 tables:
+
+```bash
+uv run python scripts/supplement_figure6_recovery.py
+```
+
+The default recovery layout uses 3 panels per row and 15 datasets per part.
+This writes:
+
+```text
+manuscript_assets/supplement/supplement_figure6_fps_recovery_recovery_part1.png
+manuscript_assets/supplement/supplement_figure6_fps_recovery_recovery_part1.svg
+manuscript_assets/supplement/supplement_figure6_fps_recovery_recovery_part2.png
+manuscript_assets/supplement/supplement_figure6_fps_recovery_recovery_part2.svg
+manuscript_assets/supplement/supplement_figure6_fps_recovery_precision_burden.png
+manuscript_assets/supplement/supplement_figure6_fps_recovery_precision_burden.svg
+manuscript_assets/tables/supplement_figure6_fps_recovery_recovery_manifest.tsv
+```
