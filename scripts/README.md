@@ -194,3 +194,24 @@ manuscript_assets/tables/figure5_fps_leaderboard.tsv
 manuscript_assets/tables/figure5_fps_spearman_r2_leaderboard.tsv
 manuscript_assets/tables/figure5_fps_local_ranks.tsv
 ```
+
+## Generate Supplementary Top-Effect CDF Figure
+
+After running the benchmark with `evaluation.write_top_prediction_cdfs: true`,
+combine the 30 per-dataset CDF diagnostic plots into supplementary figure
+parts. The default layout uses 3 panels per row and 15 panels per part:
+
+```bash
+uv run python scripts/supplement_top_effect_cdfs.py \
+  --run-dir results/<results_dir>
+```
+
+This writes:
+
+```text
+manuscript_assets/supplement/supplement_top_100_effect_cdfs_part1.png
+manuscript_assets/supplement/supplement_top_100_effect_cdfs_part1.svg
+manuscript_assets/supplement/supplement_top_100_effect_cdfs_part2.png
+manuscript_assets/supplement/supplement_top_100_effect_cdfs_part2.svg
+manuscript_assets/tables/supplement_top_100_effect_cdfs_manifest.tsv
+```
