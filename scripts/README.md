@@ -226,8 +226,8 @@ manuscript_assets/tables/figure6_fps_best_precision_at_recall.tsv
 
 ## Generate Supplementary Figure 2 Rank Distributions
 
-After running the benchmark report generation, assemble the combined local and
-global rank-distribution plots into Supplementary Figure 2:
+After running the benchmark report generation, generate the local-rank
+positive/background distributions for Supplementary Figure 2:
 
 ```bash
 uv run python scripts/supplement_figure2_rank_distributions.py \
@@ -237,12 +237,8 @@ uv run python scripts/supplement_figure2_rank_distributions.py \
 This writes:
 
 ```text
-manuscript_assets/supplement/supplement_figure2_rank_distributions_panel_a.png
-manuscript_assets/supplement/supplement_figure2_rank_distributions_panel_a.svg
-manuscript_assets/supplement/supplement_figure2_rank_distributions_panel_b.png
-manuscript_assets/supplement/supplement_figure2_rank_distributions_panel_b.svg
-manuscript_assets/supplement/supplement_figure2_rank_distributions_combined.png
-manuscript_assets/supplement/supplement_figure2_rank_distributions_combined.svg
+manuscript_assets/supplement/supplement_figure2_rank_distributions.png
+manuscript_assets/supplement/supplement_figure2_rank_distributions.svg
 ```
 
 ## Generate Supplementary Top-Effect CDF Figure
