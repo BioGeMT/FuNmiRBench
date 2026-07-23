@@ -1263,6 +1263,87 @@ def write_gene_set_overlap_table(
     return path
 
 
+def write_gene_set_overlap_supplement_table(
+    *,
+    inputs: Figure2Inputs,
+    manuscript_tables_dir: Path,
+) -> Path:
+    all_pairs = pd.concat(
+        [
+            dataset.frame.assign(dataset_id=dataset.dataset_id)
+            for dataset in inputs.datasets
+        ],
+        ignore_index=True,
+    )
+    scored_gene_sets = {
+        tool_id: set(
+            all_pairs.loc[all_pairs[score_column(tool_id)].notna(), "gene_id"]
+            .dropna()
+            .astype(str)
+        )
+        for tool_id in inputs.tool_ids
+    }
+    mirna_means = predictor_mean_mirnas_per_scored_gene(inputs).set_index("tool_id")[
+        "mean_mirnas_per_scored_gene"
+    ]
+
+    rows = []
+    for combination_size in range(1, len(inputs.tool_ids) + 1):
+        for combination in itertools.combinations(inputs.tool_ids, combination_size):
+            gene_sets = [scored_gene_sets[tool_id] for tool_id in combination]
+            intersection = set.intersection(*gene_sets)
+            union = set.union(*gene_sets)
+            predictor_sizes = {
+                tool_id: len(scored_gene_sets[tool_id])
+                for tool_id in combination
+            }
+            combination_means = {
+                tool_id: float(mirna_means.loc[tool_id])
+                for tool_id in combination
+            }
+            mean_values = list(combination_means.values())
+            n_intersection = len(intersection)
+            n_union = len(union)
+            rows.append(
+                {
+                    "predictor_set": ";".join(
+                        inputs.tool_labels[tool_id] for tool_id in combination
+                    ),
+                    "combination_size": combination_size,
+                    "genes_per_predictor": ";".join(
+                        f"{inputs.tool_labels[tool_id]}={predictor_sizes[tool_id]}"
+                        for tool_id in combination
+                    ),
+                    "intersection_gene_count": n_intersection,
+                    "union_gene_count": n_union,
+                    "jaccard_index": n_intersection / n_union if n_union else np.nan,
+                    "overlap_coefficient": (
+                        n_intersection / min(predictor_sizes.values())
+                        if predictor_sizes and min(predictor_sizes.values())
+                        else np.nan
+                    ),
+                    "mean_mirnas_per_scored_gene_by_predictor": ";".join(
+                        (
+                            f"{inputs.tool_labels[tool_id]}="
+                            f"{combination_means[tool_id]:.2f}"
+                        )
+                        for tool_id in combination
+                    ),
+                    "mean_mirnas_per_scored_gene_range": (
+                        f"{min(mean_values):.2f}-{max(mean_values):.2f}"
+                        if len(mean_values) > 1
+                        else f"{mean_values[0]:.2f}"
+                    ),
+                }
+            )
+
+    path = manuscript_tables_dir / "figure2_supplement_gene_set_overlap_mirna_coverage.tsv"
+    manuscript_tables_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, sep="\t", index=False)
+    logger.info("Wrote Figure 2 gene-set overlap supplement table: %s", path)
+    return path
+
+
 def write_panel(
     panel: str,
     *,
@@ -1596,6 +1677,10 @@ def main() -> int:
             manuscript_tables_dir=manuscript_tables_dir,
         )
         write_gene_set_overlap_table(
+            inputs=inputs,
+            manuscript_tables_dir=manuscript_tables_dir,
+        )
+        write_gene_set_overlap_supplement_table(
             inputs=inputs,
             manuscript_tables_dir=manuscript_tables_dir,
         )
