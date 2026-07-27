@@ -71,7 +71,14 @@ INTERSECTION_COLORS = {
 }
 PREDICTOR_BAR_ALPHA = 0.35
 IGS_BAR_ALPHA = 0.55
-BAR_LABEL_FONTSIZE = 12
+PANEL_LETTER_FONTSIZE = 18
+PANEL_TITLE_FONTSIZE = 17
+AXIS_LABEL_FONTSIZE = 14
+TICK_LABEL_FONTSIZE = 12
+BAR_LABEL_FONTSIZE = 16
+ANNOTATION_FONTSIZE = 14
+LEGEND_FONTSIZE = 13
+GRID_ALPHA = 0.25
 
 OE_ALIASES = {
     "OE",
@@ -425,21 +432,24 @@ def prepare_inputs(
 def style_axis(ax: plt.Axes) -> None:
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.grid(axis="y", alpha=0.25, linewidth=0.8)
+    ax.grid(axis="y", alpha=GRID_ALPHA, linewidth=0.8)
     ax.set_axisbelow(True)
+    ax.tick_params(axis="both", labelsize=TICK_LABEL_FONTSIZE)
 
 
 def set_panel_title(ax: plt.Axes, letter: str, title: str) -> None:
-    ax.figure.text(
-        0.025,
-        0.965,
+    ax.text(
+        -0.20,
+        1.18,
         letter,
+        transform=ax.transAxes,
         ha="left",
         va="top",
-        fontsize=15,
+        fontsize=PANEL_LETTER_FONTSIZE,
         fontweight="bold",
+        clip_on=False,
     )
-    ax.set_title(title, pad=18, fontsize=14, fontweight="bold")
+    ax.set_title(title, pad=18, fontsize=PANEL_TITLE_FONTSIZE, fontweight="bold")
 
 
 def save_panel(
@@ -453,7 +463,7 @@ def save_panel(
     paths = []
     for extension in DEFAULT_FORMATS:
         path = out_dir / f"{stem}.{extension}"
-        fig.savefig(path, dpi=dpi)
+        fig.savefig(path, dpi=dpi, bbox_inches="tight", pad_inches=0.08)
         paths.append(path)
     plt.close(fig)
     return paths
@@ -522,7 +532,7 @@ def panel_a_experiment_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, pl
     )
     ax.axhline(total_experiments, linestyle="--", linewidth=1.2, color="black")
     ax.set_xticks(x, summary["predictor"], rotation=25, ha="right")
-    ax.set_ylabel("Experiments retained")
+    ax.set_ylabel("Experiments retained", fontsize=AXIS_LABEL_FONTSIZE)
     ax.set_ylim(0, max(total_experiments * 1.16, 1))
     set_panel_title(ax, "A", "Experiment coverage")
     for bar, retained in zip(bars, summary["experiments_retained"]):
@@ -607,17 +617,17 @@ def panel_b_gene_set_coverage(inputs: Figure2Inputs) -> tuple[pd.DataFrame, plt.
     for bar, alpha in zip(bars, alphas):
         bar.set_alpha(alpha)
     ax.set_xticks(x, summary["label"], rotation=25, ha="right")
-    ax.set_ylabel("Genes covered (%)")
+    ax.set_ylabel("Genes covered (%)", fontsize=AXIS_LABEL_FONTSIZE)
     ax.set_ylim(0, 110)
     set_panel_title(ax, "B", "Gene-set coverage and IGS")
     ax.text(
         0.01,
         0.96,
-        f"FGS: {denominator:,} genes",
+        f"FGS: {denominator:,}",
         transform=ax.transAxes,
         ha="left",
         va="top",
-        fontsize=10,
+        fontsize=ANNOTATION_FONTSIZE,
     )
     for bar, percentage in zip(bars, summary["fgs_coverage"]):
         ax.text(
@@ -828,21 +838,21 @@ def plot_metric(
     )
     ax.plot(non_x, -non_y, color=colors["non-IGS"], linewidth=1.2)
     ax.axhline(0, color="#888888", linewidth=0.8)
-    ax.axvline(igs.median(), ymin=0.50, ymax=0.88, color=colors["IGS"], linewidth=1.2, linestyle="--", alpha=0.95)
-    ax.axvline(non.median(), ymin=0.12, ymax=0.50, color=colors["non-IGS"], linewidth=1.2, linestyle="--", alpha=0.95)
-    ax.set_xlabel(xlabel, fontsize=11)
+    ax.axvline(igs.median(), ymin=0.50, ymax=0.88, color="black", linewidth=1.2, linestyle="--", alpha=0.95)
+    ax.axvline(non.median(), ymin=0.12, ymax=0.50, color="black", linewidth=1.2, linestyle="--", alpha=0.95)
+    ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_FONTSIZE)
     ax.set_xlim(lower, upper)
     ax.set_ylim(-0.62, 0.62)
     ax.set_yticks([0.28, -0.28], ["IGS genes", "non-IGS genes"])
-    ax.tick_params(axis="both", labelsize=10)
+    ax.tick_params(axis="both", labelsize=TICK_LABEL_FONTSIZE)
     ax.set_ylabel("")
     if title:
-        ax.set_title(title, pad=18, fontsize=14, fontweight="bold")
-    ax.legend(frameon=False, fontsize=9, loc="upper right")
+        ax.set_title(title, pad=18, fontsize=PANEL_TITLE_FONTSIZE, fontweight="bold")
+    ax.legend(frameon=False, fontsize=LEGEND_FONTSIZE, loc="upper right")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_visible(False)
-    ax.grid(axis="x", alpha=0.18, linewidth=0.8)
+    ax.grid(axis="x", alpha=GRID_ALPHA, linewidth=0.8)
     ax.set_axisbelow(True)
 
 
@@ -994,18 +1004,18 @@ def pair_coverage_figure(
         linewidth=1.0,
     )
     ax.set_xticks(x, summary["predictor"], rotation=25, ha="right")
-    ax.set_ylabel(ylabel)
+    ax.set_ylabel(ylabel, fontsize=AXIS_LABEL_FONTSIZE)
     ax.set_ylim(0, 110)
     set_panel_title(ax, panel, title)
     denominator = int(summary[denominator_column].iloc[0]) if not summary.empty else 0
     ax.text(
         0.01,
         0.96,
-        f"{total_label}: {denominator:,} pairs",
+        f"{total_label}: {denominator:,}",
         transform=ax.transAxes,
         ha="left",
         va="top",
-        fontsize=10,
+        fontsize=ANNOTATION_FONTSIZE,
     )
     for bar, percentage in zip(bars, summary[coverage_column]):
         ax.text(
