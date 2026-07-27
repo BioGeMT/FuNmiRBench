@@ -251,12 +251,13 @@ During evaluation, DE rows are first restricted to Ensembl protein-coding genes 
 release 115. This keeps the evaluation universe aligned with mRNA target predictors and avoids
 penalizing tools for non-coding genes they are not designed to score. Each predictor is then
 scored only on miRNA-gene pairs that exist in that predictor's standardized file. Missing pairs
-are not filled with zero for metrics. Each run writes coverage information to
+are not filled with zero for metrics or rank plots. Each run writes coverage information to
 `tables/per_experiment/coverage_per_experiment.tsv`, and the per-predictor Markdown/PDF reports
 also record total rows, scored rows, missing rows, and coverage. For per-dataset heatmaps and agreement plots,
-FuNmiRBench uses a dataset-local tie-aware rank over the scored rows. For cross-dataset
-rank-distribution plots, it keeps a separate global tie-aware rank derived from each predictor's
-full standardized file. Predictor-agreement top fractions use an exact top-k selection per
+FuNmiRBench uses a dataset-local rank over the scored rows only, normalized so 0 is the weakest
+scored pair and 1 is the strongest scored pair; tied scores receive average rank. For cross-dataset
+rank-distribution plots, it keeps a separate global average-tie rank derived from each predictor's
+full standardized file, again using only scored pairs. Predictor-agreement top fractions use an exact top-k selection per
 predictor with a deterministic tie-break instead of a quantile threshold. Combined PR, ROC, and
 GSEA comparison plots are computed on the common set of genes scored by all compared predictors.
 

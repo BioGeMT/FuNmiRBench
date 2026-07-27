@@ -287,8 +287,8 @@ def write_run_readme(
             " (exact top-k per predictor, deterministic tie-break)"
         ),
         "- Score handling: predictors are first aligned so that higher always means stronger",
-        "- Per-dataset heatmaps and agreement plots: dataset-local tie-aware dense ranking over scored rows",
-        "- Cross-dataset rank-distribution plots: global tie-aware dense ranking over each predictor's full standardized file",
+        "- Per-dataset heatmaps and agreement plots: dataset-local average-tie ranking over scored rows",
+        "- Cross-dataset rank-distribution plots: global average-tie ranking over scored rows from each predictor's full standardized file",
         "- Combined PR/ROC/GSEA comparison plots: computed on the common set of genes scored by all compared predictors",
     ]
     if protein_coding_filter and protein_coding_filter.get("enabled"):
@@ -561,7 +561,7 @@ def write_run_pdf_report(
             [
                 f"GT positives: {describe_gt_rule(fdr_threshold, effect_threshold)}",
                 "Predictor scores are aligned so that higher always means stronger before evaluation.",
-                "Per-dataset heatmaps and agreement plots use dataset-local tie-aware dense ranks.",
+                "Per-dataset heatmaps and agreement plots rank only scored pairs; tied scores use average rank.",
                 "Combined PR/ROC/GSEA plots use only the common set of genes scored by all compared predictors.",
                 "Top-prediction effect CDFs are optional diagnostics and are not written by default.",
             ],
@@ -776,7 +776,8 @@ def write_run_pdf_report(
             "positive_background_local_rank_distributions": (
                 "Positive vs background local rank distributions",
                 "Dataset-local rank distributions aggregated across datasets, split into GT positives and background genes. "
-                "Stronger predictors should push positives higher than background."
+                "Ranks are computed only among pairs scored by each predictor; missing scores are not set to zero, "
+                "and tied scores use average rank."
             ),
             "positive_background_local_rank_counts": (
                 "Positive vs background local rank counts",
@@ -786,7 +787,8 @@ def write_run_pdf_report(
             "positive_background_global_rank_distributions": (
                 "Positive vs background global rank distributions",
                 "Predictor-global rank distributions aggregated across datasets, split into GT positives and background genes. "
-                "This keeps each predictor on the rank scale of its full standardized file."
+                "Ranks use the predictor's full standardized file among scored pairs; missing scores are not set to zero, "
+                "and tied scores use average rank."
             ),
             "positive_background_global_rank_counts": (
                 "Positive vs background global rank counts",

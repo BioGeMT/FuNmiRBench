@@ -340,13 +340,14 @@ def _annotate_ground_truth(df, *, perturbation=None):
 
 def _rank_scale_scores(series):
     values = series.astype(float)
-    ranks = values.rank(method="dense", ascending=True)
+    ranks = values.rank(method="average", ascending=True)
+    min_rank = ranks.min(skipna=True)
     max_rank = ranks.max(skipna=True)
-    if pd.isna(max_rank):
+    if pd.isna(min_rank) or pd.isna(max_rank):
         return pd.Series(float("nan"), index=series.index)
-    if float(max_rank) <= 1.0:
+    if float(max_rank) <= float(min_rank):
         return pd.Series(1.0, index=series.index, dtype=float)
-    return (ranks - 1.0) / (float(max_rank) - 1.0)
+    return (ranks - float(min_rank)) / (float(max_rank) - float(min_rank))
 
 
 def _tool_id_from_score_col(score_col):
