@@ -59,15 +59,47 @@ def add_log_level_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def add_standard_io_args(
+def add_standard_pipeline_args(
     parser: argparse.ArgumentParser,
     *,
-    default_output: Path,
-    default_log_file: Path,
+    tool_id: str,
+    root: Path,
+    include_resources_dir: bool,
 ) -> None:
-    """Add common output/log CLI arguments used by predictor standardizers."""
-    parser.add_argument("--output", type=Path, default=default_output, help="Output standardized TSV path")
-    parser.add_argument("--log-file", type=Path, default=default_log_file, help="Log file path")
+    """Add harmonized path and logging arguments for a predictor pipeline."""
+    pipeline_dir = predictor_dir(tool_id, root=root)
+    predictions_dir = root / "data" / "predictions" / tool_id
+    parser.add_argument(
+        "--common-resources-dir",
+        type=Path,
+        default=common_resources_dir(root=root),
+        help="Shared miRBase and Ensembl resource directory",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=pipeline_dir / "data",
+        help="Directory for downloaded predictor data",
+    )
+    if include_resources_dir:
+        parser.add_argument(
+            "--resources-dir",
+            type=Path,
+            default=pipeline_dir / "resources",
+            help="Directory for predictor-specific supporting resources",
+        )
+    parser.add_argument(
+        "--standardized-output-file",
+        type=Path,
+        default=predictions_dir / f"{tool_id}_standardized.tsv",
+        help="Output standardized TSV file",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        default=predictions_dir / f"{tool_id}_pipeline.log",
+        help="Log file path",
+    )
     add_log_level_arg(parser)
 
 

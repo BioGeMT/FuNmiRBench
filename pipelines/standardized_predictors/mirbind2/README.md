@@ -13,7 +13,7 @@ This directory contains the standardization pipeline for miRBind2 human 3UTR pre
 The raw input file is not tracked in Git because it is large. By default, the pipeline downloads it from Zenodo and caches it in this directory with this exact filename:
 
 ```text
-data/3utrs_mirbind2_predictions.tsv.gz
+pipelines/standardized_predictors/mirbind2/data/3utrs_mirbind2_predictions.tsv.gz
 ```
 
 Source URL:
@@ -102,8 +102,9 @@ Relative CLI paths are resolved from the repository root.
 
 ```bash
 uv run pipelines/standardized_predictors/mirbind2/pipeline.py \
-  --mirbase-mature data/common_resources/mirbase/mature.fa \
-  --output data/predictions/mirbind2/mirbind2_standardized.tsv \
+  --common-resources-dir data/common_resources \
+  --data-dir pipelines/standardized_predictors/mirbind2/data \
+  --standardized-output-file data/predictions/mirbind2/mirbind2_standardized.tsv \
   --log-file data/predictions/mirbind2/mirbind2_pipeline.log \
   --log-level INFO
 ```

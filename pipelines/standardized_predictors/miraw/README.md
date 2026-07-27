@@ -11,7 +11,7 @@ This directory contains the standardization pipeline for miRAW gene-level predic
 The pipeline downloads the raw miRAW site-level prediction TSV from Figshare DOI `10.6084/m9.figshare.32982218` and caches it at:
 
 ```text
-data/helios_summary.tsv.gz
+pipelines/standardized_predictors/miraw/data/helios_summary.tsv.gz
 ```
 
 Local prediction-file overrides and legacy dictionary-like miRAW dumps are not supported by this pipeline. The Figshare file is the canonical source for reproducible standardization.
@@ -103,8 +103,9 @@ Relative CLI paths are resolved from the repository root, so the current working
 
 ```bash
 uv run pipelines/standardized_predictors/miraw/pipeline.py \
-  --resources-dir data/common_resources \
-  --output data/predictions/miraw/miraw_standardized.tsv \
+  --common-resources-dir data/common_resources \
+  --data-dir pipelines/standardized_predictors/miraw/data \
+  --standardized-output-file data/predictions/miraw/miraw_standardized.tsv \
   --log-file data/predictions/miraw/miraw_pipeline.log \
   --log-level INFO
 ```

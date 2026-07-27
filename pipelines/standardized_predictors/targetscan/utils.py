@@ -64,6 +64,7 @@ def assert_fasta(path: pathlib.Path) -> None:
 
 def step1_download_targetscan_files(
     data_dir: pathlib.Path,
+    resources_dir: pathlib.Path,
     *,
     force: bool = False,
 ) -> Dict[str, pathlib.Path]:
@@ -71,17 +72,19 @@ def step1_download_targetscan_files(
 
     data_dir = pathlib.Path(data_dir).resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
+    resources_dir = pathlib.Path(resources_dir).resolve()
+    resources_dir.mkdir(parents=True, exist_ok=True)
 
     base = "https://www.targetscan.org/vert_80/vert_80_data_download"
-    zips = [
-        "Summary_Counts.all_predictions.txt.zip",
-        "miR_Family_Info.txt.zip",
-        "Gene_info.txt.zip",
-    ]
+    zip_destinations = {
+        "Summary_Counts.all_predictions.txt.zip": data_dir,
+        "miR_Family_Info.txt.zip": resources_dir,
+        "Gene_info.txt.zip": resources_dir,
+    }
 
-    for fname in zips:
+    for fname, destination_dir in zip_destinations.items():
         url = f"{base}/{fname}"
-        zip_path = data_dir / fname
+        zip_path = destination_dir / fname
 
         if not zip_path.exists() or force:
             logger.info("Downloading %s", url)
@@ -92,19 +95,20 @@ def step1_download_targetscan_files(
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             for member in zf.namelist():
-                extracted = data_dir / member
+                extracted = destination_dir / member
                 if extracted.exists() and not force:
                     continue
-                zf.extract(member, data_dir)
+                zf.extract(member, destination_dir)
         logger.info("Unzipped %s", zip_path.name)
 
     expected = {
         "Summary_Counts.all_predictions.txt": data_dir / "Summary_Counts.all_predictions.txt",
-        "miR_Family_Info.txt": data_dir / "miR_Family_Info.txt",
-        "Gene_info.txt": data_dir / "Gene_info.txt",
+        "miR_Family_Info.txt": resources_dir / "miR_Family_Info.txt",
+        "Gene_info.txt": resources_dir / "Gene_info.txt",
     }
 
-    logger.info("✔ TargetScan inputs ready in %s", data_dir)
+    logger.info("✔ TargetScan prediction data ready in %s", data_dir)
+    logger.info("✔ TargetScan supporting resources ready in %s", resources_dir)
     return expected
 
 

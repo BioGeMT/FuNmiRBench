@@ -11,7 +11,7 @@ This directory contains the standardization pipeline for miRDB gene-level predic
 The pipeline downloads and reuses the raw miRDB predictions file at:
 
 ```text
-data/miRDB_v6.0_prediction_result_human_all_scores.txt.gz
+pipelines/standardized_predictors/mirdb_mirtarget/data/miRDB_v6.0_prediction_result_human_all_scores.txt.gz
 ```
 
 This file is downloaded from:
@@ -33,7 +33,7 @@ data/common_resources/mirbase/mature.fa
 The predictor-specific BioMart mapping remains under:
 
 ```text
-pipelines/standardized_predictors/mirdb_mirtarget/data/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv
+pipelines/standardized_predictors/mirdb_mirtarget/resources/hsapiens_ncbi_gene_id_refseq_to_ensembl.tsv
 ```
 
 If either cache file already exists, the pipeline reuses it. Otherwise, it downloads miRBase
@@ -124,9 +124,10 @@ Relative CLI paths are resolved from the repository root, so the current working
 
 ```bash
 uv run pipelines/standardized_predictors/mirdb_mirtarget/pipeline.py \
-  --mirbase-mature data/common_resources/mirbase/mature.fa \
-  --resources-dir pipelines/standardized_predictors/mirdb_mirtarget/data \
-  --output data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv \
+  --common-resources-dir data/common_resources \
+  --data-dir pipelines/standardized_predictors/mirdb_mirtarget/data \
+  --resources-dir pipelines/standardized_predictors/mirdb_mirtarget/resources \
+  --standardized-output-file data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv \
   --log-file data/predictions/mirdb_mirtarget/mirdb_mirtarget_pipeline.log \
   --log-level INFO
 ```

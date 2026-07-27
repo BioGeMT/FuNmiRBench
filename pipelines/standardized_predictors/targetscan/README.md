@@ -7,7 +7,8 @@ This directory contains the standardization pipeline for TargetScan v8 gene-leve
 - `pipeline.py`: CLI entrypoint for the pipeline.
 - `utils.py`: shared helpers for logging, downloads, parsing, QC, mapping, and output construction.
 - `data/predictions/targetscan/targetscan_pipeline.log`: example log from a completed run, relative to the repository root.
-- `data/`: cached TargetScan inputs and derived Ensembl lookup tables.
+- `data/`: downloaded TargetScan prediction data.
+- `resources/`: downloaded TargetScan metadata and derived Ensembl lookup tables.
 
 Shared miRBase and Ensembl annotations are downloaded to:
 
@@ -15,6 +16,10 @@ Shared miRBase and Ensembl annotations are downloaded to:
 data/common_resources/mirbase/mature.fa
 data/common_resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz
 ```
+
+By default, `Summary_Counts.all_predictions.txt` and its ZIP archive are stored under `data/`.
+`Gene_info.txt`, `miR_Family_Info.txt`, their ZIP archives, and derived Ensembl lookup tables are
+stored under `resources/`.
 
 ## What The Pipeline Does
 
@@ -83,7 +88,10 @@ uv run pipelines/standardized_predictors/targetscan/pipeline.py
 
 ```bash
 uv run pipelines/standardized_predictors/targetscan/pipeline.py \
-  --output data/predictions/targetscan/targetscan_standardized.tsv \
+  --common-resources-dir data/common_resources \
+  --data-dir pipelines/standardized_predictors/targetscan/data \
+  --resources-dir pipelines/standardized_predictors/targetscan/resources \
+  --standardized-output-file data/predictions/targetscan/targetscan_standardized.tsv \
   --log-file data/predictions/targetscan/targetscan_pipeline.log \
   --log-level INFO
 ```

@@ -12,11 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (  # noqa: E402
     ENSEMBL_GTF_RELATIVE_PATH,
     MIRBASE_MATURE_RELATIVE_PATH,
-    add_standard_io_args,
-    common_resources_dir,
+    add_standard_pipeline_args,
     configure_file_logging,
     log_step,
-    predictor_dir,
     repo_root,
     resolve_cli_path,
 )
@@ -39,10 +37,11 @@ logger = logging.getLogger(__name__)
 
 def parse_args(root: Path) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Standardize TargetScan predictions for FuNmiRBench.")
-    add_standard_io_args(
+    add_standard_pipeline_args(
         parser,
-        default_output=root / "data" / "predictions" / "targetscan" / "targetscan_standardized.tsv",
-        default_log_file=root / "data" / "predictions" / "targetscan" / "targetscan_pipeline.log",
+        tool_id="targetscan",
+        root=root,
+        include_resources_dir=True,
     )
     return parser.parse_args()
 
@@ -50,33 +49,37 @@ def parse_args(root: Path) -> argparse.Namespace:
 def main() -> None:
     root = repo_root()
     args = parse_args(root)
-    args.output = resolve_cli_path(args.output, root)
+    args.common_resources_dir = resolve_cli_path(args.common_resources_dir, root)
+    args.data_dir = resolve_cli_path(args.data_dir, root)
+    args.resources_dir = resolve_cli_path(args.resources_dir, root)
+    args.standardized_output_file = resolve_cli_path(args.standardized_output_file, root)
     args.log_file = resolve_cli_path(args.log_file, root)
-    targetscan_dir = predictor_dir("targetscan", root=root)
-    shared_resources_dir = common_resources_dir(root=root)
 
     configure_file_logging(args.log_file, args.log_level)
     logger.info("Logging to file: %s", args.log_file)
 
-    data_dir = targetscan_dir / "data"
     total_steps = 8
 
     log_step(logger, 1, total_steps, "Download and unzip TargetScan inputs")
-    files = step1_download_targetscan_files(data_dir, force=False)
+    files = step1_download_targetscan_files(
+        args.data_dir,
+        args.resources_dir,
+        force=False,
+    )
 
     log_step(logger, 2, total_steps, "Build representative-transcript index")
     tx_index = step2_build_representative_transcript_index(files["Gene_info.txt"], species_id="9606")
 
     log_step(logger, 3, total_steps, "Download Ensembl v115 GTF")
     ensembl_gtf = step3_download_ensembl115_gtf(
-        shared_resources_dir / ENSEMBL_GTF_RELATIVE_PATH,
+        args.common_resources_dir / ENSEMBL_GTF_RELATIVE_PATH,
         force=False,
     )
 
     log_step(logger, 4, total_steps, "Build/cache Ensembl v115 tables")
     ensembl_tables = step4_build_and_cache_ensembl115_tables(
         ensembl_gtf,
-        cache_dir=data_dir,
+        cache_dir=args.resources_dir,
         force_rebuild=False,
     )
 
@@ -88,7 +91,7 @@ def main() -> None:
 
     log_step(logger, 6, total_steps, "Download and parse miRBase mature annotations")
     mirbase_fa = step6_download_mirbase_mature(
-        shared_resources_dir / MIRBASE_MATURE_RELATIVE_PATH,
+        args.common_resources_dir / MIRBASE_MATURE_RELATIVE_PATH,
         force=False,
     )
     mirbase_acc2name = parse_mirbase_mature(mirbase_fa)
@@ -106,11 +109,11 @@ def main() -> None:
         tx_index=tx_index,
         ensembl_tables=ensembl_tables,
         mirna_annotations=mirna_annotations,
-        output_path=args.output,
+        output_path=args.standardized_output_file,
         species_id="9606",
     )
 
-    compute_final_statistics(args.output)
+    compute_final_statistics(args.standardized_output_file)
 
 
 if __name__ == "__main__":
