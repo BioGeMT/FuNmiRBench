@@ -240,7 +240,7 @@ Key options:
 The YAML is auto-generated from the TSV and uses sensible defaults, but you should
 verify and adjust the following before proceeding:
 
-- **Genome reference paths** — the defaults point to Ensembl v109 (GRCh38). If your
+- **Genome reference paths** — the defaults point to Ensembl v115 (GRCh38). If your
   experiment uses a different genome or Ensembl version, update `genome_fasta_path`
   and `gtf_path` accordingly.
 - **Thread counts** — `fastqc_threads`, `fastp_threads`, `star_threads`, and

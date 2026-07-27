@@ -124,7 +124,7 @@ That downloader fetches:
 
 - the real `GSE253003` count matrix
 - the real `GSE93717` FASTQ files
-- the shared Homo sapiens Ensembl v109 genome FASTA and GTF used by the reads example
+- the shared Homo sapiens Ensembl v115 genome FASTA and GTF used by the reads example
 
 Run the real count-matrix example:
 
@@ -154,8 +154,8 @@ So the practical reads flow is:
 2. run `uv run funmirbench-experiments-download-examples`
 3. run `uv run funmirbench-experiments --config pipelines/experiments/configs/gse93717.reads.example.yaml`
 
-The shipped reads example now points at the downloaded Ensembl v109 reference source files under
-`data/experiments/raw/refs/ensembl_v109/`, so it builds the derived STAR index automatically.
+The shipped reads example now points at the downloaded Ensembl v115 reference source files under
+`data/experiments/raw/refs/ensembl_v115/`, so it builds the derived STAR index automatically.
 
 Each run writes:
 
