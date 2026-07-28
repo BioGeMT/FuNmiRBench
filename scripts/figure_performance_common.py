@@ -4,6 +4,10 @@ All universes are miRNA-gene pair universes:
 - algorithm-specific: each predictor is evaluated only on its scored pairs.
 - intersection pair set: all predictors are evaluated on pairs scored by every predictor.
 - full pair set: all ground-truth pairs are evaluated; missing scores receive rank 0.
+
+Optional gene-set filters restrict those pair universes by gene membership. The
+IGS filter keeps ground-truth pairs whose genes are in the Figure 2
+all-predictor Intersection Gene Set, then applies the configured pair universe.
 """
 
 from __future__ import annotations
@@ -40,6 +44,7 @@ RANDOM_TOOL_ID = "random_baseline"
 UNIVERSE_ALGORITHM_SPECIFIC = "algorithm_specific"
 UNIVERSE_INTERSECTION = "intersection_pair_set"
 UNIVERSE_FULL = "full_pair_set"
+GENE_SET_FILTER_IGS = "igs"
 METRICS = ("aps", "pr_auc", "top_n_median_effect", "auroc", "spearman", "spearman_r2")
 PANEL_SPECS = (
     ("A", "aps", "boxplot"),
@@ -101,6 +106,7 @@ class FigurePerformanceConfig:
     metric_ylim: dict[str, tuple[float, float]] | None = None
     include_random_in_leaderboard: bool = True
     winner_summary_fallback_universe: str | None = None
+    gene_set_filter: str | None = None
 
 
 def parse_args(config: FigurePerformanceConfig) -> argparse.Namespace:
@@ -416,6 +422,44 @@ def evaluation_frame(frame: pd.DataFrame, tool_id: str, tool_ids: tuple[str, ...
     raise ValueError(f"Unsupported performance universe: {universe}")
 
 
+def intersection_gene_set(inputs: PerformanceInputs) -> set[str]:
+    """Return genes with at least one scored prediction from every evaluated predictor."""
+    all_pairs = pd.concat((dataset.frame for dataset in inputs.datasets), ignore_index=True)
+    scored_gene_sets = []
+    for tool_id in inputs.tool_ids:
+        scored_gene_sets.append(
+            set(
+                all_pairs.loc[all_pairs[score_column(tool_id)].notna(), "gene_id"]
+                .dropna()
+                .astype(str)
+            )
+        )
+    return set.intersection(*scored_gene_sets) if scored_gene_sets else set()
+
+
+def apply_gene_set_filter(
+    frame: pd.DataFrame,
+    *,
+    gene_set_filter: str | None,
+    igs_genes: set[str] | None,
+) -> pd.DataFrame:
+    if gene_set_filter is None:
+        return frame
+    if gene_set_filter != GENE_SET_FILTER_IGS:
+        raise ValueError(f"Unsupported gene-set filter: {gene_set_filter}")
+    if igs_genes is None:
+        raise ValueError("IGS gene-set filter requires an IGS gene set.")
+    return frame.loc[frame["gene_id"].astype(str).isin(igs_genes)].copy()
+
+
+def metrics_universe_label(config: FigurePerformanceConfig) -> str:
+    if config.gene_set_filter == GENE_SET_FILTER_IGS and config.universe == UNIVERSE_FULL:
+        return "igs_restricted_full_pair_set"
+    if config.gene_set_filter == GENE_SET_FILTER_IGS:
+        return f"igs_restricted_{config.universe}"
+    return config.universe
+
+
 def compute_per_experiment_metrics(
     inputs: PerformanceInputs,
     config: FigurePerformanceConfig,
@@ -424,8 +468,16 @@ def compute_per_experiment_metrics(
 ) -> pd.DataFrame:
     rows = []
     tool_ids = (*inputs.tool_ids, RANDOM_TOOL_ID) if config.include_random else inputs.tool_ids
+    igs_genes = intersection_gene_set(inputs) if config.gene_set_filter == GENE_SET_FILTER_IGS else None
+    universe_label = metrics_universe_label(config)
     for dataset in inputs.datasets:
-        frame = dataset.frame
+        frame = apply_gene_set_filter(
+            dataset.frame,
+            gene_set_filter=config.gene_set_filter,
+            igs_genes=igs_genes,
+        )
+        if frame.empty:
+            continue
         for tool_id in tool_ids:
             score_col = score_column(tool_id)
             if tool_id != RANDOM_TOOL_ID and score_col not in frame.columns:
@@ -462,7 +514,7 @@ def compute_per_experiment_metrics(
             rows.append(
                 {
                     "dataset_id": dataset.dataset_id,
-                    "universe": config.universe,
+                    "universe": universe_label,
                     "tool_id": tool_id,
                     "predictor": predictor,
                     "pairs_evaluated": int(len(work)),
@@ -830,10 +882,11 @@ def draw_winner_summary_panel(
 ) -> None:
     summary_metrics = ("aps", "top_n_median_effect", "auroc", "spearman")
     y_positions = np.arange(len(summary_metrics))
-    nominal_experiments = int(metrics["dataset_id"].nunique())
     labels = [metric_label(metric, top_n=top_n) for metric in summary_metrics]
+    metric_sources = {}
+    eligible_totals = {}
 
-    for y, metric in zip(y_positions, summary_metrics):
+    for metric in summary_metrics:
         metric_source = metrics
         if fallback_metrics is not None:
             primary_defined = set(metrics.dropna(subset=[metric])["dataset_id"].unique())
@@ -849,8 +902,15 @@ def draw_winner_summary_panel(
                     ],
                     ignore_index=True,
                 )
+        metric_source = metric_source.dropna(subset=[metric]).copy()
+        metric_sources[metric] = metric_source
+        eligible_totals[metric] = int(metric_source["dataset_id"].nunique())
+    show_eligible_counts = len(set(eligible_totals.values())) > 1
+
+    for y, metric in zip(y_positions, summary_metrics):
+        metric_source = metric_sources[metric]
         winner_counts = compute_metric_winner_counts(metric_source, metric).set_index("tool_id")
-        total_experiments = nominal_experiments
+        total_experiments = eligible_totals[metric]
         left = 0
         for tool_id in inputs.tool_ids:
             if tool_id not in winner_counts.index:
@@ -889,12 +949,24 @@ def draw_winner_summary_panel(
                         clip_on=True,
                     )
             left += count
+        if show_eligible_counts:
+            ax.text(
+                total_experiments,
+                y,
+                f" n={total_experiments}",
+                ha="left",
+                va="center",
+                fontsize=ANNOTATION_FONTSIZE,
+                color="#4B5563",
+                clip_on=False,
+            )
 
     ax.set_yticks(y_positions, labels)
     ax.invert_yaxis()
-    ax.set_xlim(0, max(total_experiments, 1))
+    max_total = max(eligible_totals.values(), default=0)
+    ax.set_xlim(0, max(max_total, 1))
     ax.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=6))
-    ax.set_xlabel("Experiments led", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_xlabel("Experiments won", fontsize=AXIS_LABEL_FONTSIZE)
     set_panel_title(ax, letter, "Best predictor by metric")
     ax.tick_params(axis="both", labelsize=TICK_LABEL_FONTSIZE)
     style_axis(ax)
@@ -1309,6 +1381,7 @@ def run_performance_figure(config: FigurePerformanceConfig) -> None:
             panel_specs=config.panel_specs,
             metric_ylim=config.metric_ylim,
             include_random_in_leaderboard=config.include_random_in_leaderboard,
+            gene_set_filter=config.gene_set_filter,
         )
         winner_summary_fallback_metrics = compute_per_experiment_metrics(
             inputs,

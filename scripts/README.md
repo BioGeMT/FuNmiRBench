@@ -150,6 +150,8 @@ uv run python scripts/figure4_performance_ips.py \
   --run-dir results/<results_dir>
 uv run python scripts/figure5_performance_fps.py \
   --run-dir results/<results_dir>
+uv run python scripts/figure_supp_igs_fps.py \
+  --run-dir results/<results_dir>
 ```
 
 These figures evaluate miRNA-gene pair universes:
@@ -160,6 +162,11 @@ These figures evaluate miRNA-gene pair universes:
   shared ground-truth pairs where every evaluated predictor supplied a score.
 - Figure 5: Full Pair Set (FPS). All ground-truth pairs are evaluated. Missing
   predictor scores receive the zero-equivalent local rank.
+- Supplementary IGS-restricted FPS: all ground-truth pairs whose genes are in
+  the Figure 2 Intersection Gene Set (IGS) are evaluated. Missing predictor
+  scores still receive the zero-equivalent local rank. This is a sensitivity
+  analysis for the biology of the shared gene set; it is not the main
+  intersection performance comparison.
 
 Scores are converted to dataset-local normalized ranks where 0 is the weakest
 scored pair and 1 is the strongest scored pair. Tied scores receive average
@@ -178,6 +185,7 @@ These write separate panel assets and combined figure assets to:
 manuscript_assets/figure3/
 manuscript_assets/figure4/
 manuscript_assets/figure5/
+manuscript_assets/supplement_igs_restricted_fps/
 ```
 
 It writes the supporting tables to:
@@ -193,4 +201,8 @@ manuscript_assets/tables/figure5_fps_per_experiment_metrics.tsv
 manuscript_assets/tables/figure5_fps_leaderboard.tsv
 manuscript_assets/tables/figure5_fps_spearman_r2_leaderboard.tsv
 manuscript_assets/tables/figure5_fps_local_ranks.tsv
+manuscript_assets/tables/supplement_igs_restricted_fps_per_experiment_metrics.tsv
+manuscript_assets/tables/supplement_igs_restricted_fps_leaderboard.tsv
+manuscript_assets/tables/supplement_igs_restricted_fps_spearman_r2_leaderboard.tsv
+manuscript_assets/tables/supplement_igs_restricted_fps_local_ranks.tsv
 ```

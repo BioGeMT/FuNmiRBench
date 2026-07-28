@@ -7,7 +7,6 @@ from pathlib import Path
 
 from figure_performance_common import (
     FigurePerformanceConfig,
-    UNIVERSE_ALGORITHM_SPECIFIC,
     UNIVERSE_INTERSECTION,
     run_performance_figure,
 )
@@ -22,7 +21,6 @@ CONFIG = FigurePerformanceConfig(
     default_out_dir=Path("manuscript_assets/figure4"),
     leaderboard_mode="winner_counts",
     include_random_in_leaderboard=False,
-    winner_summary_fallback_universe=UNIVERSE_ALGORITHM_SPECIFIC,
     panel_specs=(
         ("A", "aps", "boxplot"),
         ("B", "top_n_median_effect", "boxplot"),

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Generate Figure 5 gene-set full-set performance outputs."""
+"""Generate supplementary IGS-restricted Full Pair Set performance outputs."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from figure_performance_common import (
+    GENE_SET_FILTER_IGS,
     FigurePerformanceConfig,
     UNIVERSE_FULL,
     run_performance_figure,
@@ -13,14 +14,15 @@ from figure_performance_common import (
 
 
 CONFIG = FigurePerformanceConfig(
-    figure_id="Figure 5 gene set",
+    figure_id="Supplementary IGS-restricted FPS",
     universe=UNIVERSE_FULL,
-    title="Full gene-set performance",
-    output_prefix="figure5_fps_gene_set",
+    title="IGS-restricted full pair set performance",
+    output_prefix="supplement_igs_restricted_fps",
     include_random=True,
-    default_out_dir=Path("manuscript_assets/figure5_gene_set"),
+    default_out_dir=Path("manuscript_assets/supplement_igs_restricted_fps"),
     leaderboard_mode="winner_counts",
     include_random_in_leaderboard=False,
+    gene_set_filter=GENE_SET_FILTER_IGS,
     panel_specs=(
         ("A", "aps", "boxplot"),
         ("B", "top_n_median_effect", "boxplot"),
