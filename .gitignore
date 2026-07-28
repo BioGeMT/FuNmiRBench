@@ -26,6 +26,7 @@ data/predictions/perfect/*
 data/joined/
 data/plots/
 data/experiments/raw/refs/*
+data/resources/ # legacy local cache path
 data/common_resources/*
 !data/common_resources/README.md
 
