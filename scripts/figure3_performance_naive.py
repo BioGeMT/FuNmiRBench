@@ -19,6 +19,16 @@ CONFIG = FigurePerformanceConfig(
     output_prefix="figure3_algorithm_specific",
     include_random=False,
     default_out_dir=Path("manuscript_assets/figure3"),
+    leaderboard_mode="winner_counts",
+    panel_specs=(
+        ("A", "aps", "boxplot"),
+        ("B", "top_n_median_effect", "boxplot"),
+        ("C", "auroc", "boxplot"),
+        ("D", "spearman", "boxplot"),
+        ("E", "winner_summary", "leaderboard"),
+        ("F", "legend", "legend"),
+    ),
+    metric_ylim={"aps": (0.0, 0.6)},
 )
 
 

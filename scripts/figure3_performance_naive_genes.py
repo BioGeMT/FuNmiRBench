@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Figure 4 Intersection Pair Set performance outputs."""
+"""Generate Figure 3 gene-set algorithm-specific performance outputs."""
 
 from __future__ import annotations
 
@@ -8,21 +8,18 @@ from pathlib import Path
 from figure_performance_common import (
     FigurePerformanceConfig,
     UNIVERSE_ALGORITHM_SPECIFIC,
-    UNIVERSE_INTERSECTION,
     run_performance_figure,
 )
 
 
 CONFIG = FigurePerformanceConfig(
-    figure_id="Figure 4",
-    universe=UNIVERSE_INTERSECTION,
-    title="Intersection pair set performance",
-    output_prefix="figure4_ips",
-    include_random=True,
-    default_out_dir=Path("manuscript_assets/figure4"),
+    figure_id="Figure 3 gene set",
+    universe=UNIVERSE_ALGORITHM_SPECIFIC,
+    title="Algorithm-specific gene-set performance",
+    output_prefix="figure3_algorithm_specific_gene_set",
+    include_random=False,
+    default_out_dir=Path("manuscript_assets/figure3_gene_set"),
     leaderboard_mode="winner_counts",
-    include_random_in_leaderboard=False,
-    winner_summary_fallback_universe=UNIVERSE_ALGORITHM_SPECIFIC,
     panel_specs=(
         ("A", "aps", "boxplot"),
         ("B", "top_n_median_effect", "boxplot"),

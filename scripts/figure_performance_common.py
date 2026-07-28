@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import yaml
+from matplotlib.ticker import MaxNLocator
 from scipy.stats import spearmanr
 from sklearn.metrics import average_precision_score, auc, precision_recall_curve, roc_auc_score
 
@@ -56,9 +57,14 @@ METRIC_LABELS = {
     "spearman": "Spearman rho",
     "spearman_r2": "Spearman R2",
 }
-FIGURE_TITLE_SIZE = 13
-AXIS_LABEL_SIZE = 10
-TICK_LABEL_SIZE = 9
+PANEL_LETTER_FONTSIZE = 18
+PANEL_TITLE_FONTSIZE = 17
+AXIS_LABEL_FONTSIZE = 14
+TICK_LABEL_FONTSIZE = 12
+BAR_LABEL_FONTSIZE = 16
+ANNOTATION_FONTSIZE = 14
+LEGEND_FONTSIZE = 13
+GRID_ALPHA = 0.25
 PANEL_FIGSIZE = (7.2, 4.8)
 OE_ALIASES = {"OE", "OVEREXPRESSION", "OVER_EXPRESSION"}
 LOSS_ALIASES = {"KO", "KD", "KNOCKOUT", "KNOCK_OUT", "KNOCKDOWN", "KNOCK_DOWN"}
@@ -90,6 +96,11 @@ class FigurePerformanceConfig:
     include_random: bool
     default_out_dir: Path
     random_label: str = "Random baseline"
+    leaderboard_mode: str = "mean"
+    panel_specs: tuple[tuple[str, str, str], ...] = PANEL_SPECS
+    metric_ylim: dict[str, tuple[float, float]] | None = None
+    include_random_in_leaderboard: bool = True
+    winner_summary_fallback_universe: str | None = None
 
 
 def parse_args(config: FigurePerformanceConfig) -> argparse.Namespace:
@@ -509,6 +520,48 @@ def compute_metric_leaderboard(metrics: pd.DataFrame, metric: str) -> pd.DataFra
     return summary
 
 
+def compute_metric_winner_counts(metrics: pd.DataFrame, metric: str) -> pd.DataFrame:
+    winners = []
+    work = metrics.dropna(subset=[metric]).copy()
+    for dataset_id, group in work.groupby("dataset_id", sort=False):
+        best_value = group[metric].max()
+        row = group.loc[group[metric] == best_value, ["tool_id", "predictor"]].iloc[0]
+        winners.append(
+            {
+                "dataset_id": dataset_id,
+                "tool_id": row["tool_id"],
+                "predictor": row["predictor"],
+                metric: best_value,
+            }
+        )
+
+    total_experiments = int(work["dataset_id"].nunique())
+    if winners:
+        winner_frame = pd.DataFrame(winners)
+        counts = (
+            winner_frame.groupby(["tool_id", "predictor"], as_index=False)
+            .agg(best_experiments=("dataset_id", "nunique"))
+        )
+    else:
+        counts = pd.DataFrame(columns=["tool_id", "predictor", "best_experiments"])
+
+    predictors = metrics[["tool_id", "predictor"]].drop_duplicates()
+    summary = predictors.merge(counts, on=["tool_id", "predictor"], how="left")
+    summary["best_experiments"] = summary["best_experiments"].fillna(0).astype(int)
+    summary["total_experiments"] = total_experiments
+    summary["best_experiment_fraction"] = (
+        summary["best_experiments"] / total_experiments if total_experiments else np.nan
+    )
+    return (
+        summary.sort_values(
+            ["best_experiments", "predictor"],
+            ascending=[True, True],
+            kind="mergesort",
+        )
+        .reset_index(drop=True)
+    )
+
+
 def write_rank_table(inputs: PerformanceInputs, out_path: Path, *, include_random: bool) -> None:
     chunks = []
     tool_ids = (*inputs.tool_ids, RANDOM_TOOL_ID) if include_random else inputs.tool_ids
@@ -530,7 +583,7 @@ def write_rank_table(inputs: PerformanceInputs, out_path: Path, *, include_rando
 def style_axis(ax: plt.Axes) -> None:
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.grid(axis="y", alpha=0.25, linewidth=0.8)
+    ax.grid(axis="y", alpha=GRID_ALPHA, linewidth=0.8)
     ax.set_axisbelow(True)
 
 
@@ -541,10 +594,10 @@ def set_panel_title(ax: plt.Axes, letter: str, title: str) -> None:
         letter,
         ha="left",
         va="top",
-        fontsize=15,
+        fontsize=PANEL_LETTER_FONTSIZE,
         fontweight="bold",
     )
-    ax.set_title(title, pad=18, fontsize=14, fontweight="bold")
+    ax.set_title(title, pad=18, fontsize=PANEL_TITLE_FONTSIZE, fontweight="bold")
 
 
 def save_figure(fig: plt.Figure, out_dir: Path, stem: str, *, dpi: int) -> dict[str, Path]:
@@ -639,6 +692,7 @@ def draw_metric_boxplot(
     *,
     letter: str,
     top_n: int,
+    metric_ylim: dict[str, tuple[float, float]] | None = None,
 ) -> None:
     plot_tool_ids = tuple(metrics["tool_id"].drop_duplicates().tolist())
     positions = np.arange(1, len(plot_tool_ids) + 1)
@@ -683,11 +737,13 @@ def draw_metric_boxplot(
         [tool_label(inputs, tool_id) for tool_id in plot_tool_ids],
         rotation=25,
         ha="right",
-        fontsize=TICK_LABEL_SIZE,
+        fontsize=TICK_LABEL_FONTSIZE,
     )
-    ax.set_ylabel(metric_label(metric, top_n=top_n), fontsize=AXIS_LABEL_SIZE)
-    ax.tick_params(axis="y", labelsize=TICK_LABEL_SIZE)
-    if metric in {"aps", "pr_auc", "auroc"}:
+    ax.set_ylabel(metric_label(metric, top_n=top_n), fontsize=AXIS_LABEL_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_LABEL_FONTSIZE)
+    if metric_ylim and metric in metric_ylim:
+        ax.set_ylim(*metric_ylim[metric])
+    elif metric in {"aps", "pr_auc", "auroc"}:
         ax.set_ylim(0.0, 1.02)
     elif metric == "spearman":
         ax.set_ylim(-1.02, 1.02)
@@ -708,7 +764,7 @@ def draw_leaderboard(
     ordered = leaderboard.sort_values(value_col, ascending=True)
     colors = [tool_color(inputs, tool_id) for tool_id in ordered["tool_id"]]
     ax.barh(ordered["predictor"], ordered[value_col], color=colors, alpha=0.45)
-    ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_SIZE)
+    ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_FONTSIZE)
     values = ordered[value_col].dropna()
     if values.empty:
         ax.set_xlim(0.0, 1.0)
@@ -717,12 +773,166 @@ def draw_leaderboard(
     else:
         ax.set_xlim(0.0, max(float(values.max()) * 1.18, 0.05))
     set_panel_title(ax, letter, title)
-    ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
+    ax.tick_params(axis="both", labelsize=TICK_LABEL_FONTSIZE)
     for y, value in enumerate(ordered[value_col]):
         if pd.isna(value):
             continue
-        ax.text(value, y, f" {value:.3f}", va="center", fontsize=TICK_LABEL_SIZE)
+        ax.text(value, y, f" {value:.3f}", va="center", fontsize=TICK_LABEL_FONTSIZE)
     style_axis(ax)
+
+
+def draw_winner_count_panel(
+    ax: plt.Axes,
+    inputs: PerformanceInputs,
+    winner_counts: pd.DataFrame,
+    *,
+    metric: str,
+    title: str,
+    letter: str,
+) -> None:
+    ordered = winner_counts.sort_values(
+        ["best_experiments", "predictor"],
+        ascending=[True, True],
+        kind="mergesort",
+    )
+    colors = [tool_color(inputs, tool_id) for tool_id in ordered["tool_id"]]
+    ax.barh(ordered["predictor"], ordered["best_experiments"], color=colors, alpha=0.55)
+    total_experiments = (
+        int(ordered["total_experiments"].max()) if not ordered.empty else 0
+    )
+    ax.set_xlabel(
+        f"Experiments with best {metric_label(metric, top_n=TOP_PREDICTION_CDF_N).lower()}",
+        fontsize=AXIS_LABEL_FONTSIZE,
+    )
+    ax.set_xlim(0, max(total_experiments, 1))
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    set_panel_title(ax, letter, title)
+    ax.tick_params(axis="both", labelsize=TICK_LABEL_FONTSIZE)
+    for y, count in enumerate(ordered["best_experiments"]):
+        ax.text(
+            count,
+            y,
+            f" {int(count)}/{total_experiments}",
+            va="center",
+            fontsize=ANNOTATION_FONTSIZE,
+        )
+    style_axis(ax)
+
+
+def draw_winner_summary_panel(
+    ax: plt.Axes,
+    inputs: PerformanceInputs,
+    metrics: pd.DataFrame,
+    *,
+    letter: str,
+    top_n: int,
+    fallback_metrics: pd.DataFrame | None = None,
+) -> None:
+    summary_metrics = ("aps", "top_n_median_effect", "auroc", "spearman")
+    y_positions = np.arange(len(summary_metrics))
+    nominal_experiments = int(metrics["dataset_id"].nunique())
+    labels = [metric_label(metric, top_n=top_n) for metric in summary_metrics]
+
+    for y, metric in zip(y_positions, summary_metrics):
+        metric_source = metrics
+        if fallback_metrics is not None:
+            primary_defined = set(metrics.dropna(subset=[metric])["dataset_id"].unique())
+            missing_datasets = set(metrics["dataset_id"].unique()).difference(primary_defined)
+            if missing_datasets:
+                fallback_rows = fallback_metrics.loc[
+                    fallback_metrics["dataset_id"].isin(missing_datasets)
+                ]
+                metric_source = pd.concat(
+                    [
+                        metrics.loc[~metrics["dataset_id"].isin(missing_datasets)],
+                        fallback_rows,
+                    ],
+                    ignore_index=True,
+                )
+        winner_counts = compute_metric_winner_counts(metric_source, metric).set_index("tool_id")
+        total_experiments = nominal_experiments
+        left = 0
+        for tool_id in inputs.tool_ids:
+            if tool_id not in winner_counts.index:
+                count = 0
+            else:
+                count = int(winner_counts.loc[tool_id, "best_experiments"])
+            if count:
+                ax.barh(
+                    y,
+                    count,
+                    left=left,
+                    color=tool_color(inputs, tool_id),
+                    alpha=0.58,
+                    height=0.56,
+                )
+                if count >= 2 or left + count >= total_experiments:
+                    ax.text(
+                        left + count / 2,
+                        y,
+                        str(count),
+                        ha="center",
+                        va="center",
+                        fontsize=ANNOTATION_FONTSIZE,
+                        color="#111111",
+                        clip_on=True,
+                    )
+                else:
+                    ax.text(
+                        left + count + 0.15,
+                        y,
+                        str(count),
+                        ha="left",
+                        va="center",
+                        fontsize=ANNOTATION_FONTSIZE,
+                        color="#111111",
+                        clip_on=True,
+                    )
+            left += count
+
+    ax.set_yticks(y_positions, labels)
+    ax.invert_yaxis()
+    ax.set_xlim(0, max(total_experiments, 1))
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=6))
+    ax.set_xlabel("Experiments led", fontsize=AXIS_LABEL_FONTSIZE)
+    set_panel_title(ax, letter, "Best predictor by metric")
+    ax.tick_params(axis="both", labelsize=TICK_LABEL_FONTSIZE)
+    style_axis(ax)
+
+
+def draw_legend_panel(ax: plt.Axes, inputs: PerformanceInputs, *, letter: str) -> None:
+    ax.axis("off")
+    y_step = 0.13
+    total_height = y_step * (len(inputs.tool_ids) - 1)
+    y_start = 0.5 + total_height / 2
+    swatch_width = 0.08
+    swatch_height = 0.07
+    label_gap = 0.06
+    group_width = 0.46
+    group_left = 0.5 - group_width / 2
+    for index, tool_id in enumerate(inputs.tool_ids):
+        y = y_start - index * y_step
+        ax.add_patch(
+            plt.Rectangle(
+                (group_left, y - swatch_height / 2),
+                swatch_width,
+                swatch_height,
+                transform=ax.transAxes,
+                color=tool_color(inputs, tool_id),
+                alpha=0.58,
+                clip_on=False,
+            )
+        )
+        ax.text(
+            group_left + swatch_width + label_gap,
+            y,
+            tool_label(inputs, tool_id),
+            transform=ax.transAxes,
+            ha="left",
+            va="center",
+            fontsize=LEGEND_FONTSIZE,
+            clip_on=False,
+        )
 
 
 def panel_stem(output_prefix: str, letter: str, metric: str, panel_type: str) -> str:
@@ -737,9 +947,18 @@ def plot_metric_panel(
     *,
     letter: str,
     top_n: int,
+    metric_ylim: dict[str, tuple[float, float]] | None = None,
 ) -> plt.Figure:
     fig, ax = plt.subplots(figsize=PANEL_FIGSIZE)
-    draw_metric_boxplot(ax, inputs, metrics, metric, letter=letter, top_n=top_n)
+    draw_metric_boxplot(
+        ax,
+        inputs,
+        metrics,
+        metric,
+        letter=letter,
+        top_n=top_n,
+        metric_ylim=metric_ylim,
+    )
     fig.tight_layout()
     return fig
 
@@ -769,21 +988,113 @@ def plot_leaderboard_panel(
     return fig
 
 
+def plot_winner_count_panel(
+    inputs: PerformanceInputs,
+    winner_counts: pd.DataFrame,
+    *,
+    metric: str,
+    title: str,
+    letter: str,
+) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=PANEL_FIGSIZE)
+    draw_winner_count_panel(
+        ax,
+        inputs,
+        winner_counts,
+        metric=metric,
+        title=title,
+        letter=letter,
+    )
+    fig.tight_layout()
+    return fig
+
+
+def plot_winner_summary_panel(
+    inputs: PerformanceInputs,
+    metrics: pd.DataFrame,
+    *,
+    letter: str,
+    top_n: int,
+    fallback_metrics: pd.DataFrame | None = None,
+) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=PANEL_FIGSIZE)
+    draw_winner_summary_panel(
+        ax,
+        inputs,
+        metrics,
+        letter=letter,
+        top_n=top_n,
+        fallback_metrics=fallback_metrics,
+    )
+    fig.tight_layout()
+    return fig
+
+
+def plot_legend_panel(inputs: PerformanceInputs, *, letter: str) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=PANEL_FIGSIZE)
+    draw_legend_panel(ax, inputs, letter=letter)
+    fig.tight_layout()
+    return fig
+
+
+def leaderboard_inputs(inputs: PerformanceInputs, config: FigurePerformanceConfig) -> PerformanceInputs:
+    if config.include_random_in_leaderboard:
+        return inputs
+    return PerformanceInputs(
+        run_dir=inputs.run_dir,
+        datasets=inputs.datasets,
+        tool_ids=tuple(tool_id for tool_id in inputs.tool_ids if tool_id != RANDOM_TOOL_ID),
+        tool_labels=inputs.tool_labels,
+        tool_colors=inputs.tool_colors,
+        fdr_threshold=inputs.fdr_threshold,
+        effect_threshold=inputs.effect_threshold,
+    )
+
+
 def write_panel_figures(
     inputs: PerformanceInputs,
     metrics: pd.DataFrame,
     leaderboard: pd.DataFrame,
     spearman_r2_leaderboard: pd.DataFrame,
+    aps_winner_counts: pd.DataFrame,
+    spearman_r2_winner_counts: pd.DataFrame,
     config: FigurePerformanceConfig,
     *,
     out_dir: Path,
     dpi: int,
     top_n: int,
+    winner_summary_fallback_metrics: pd.DataFrame | None = None,
 ) -> dict[str, dict[str, Path]]:
     panel_outputs: dict[str, dict[str, Path]] = {}
-    for letter, metric, panel_type in PANEL_SPECS:
+    lead_inputs = leaderboard_inputs(inputs, config)
+    lead_metrics = metrics.loc[metrics["tool_id"] != RANDOM_TOOL_ID] if not config.include_random_in_leaderboard else metrics
+    for letter, metric, panel_type in config.panel_specs:
         if panel_type == "boxplot":
-            fig = plot_metric_panel(inputs, metrics, metric, letter=letter, top_n=top_n)
+            fig = plot_metric_panel(
+                inputs,
+                metrics,
+                metric,
+                letter=letter,
+                top_n=top_n,
+                metric_ylim=config.metric_ylim,
+            )
+        elif panel_type == "legend":
+            fig = plot_legend_panel(lead_inputs, letter=letter)
+        elif metric == "winner_summary" and config.leaderboard_mode == "winner_counts":
+            fig = plot_winner_summary_panel(
+                lead_inputs,
+                lead_metrics,
+                letter=letter,
+                top_n=top_n,
+                fallback_metrics=(
+                    winner_summary_fallback_metrics.loc[
+                        winner_summary_fallback_metrics["tool_id"] != RANDOM_TOOL_ID
+                    ]
+                    if winner_summary_fallback_metrics is not None
+                    and not config.include_random_in_leaderboard
+                    else winner_summary_fallback_metrics
+                ),
+            )
         elif metric == "aps":
             fig = plot_leaderboard_panel(
                 inputs,
@@ -792,6 +1103,16 @@ def write_panel_figures(
                 value_col="mean_aps",
                 title="APS leaderboard",
                 xlabel="Mean average precision",
+                letter=letter,
+            )
+        elif config.leaderboard_mode == "winner_counts":
+            fig = plot_winner_count_panel(
+                lead_inputs,
+                spearman_r2_winner_counts.loc[
+                    spearman_r2_winner_counts["tool_id"] != RANDOM_TOOL_ID
+                ] if not config.include_random_in_leaderboard else spearman_r2_winner_counts,
+                metric="spearman_r2",
+                title="Best Spearman R2 by experiment",
                 letter=letter,
             )
         else:
@@ -826,7 +1147,7 @@ def write_combined_png(
         raise ValueError(f"Missing PNG panel outputs: {missing}")
 
     panel_images = {
-        panel: trim_white_border(plt.imread(panel_outputs[panel]["png"]))
+        panel: plt.imread(panel_outputs[panel]["png"])
         for panel in required
     }
     row_pairs = (("A", "B"), ("C", "D"), ("E", "F"))
@@ -848,8 +1169,8 @@ def write_combined_png(
         for row_index, row_pair in enumerate(row_pairs)
         for column_index, panel in enumerate(row_pair)
     }
-    gap_x = 90
-    gap_y = 20
+    gap_x = round(18.0 / 72.0 * dpi)
+    gap_y = round(10.0 / 72.0 * dpi)
     channels = next(iter(cells.values())).shape[2]
     dtype = next(iter(cells.values())).dtype
     rows = []
@@ -974,8 +1295,30 @@ def run_performance_figure(config: FigurePerformanceConfig) -> None:
         effect_threshold=effect_threshold,
     )
     metrics = compute_per_experiment_metrics(inputs, config, top_n=args.top_n)
+    winner_summary_fallback_metrics = None
+    if config.winner_summary_fallback_universe is not None:
+        fallback_config = FigurePerformanceConfig(
+            figure_id=config.figure_id,
+            universe=config.winner_summary_fallback_universe,
+            title=config.title,
+            output_prefix=config.output_prefix,
+            include_random=config.include_random,
+            default_out_dir=config.default_out_dir,
+            random_label=config.random_label,
+            leaderboard_mode=config.leaderboard_mode,
+            panel_specs=config.panel_specs,
+            metric_ylim=config.metric_ylim,
+            include_random_in_leaderboard=config.include_random_in_leaderboard,
+        )
+        winner_summary_fallback_metrics = compute_per_experiment_metrics(
+            inputs,
+            fallback_config,
+            top_n=args.top_n,
+        )
     leaderboard = compute_leaderboard(metrics)
     spearman_r2_leaderboard = compute_metric_leaderboard(metrics, "spearman_r2")
+    aps_winner_counts = compute_metric_winner_counts(metrics, "aps")
+    spearman_r2_winner_counts = compute_metric_winner_counts(metrics, "spearman_r2")
 
     tables_dir = args.manuscript_tables_dir
     tables_dir.mkdir(parents=True, exist_ok=True)
@@ -999,10 +1342,13 @@ def run_performance_figure(config: FigurePerformanceConfig) -> None:
         metrics,
         leaderboard,
         spearman_r2_leaderboard,
+        aps_winner_counts,
+        spearman_r2_winner_counts,
         config,
         out_dir=out_dir,
         dpi=args.dpi,
         top_n=args.top_n,
+        winner_summary_fallback_metrics=winner_summary_fallback_metrics,
     )
     write_combined_figure(panel_outputs, out_dir=out_dir, output_prefix=config.output_prefix, dpi=args.dpi)
     logger.info("Wrote %s draft assets under %s", config.figure_id, out_dir)
