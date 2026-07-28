@@ -45,6 +45,7 @@ Main directories:
 - `metadata/predictions_info.tsv`: predictor registry
 - `pipelines/experiments/`: experiment-ingestion backend files and example configs
 - `pipelines/standardized_predictors/`: predictor pipelines
+- `manuscript_assets/`: final manuscript figure exports and compact supporting tables
 - `results/`: benchmark outputs
 
 The benchmark reads file paths from the two metadata TSVs. `data/` holds the real files. `results/`
@@ -273,13 +274,13 @@ experiments_tsv: metadata/mirna_experiment_info.tsv
 predictions_tsv: metadata/predictions_info.tsv
 
 experiments:
-  id: [GSE124411_OE_miR_150_5p_2, GSE129076_OE_miR_450a_5p_1]
+  id: [GSE169128_KO_miR_3662, GSE124411_OE_miR_150_5p_1]
 
 predictors:
   tool_id: [targetscan, mirdb_mirtarget, microt_cnn, mirbind2, miraw]
 
 evaluation:
-  fdr_threshold: null
+  fdr_threshold: 0.05
   effect_threshold: 1.0
   predictor_top_fraction: 0.10
   write_top_prediction_cdfs: true
@@ -298,6 +299,16 @@ Filter behavior:
 
 `benchmark.yaml` already includes other experiment and predictor columns as commented rows, so the
 normal workflow is just to edit or uncomment filters.
+
+## Manuscript Assets
+
+Manuscript figure scripts live under `scripts/`; see `scripts/README.md` for
+the exact commands. The repo tracks final manuscript-facing assets rather than
+all generated intermediates. For Figure 2, this means tracking the combined
+figure exports and compact TSVs that support the manuscript values. Individual
+panel image exports, large raw support tables such as gene-level conservation,
+downloaded resources, diagnostic outputs, and benchmark run folders are local
+generated artifacts and remain gitignored.
 
 ## Outputs
 

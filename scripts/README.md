@@ -48,7 +48,8 @@ manuscript_assets/tables/figure2F_utr_conservation_raw.tsv
 The table contains `gene_id` and `utr3_mean_conservation`, plus supporting
 transcript, scored-base, and 3'UTR-length columns. The main Figure 2 script
 consumes this precomputed table so normal figure regeneration does not need to
-re-read the multi-GB BigWig.
+re-read the multi-GB BigWig. This raw support table is generated locally and is
+not tracked in git.
 
 ## Generate Figure 2
 
@@ -60,7 +61,7 @@ uv run python scripts/figure2_coverage.py \
   --panel all
 ```
 
-This writes the individual panels and the combined six-panel figure to:
+This writes generated panel images and the combined six-panel figure to:
 
 ```text
 manuscript_assets/figure2/
@@ -97,11 +98,14 @@ manuscript_assets/tables/figure2C_positive_coverage.tsv
 manuscript_assets/tables/figure2D_background_coverage.tsv
 manuscript_assets/tables/figure2E_utr_length.tsv
 manuscript_assets/tables/figure2F_utr_conservation.tsv
-manuscript_assets/tables/figure2F_utr_conservation_raw.tsv
 manuscript_assets/tables/figure2_supplementary_coverage_table.tsv
-manuscript_assets/tables/figure2_gene_set_overlap.tsv
 manuscript_assets/tables/figure2_supplement_gene_set_overlap_mirna_coverage.tsv
 ```
+
+Only the combined Figure 2 image exports and compact manuscript-facing tables
+are tracked. Individual panel images, the raw conservation support table, and
+the verbose gene-set overlap support table are generated locally and ignored by
+git.
 
 The manuscript-focused supplement table
 `figure2_supplement_gene_set_overlap_mirna_coverage.tsv` reports predictor
