@@ -66,7 +66,7 @@ def _draw_heatmap(
     if work.empty:
         return
     rank_frame = _rank_frame(work, rank_cols=rank_cols, tool_ids=tool_ids)
-    max_abs_logfc = _nice_symmetric_limit(work["logFC"].to_numpy(dtype=float), floor=1.0)
+    logfc_color_limit = _nice_symmetric_limit(work["logFC"].to_numpy(dtype=float), floor=1.0)
     figure_height = _overview_heatmap_height(len(work))
     figure_width = max(10.5, 5.2 + len(tool_ids) * 1.0)
     fig, axes = plt.subplots(
@@ -88,7 +88,7 @@ def _draw_heatmap(
         work["logFC"].to_numpy().reshape(-1, 1),
         aspect="auto",
         cmap="coolwarm",
-        norm=TwoSlopeNorm(vmin=-max_abs_logfc, vcenter=0.0, vmax=max_abs_logfc),
+        norm=TwoSlopeNorm(vmin=-logfc_color_limit, vcenter=0.0, vmax=logfc_color_limit),
         interpolation="nearest",
     )
     axes[0].set_title("logFC", fontsize=11, fontweight="semibold")
@@ -127,7 +127,7 @@ def _draw_heatmap(
         mappable=logfc_image,
         anchor_ax=axes[0],
         label="observed logFC",
-        ticks=[-max_abs_logfc, 0.0, max_abs_logfc],
+        ticks=[-logfc_color_limit, 0.0, logfc_color_limit],
         height=0.014,
         pad=0.055,
     )

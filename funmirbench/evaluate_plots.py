@@ -628,7 +628,7 @@ def _plot_algorithms_vs_genes_heatmap(
         }
     )
 
-    max_abs_logfc = _nice_symmetric_limit(work["logFC"].to_numpy(dtype=float), floor=1.0)
+    logfc_color_limit = _nice_symmetric_limit(work["logFC"].to_numpy(dtype=float), floor=1.0)
     figure_height = max(5.6, min(12, 0.025 * len(work)))
     figure_width = max(10.5, 5.2 + len(tool_ids) * 1.0)
     fig, axes = plt.subplots(
@@ -657,7 +657,7 @@ def _plot_algorithms_vs_genes_heatmap(
 
     logfc_image = axes[1].imshow(
         work["logFC"].to_numpy().reshape(-1, 1), aspect="auto", cmap="coolwarm",
-        norm=TwoSlopeNorm(vmin=-max_abs_logfc, vcenter=0.0, vmax=max_abs_logfc),
+        norm=TwoSlopeNorm(vmin=-logfc_color_limit, vcenter=0.0, vmax=logfc_color_limit),
         interpolation="nearest",
     )
     axes[1].set_title("logFC", fontsize=11, fontweight="semibold")
@@ -707,7 +707,7 @@ def _plot_algorithms_vs_genes_heatmap(
         mappable=logfc_image,
         anchor_ax=axes[1],
         label="observed logFC",
-        ticks=[-max_abs_logfc, 0.0, max_abs_logfc],
+        ticks=[-logfc_color_limit, 0.0, logfc_color_limit],
         height=0.014,
         pad=0.055,
     )
@@ -752,7 +752,7 @@ def _plot_top_positive_heatmap(
             for tool_id, rank_col in zip(tool_ids, rank_cols)
         }
     )
-    max_abs_logfc = _nice_symmetric_limit(work["logFC"].to_numpy(dtype=float), floor=1.0)
+    logfc_color_limit = _nice_symmetric_limit(work["logFC"].to_numpy(dtype=float), floor=1.0)
     figure_height = max(4.2, min(9.0, 0.22 * len(work)))
     figure_width = max(10.5, 5.2 + len(tool_ids) * 1.0)
     fig, axes = plt.subplots(
@@ -772,7 +772,7 @@ def _plot_top_positive_heatmap(
         work["logFC"].to_numpy().reshape(-1, 1),
         aspect="auto",
         cmap="coolwarm",
-        norm=TwoSlopeNorm(vmin=-max_abs_logfc, vcenter=0.0, vmax=max_abs_logfc),
+        norm=TwoSlopeNorm(vmin=-logfc_color_limit, vcenter=0.0, vmax=logfc_color_limit),
         interpolation="nearest",
     )
     axes[0].set_title("logFC", fontsize=11, fontweight="semibold")
@@ -817,7 +817,7 @@ def _plot_top_positive_heatmap(
         mappable=logfc_image,
         anchor_ax=axes[0],
         label="observed logFC",
-        ticks=[-max_abs_logfc, 0.0, max_abs_logfc],
+        ticks=[-logfc_color_limit, 0.0, logfc_color_limit],
         height=0.016,
         pad=0.06,
     )
