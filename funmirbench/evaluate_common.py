@@ -329,7 +329,6 @@ def _annotate_ground_truth(df, *, perturbation=None):
     else:
         out["FDR"] = np.nan
         out["neglog10_FDR"] = np.nan
-    out["abs_logFC"] = out["logFC"].abs()
     out["resolved_perturbation"] = _resolve_perturbation_series(out, perturbation=perturbation)
     out["expected_effect"] = _expected_effect_from_logfc(
         out["logFC"],
