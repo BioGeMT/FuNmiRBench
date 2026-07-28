@@ -70,8 +70,6 @@ def step1_download_targetscan_files(
     *,
     force: bool = False,
 ) -> Dict[str, pathlib.Path]:
-    logger.info("\n=== STEP 1/7: Download + unzip TargetScan inputs ===")
-
     data_dir = pathlib.Path(data_dir).resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
     resources_dir = pathlib.Path(resources_dir).resolve()
@@ -120,8 +118,6 @@ def step2_build_representative_transcript_index(
     species_id: str = "9606",
     report_top_n: int = 6,
 ) -> Dict[str, Any]:
-    logger.info("\n=== STEP 2/7: Build representative-transcript index from Gene_info.txt ===")
-
     rep_txs_by_gene_id: Dict[str, List[Tuple[str, int, str]]] = {}
     gene_id_by_tx: Dict[str, str] = {}
     targetscan_gene_id_by_tx: Dict[str, str] = {}
@@ -224,8 +220,6 @@ def step3_download_ensembl115_gtf(
     *,
     force: bool = False,
 ) -> pathlib.Path:
-    logger.info("\n=== STEP 3/7: Download Ensembl v115 GTF (GRCh38) ===")
-
     url = "https://ftp.ensembl.org/pub/release-115/gtf/homo_sapiens/Homo_sapiens.GRCh38.115.gtf.gz"
     dest = pathlib.Path(destination).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -246,8 +240,6 @@ def step4_build_and_cache_ensembl115_tables(
     cache_dir: pathlib.Path,
     force_rebuild: bool = False,
 ) -> Dict[str, Dict[str, str]]:
-    logger.info("\n=== STEP 4/7: Build Ensembl v115 mapping tables + cache to TSVs ===")
-
     cache_dir = pathlib.Path(cache_dir).resolve()
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -335,8 +327,6 @@ def step5_qc_targetscan_vs_ensembl_transcripts(
     *,
     report_n: int = 10,
 ) -> None:
-    logger.info("\n=== STEP 5/7: QC TargetScan representative transcript overlap with Ensembl v115 ===")
-
     gene_id_by_tx = tx_index["gene_id_by_tx"]
     targetscan_gene_id_by_tx = tx_index["targetscan_gene_id_by_tx"]
     rep_txs_by_gene_id = tx_index["rep_txs_by_gene_id"]
@@ -407,8 +397,6 @@ def step6_download_mirbase_mature(
     *,
     force: bool = False,
 ) -> pathlib.Path:
-    logger.info("\n=== STEP 6/7: Download miRBase mature.fa (pinned release %s) ===", MIRBASE_RELEASE)
-
     dest = pathlib.Path(destination).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and not force:
@@ -450,8 +438,6 @@ def step_build_human_mirna_annotations(
     mirbase_acc2name: Dict[str, str],
     species_id: str = "9606",
 ) -> Dict[str, MirnaEntry]:
-    logger.info("\n=== STEP 7/7 Build human mature miRNA annotation lookup (validated against miRBase v22.1) ===")
-
     annotations: Dict[str, MirnaEntry] = {}
 
     n_total = 0
@@ -531,8 +517,6 @@ def step_write_standardized_predictions(
     output_path: pathlib.Path,
     species_id: str = "9606",
 ) -> None:
-    logger.info("\n=== Write standardized predictions (%s) ===", PREDICTOR_NAME)
-
     rep_txs_by_gene_id = tx_index["rep_txs_by_gene_id"]
     targetscan_gene_id_by_tx = tx_index["targetscan_gene_id_by_tx"]
     tx_to_gene_ens = ensembl_tables["tx_to_gene"]
@@ -707,17 +691,16 @@ def step_write_standardized_predictions(
             )
 
     logger.info(
-        "%s -> wrote %d unique gene-miRNA rows from %d kept transcript-level rows; output=%s",
+        "%s -> retained %d unique gene-miRNA rows from %d transcript-level rows",
         PREDICTOR_NAME,
         len(unique_rows),
         stats["rows_after_filters"],
-        display_path(output_path),
     )
+    logger.info("Output written to: %s", display_path(output_path))
+    logger.info("Rows written: %d", len(unique_rows))
 
 
 def compute_final_statistics(predictions_path: pathlib.Path) -> None:
-    logger.info("\n=== FINAL STATISTICS ===")
-
     predictions_path = pathlib.Path(predictions_path)
     genes = set()
     mirs = set()

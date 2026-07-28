@@ -33,7 +33,7 @@ from utils import (  # noqa: E402
 )
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("pipeline")
 
 
 def parse_args(root: Path) -> argparse.Namespace:
@@ -57,7 +57,7 @@ def main() -> None:
     args.log_file = resolve_cli_path(args.log_file, root)
 
     configure_file_logging(args.log_file, args.log_level)
-    logger.info("Logging to file: %s", display_path(args.log_file))
+    logger.info("Starting TargetScan standardization pipeline")
 
     total_steps = 8
 
@@ -115,6 +115,7 @@ def main() -> None:
     )
 
     compute_final_statistics(args.standardized_output_file)
+    logger.info("Relative output path: %s", display_path(args.standardized_output_file))
 
 
 if __name__ == "__main__":
