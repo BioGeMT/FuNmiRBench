@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
-from textwrap import shorten
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,6 +30,7 @@ TITLE_SIZE = 11
 LABEL_SIZE = 9
 TICK_SIZE = 8
 PANEL_LABEL_SIZE = 12
+TOOL_MARKERS = ("o", "s", "^", "D", "P", "X", "v", "<", ">", "*")
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,21 +56,13 @@ def parse_args() -> argparse.Namespace:
         help="Output directory for supplementary figures.",
     )
     parser.add_argument("--stem", default=DEFAULT_STEM, help="Output filename stem.")
-    parser.add_argument("--columns", type=int, default=3, help="Panel columns. Default: 3.")
-    parser.add_argument(
-        "--plots-per-part",
-        type=int,
-        default=15,
-        help="Number of dataset plots per recovery part. Default: 15.",
-    )
     parser.add_argument("--dpi", type=int, default=300, help="Raster output resolution.")
     parser.add_argument("--log-level", default="INFO", help="Logging level. Default: INFO.")
     return parser.parse_args()
 
 
-def read_figure6_tables(tables_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def read_figure6_tables(tables_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     paths = {
-        "recovery": tables_dir / "figure6_fps_recovery_by_budget.tsv",
         "precision": tables_dir / "figure6_fps_precision_at_recall.tsv",
         "best": tables_dir / "figure6_fps_best_precision_at_recall.tsv",
     }
@@ -81,7 +73,6 @@ def read_figure6_tables(tables_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, p
             f"Missing: {missing}"
         )
     return (
-        pd.read_csv(paths["recovery"], sep="\t"),
         pd.read_csv(paths["precision"], sep="\t"),
         pd.read_csv(paths["best"], sep="\t"),
     )
@@ -102,12 +93,24 @@ def ordered_tools(metadata_path: Path, frame: pd.DataFrame) -> tuple[tuple[str, 
     return tool_ids, labels, evaluation_tool_colors(tool_ids)
 
 
+def tool_markers(tool_ids: tuple[str, ...]) -> dict[str, str]:
+    return {
+        tool_id: TOOL_MARKERS[index % len(TOOL_MARKERS)]
+        for index, tool_id in enumerate(tool_ids)
+    }
+
+
 def save_figure(fig: plt.Figure, out_dir: Path, stem: str, *, dpi: int) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     for suffix in DEFAULT_FORMATS:
         path = out_dir / f"{stem}.{suffix}"
         fig.savefig(path, dpi=dpi, bbox_inches="tight", facecolor="white")
+        if suffix == "svg":
+            svg_text = "\n".join(
+                line.rstrip() for line in path.read_text(encoding="utf-8").splitlines()
+            )
+            path.write_text(f"{svg_text}\n", encoding="utf-8")
         paths.append(path)
     plt.close(fig)
     return paths
@@ -133,111 +136,6 @@ def style_axis(ax: plt.Axes) -> None:
     ax.tick_params(labelsize=TICK_SIZE)
 
 
-def short_dataset_label(dataset_id: str) -> str:
-    return shorten(dataset_id.replace("_", " "), width=40, placeholder="...")
-
-
-def write_recovery_parts(
-    *,
-    recovery: pd.DataFrame,
-    tool_ids: tuple[str, ...],
-    labels: dict[str, str],
-    colors: dict[str, str],
-    best: pd.DataFrame,
-    out_dir: Path,
-    tables_dir: Path,
-    stem: str,
-    columns: int,
-    plots_per_part: int,
-    dpi: int,
-) -> tuple[list[Path], Path]:
-    ordered_datasets = best.sort_values(
-        ["precision", "false_positives_per_true_positive", "dataset_id"],
-        ascending=[False, True, True],
-        kind="mergesort",
-    )["dataset_id"].astype(str).tolist()
-    remaining = sorted(set(recovery["dataset_id"].astype(str)).difference(ordered_datasets))
-    dataset_ids = ordered_datasets + remaining
-
-    columns = max(1, int(columns))
-    plots_per_part = max(1, int(plots_per_part))
-    part_count = int(np.ceil(len(dataset_ids) / plots_per_part))
-    outputs: list[Path] = []
-    manifest_rows = []
-    budgets = sorted(int(value) for value in recovery["budget"].dropna().unique())
-    panel_letters = [chr(ord("A") + index) for index in range(26)]
-
-    for part_index in range(part_count):
-        part_datasets = dataset_ids[
-            part_index * plots_per_part : min((part_index + 1) * plots_per_part, len(dataset_ids))
-        ]
-        rows = int(np.ceil(len(part_datasets) / columns))
-        fig, axes = plt.subplots(
-            rows,
-            columns,
-            figsize=(columns * 4.6, rows * 3.25),
-            squeeze=False,
-        )
-        for panel_index, dataset_id in enumerate(part_datasets):
-            ax = axes[panel_index // columns][panel_index % columns]
-            data = recovery[recovery["dataset_id"].astype(str) == dataset_id]
-            for tool_id in tool_ids:
-                tool_data = data[data["tool_id"].astype(str) == tool_id].sort_values("budget")
-                if tool_data.empty:
-                    continue
-                ax.plot(
-                    tool_data["budget"],
-                    tool_data["recall"],
-                    marker="o",
-                    linewidth=1.4,
-                    markersize=3.6,
-                    color=colors[tool_id],
-                    label=labels[tool_id],
-                )
-            ax.set_xscale("log")
-            ax.set_xticks(budgets)
-            ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _pos: f"{int(value):,}"))
-            ax.set_ylim(0, 1.02)
-            ax.set_title(short_dataset_label(dataset_id), fontsize=TITLE_SIZE, fontweight="bold")
-            if panel_index // columns == rows - 1:
-                ax.set_xlabel("Prediction budget", fontsize=LABEL_SIZE)
-            if panel_index % columns == 0:
-                ax.set_ylabel("Positive-pair recall", fontsize=LABEL_SIZE)
-            style_axis(ax)
-            if panel_index < len(panel_letters):
-                add_panel_label(ax, panel_letters[panel_index])
-            manifest_rows.append(
-                {
-                    "part": part_index + 1,
-                    "panel_index": panel_index + 1,
-                    "global_panel_index": part_index * plots_per_part + panel_index + 1,
-                    "dataset_id": dataset_id,
-                }
-            )
-
-        for empty_index in range(len(part_datasets), rows * columns):
-            axes[empty_index // columns][empty_index % columns].axis("off")
-
-        handles, legend_labels = axes[0][0].get_legend_handles_labels()
-        fig.legend(
-            handles,
-            legend_labels,
-            loc="upper center",
-            bbox_to_anchor=(0.5, 0.985),
-            ncol=len(tool_ids),
-            frameon=False,
-            fontsize=LABEL_SIZE,
-        )
-        fig.subplots_adjust(left=0.06, right=0.99, top=0.90, bottom=0.07, wspace=0.24, hspace=0.42)
-        part_stem = f"{stem}_recovery_part{part_index + 1}"
-        outputs.extend(save_figure(fig, out_dir, part_stem, dpi=dpi))
-
-    tables_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = tables_dir / f"{stem}_recovery_manifest.tsv"
-    pd.DataFrame(manifest_rows).to_csv(manifest_path, sep="\t", index=False)
-    return outputs, manifest_path
-
-
 def write_precision_burden_summary(
     *,
     precision: pd.DataFrame,
@@ -245,6 +143,7 @@ def write_precision_burden_summary(
     tool_ids: tuple[str, ...],
     labels: dict[str, str],
     colors: dict[str, str],
+    markers: dict[str, str],
     out_dir: Path,
     stem: str,
     dpi: int,
@@ -258,8 +157,18 @@ def write_precision_burden_summary(
     offsets = np.linspace(-0.28, 0.28, len(tool_ids)) if len(tool_ids) > 1 else np.array([0.0])
     recall_target = float(precision["recall_target"].dropna().iloc[0])
 
-    fig, axes = plt.subplots(1, 3, figsize=(14.0, 4.3), gridspec_kw={"width_ratios": [1.5, 1.5, 0.9]})
-    ax_precision, ax_burden, ax_counts = axes
+    fig = plt.figure(figsize=(13.8, 7.2))
+    grid = fig.add_gridspec(
+        2,
+        2,
+        width_ratios=(4.7, 0.75),
+        height_ratios=(1, 1),
+        wspace=0.02,
+        hspace=0.42,
+    )
+    ax_precision = fig.add_subplot(grid[0, 0])
+    ax_burden = fig.add_subplot(grid[1, 0])
+    ax_legend = fig.add_subplot(grid[:, 1])
     for offset, tool_id in zip(offsets, tool_ids, strict=False):
         data = precision[precision["tool_id"].astype(str) == tool_id].copy()
         data = data[data["dataset_id"].astype(str).isin(x_base)]
@@ -267,19 +176,21 @@ def write_precision_burden_summary(
         ax_precision.scatter(
             x,
             data["precision"],
-            s=24,
+            s=34,
             color=colors[tool_id],
-            edgecolor="white",
-            linewidth=0.35,
+            marker=markers[tool_id],
+            edgecolor="#1F2937",
+            linewidth=0.6,
             label=labels[tool_id],
         )
         ax_burden.scatter(
             x,
             data["false_positives_per_true_positive"],
-            s=24,
+            s=34,
             color=colors[tool_id],
-            edgecolor="white",
-            linewidth=0.35,
+            marker=markers[tool_id],
+            edgecolor="#1F2937",
+            linewidth=0.6,
         )
 
     ax_precision.set_title(f"Precision at {recall_target:.0%} recall", fontsize=TITLE_SIZE, fontweight="bold")
@@ -304,73 +215,45 @@ def write_precision_burden_summary(
     style_axis(ax_burden)
     add_panel_label(ax_burden, "B")
 
-    count_data = (
-        best["tool_id"]
-        .astype(str)
-        .value_counts()
-        .reindex(tool_ids, fill_value=0)
-        .rename_axis("tool_id")
-        .reset_index(name="experiments")
-    )
-    bar_labels = [labels[tool_id] for tool_id in count_data["tool_id"]]
-    bar_colors = [colors[tool_id] for tool_id in count_data["tool_id"]]
-    y = np.arange(len(count_data))
-    ax_counts.barh(y, count_data["experiments"], color=bar_colors, alpha=0.75)
-    ax_counts.set_yticks(y, bar_labels)
-    ax_counts.invert_yaxis()
-    ax_counts.set_xlabel("Experiments", fontsize=LABEL_SIZE)
-    ax_counts.set_title("Best predictor", fontsize=TITLE_SIZE, fontweight="bold")
-    for value, y_pos in zip(count_data["experiments"], y, strict=False):
-        ax_counts.text(value + 0.25, y_pos, str(int(value)), va="center", fontsize=TICK_SIZE)
-    ax_counts.set_xlim(0, max(1, int(count_data["experiments"].max())) + 2)
-    style_axis(ax_counts)
-    add_panel_label(ax_counts, "C")
-
     handles, legend_labels = ax_precision.get_legend_handles_labels()
-    fig.legend(
+    ax_legend.axis("off")
+    legend = ax_legend.legend(
         handles,
         legend_labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.98),
-        ncol=len(tool_ids),
+        loc="center left",
+        bbox_to_anchor=(0.0, 0.5),
+        title="Predictor",
+        title_fontsize=TITLE_SIZE,
         frameon=False,
-        fontsize=LABEL_SIZE,
+        fontsize=LABEL_SIZE + 1,
+        handlelength=2.4,
+        labelspacing=1.1,
     )
-    fig.subplots_adjust(left=0.065, right=0.985, top=0.78, bottom=0.16, wspace=0.36)
+    legend.get_title().set_fontweight("bold")
+    fig.subplots_adjust(left=0.06, right=0.985, top=0.93, bottom=0.09)
     return save_figure(fig, out_dir, f"{stem}_precision_burden", dpi=dpi)
 
 
 def main() -> int:
     args = parse_args()
     setup_logging(args.log_level)
-    recovery, precision, best = read_figure6_tables(args.tables_dir)
-    tool_ids, labels, colors = ordered_tools(args.metadata, recovery)
+    precision, best = read_figure6_tables(args.tables_dir)
+    tool_ids, labels, colors = ordered_tools(args.metadata, precision)
+    markers = tool_markers(tool_ids)
     logger.info("Predictors: %s", ", ".join(labels[tool_id] for tool_id in tool_ids))
 
-    recovery_paths, manifest_path = write_recovery_parts(
-        recovery=recovery,
-        tool_ids=tool_ids,
-        labels=labels,
-        colors=colors,
-        best=best,
-        out_dir=args.out_dir,
-        tables_dir=args.tables_dir,
-        stem=args.stem,
-        columns=args.columns,
-        plots_per_part=args.plots_per_part,
-        dpi=args.dpi,
-    )
     precision_paths = write_precision_burden_summary(
         precision=precision,
         best=best,
         tool_ids=tool_ids,
         labels=labels,
         colors=colors,
+        markers=markers,
         out_dir=args.out_dir,
         stem=args.stem,
         dpi=args.dpi,
     )
-    for path in [*recovery_paths, *precision_paths, manifest_path]:
+    for path in precision_paths:
         logger.info("Wrote %s", path)
     return 0
 

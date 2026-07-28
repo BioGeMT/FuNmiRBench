@@ -47,6 +47,7 @@ LEGEND_TITLE_SIZE = 12
 PANEL_LABEL_SIZE = 15
 PANEL_FIGSIZE = (7.2, 4.8)
 OUTPUT_PREFIX = "figure6_fps_recovery"
+TOOL_MARKERS = ("o", "s", "^", "D", "P", "X", "v", "<", ">", "*")
 
 
 @dataclass(frozen=True)
@@ -121,6 +122,14 @@ def tool_label(inputs: PerformanceInputs, tool_id: str) -> str:
 
 def tool_color(inputs: PerformanceInputs, tool_id: str) -> str:
     return inputs.tool_colors[tool_id]
+
+
+def tool_marker(inputs: PerformanceInputs, tool_id: str) -> str:
+    marker_by_tool = {
+        current_tool_id: TOOL_MARKERS[index % len(TOOL_MARKERS)]
+        for index, current_tool_id in enumerate(inputs.tool_ids)
+    }
+    return marker_by_tool[tool_id]
 
 
 def sorted_by_rank(frame: pd.DataFrame, scores: pd.Series) -> pd.DataFrame:
@@ -300,10 +309,13 @@ def panel_a(ax: plt.Axes, inputs: PerformanceInputs, recovery: pd.DataFrame) -> 
         ax.plot(
             data["budget"],
             data["mean_recall"],
-            marker="o",
+            marker=tool_marker(inputs, tool_id),
             linewidth=2.0,
             linestyle="-",
             color=tool_color(inputs, tool_id),
+            markeredgecolor="#1F2937",
+            markeredgewidth=0.7,
+            markersize=6,
             label=tool_label(inputs, tool_id),
         )
     ax.set_xscale("log")
@@ -328,8 +340,21 @@ def ordered_best(best: pd.DataFrame) -> pd.DataFrame:
 def panel_b(ax: plt.Axes, inputs: PerformanceInputs, best: pd.DataFrame, recall_target: float) -> None:
     ordered = ordered_best(best)
     x = np.arange(len(ordered))
-    colors = [tool_color(inputs, tool_id) for tool_id in ordered["tool_id"]]
-    ax.scatter(x, ordered["precision"], s=42, color=colors, edgecolor="white", linewidth=0.45)
+    for tool_id in inputs.tool_ids:
+        data = ordered[ordered["tool_id"] == tool_id]
+        if data.empty:
+            continue
+        indices = data.index.to_numpy()
+        ax.scatter(
+            x[indices],
+            data["precision"],
+            s=70,
+            color=tool_color(inputs, tool_id),
+            marker=tool_marker(inputs, tool_id),
+            edgecolor="#1F2937",
+            linewidth=0.75,
+            label=tool_label(inputs, tool_id),
+        )
     ax.set_ylim(0, max(0.05, float(ordered["precision"].max()) * 1.18))
     ax.set_xticks([])
     ax.set_xlabel("Perturbation experiments", fontsize=LABEL_SIZE)
@@ -339,39 +364,19 @@ def panel_b(ax: plt.Axes, inputs: PerformanceInputs, best: pd.DataFrame, recall_
     ax.set_title("Best precision at 50% recall", fontsize=TITLE_SIZE, fontweight="bold")
 
 
-def panel_c(ax: plt.Axes, inputs: PerformanceInputs, best: pd.DataFrame, recall_target: float) -> None:
-    ordered = ordered_best(best)
-    x = np.arange(len(ordered))
-    values = ordered["false_positives_per_true_positive"].astype(float)
-    colors = [tool_color(inputs, tool_id) for tool_id in ordered["tool_id"]]
-    ax.scatter(x, values, s=42, color=colors, edgecolor="white", linewidth=0.45)
-    ax.set_yscale("log")
-    ax.yaxis.set_major_locator(LogLocator(base=10, subs=(1.0,)))
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _pos: f"{value:,.0f}"))
-    ax.set_xticks([])
-    ax.set_xlabel("Perturbation experiments", fontsize=LABEL_SIZE)
-    ax.set_ylabel("False positives per true positive", fontsize=LABEL_SIZE)
-    ax.grid(axis="y", alpha=0.22, linewidth=0.8)
-    ax.tick_params(labelsize=TICK_SIZE)
-    ax.set_title(
-        f"False positives per true positive at {recall_target:.0%} recall",
-        fontsize=TITLE_SIZE,
-        fontweight="bold",
-    )
-
-
 def legend_handles(inputs: PerformanceInputs) -> list[plt.Line2D]:
     return [
         plt.Line2D(
             [0],
             [0],
-            marker="o",
+            marker=tool_marker(inputs, tool_id),
             linestyle="-",
             color=tool_color(inputs, tool_id),
             markerfacecolor=tool_color(inputs, tool_id),
-            markeredgecolor="white",
+            markeredgecolor="#1F2937",
+            markeredgewidth=0.75,
             linewidth=2.0,
-            markersize=6,
+            markersize=7,
             label=tool_label(inputs, tool_id),
         )
         for tool_id in inputs.tool_ids
@@ -382,20 +387,17 @@ def panel_legend(ax: plt.Axes, inputs: PerformanceInputs) -> None:
     ax.axis("off")
     legend = ax.legend(
         handles=legend_handles(inputs),
-        frameon=True,
+        frameon=False,
         fontsize=LEGEND_SIZE,
         loc="center",
         bbox_to_anchor=(0.5, 0.5),
         title="Predictor",
         title_fontsize=LEGEND_TITLE_SIZE,
-        handlelength=3.0,
-        labelspacing=1.15,
+        handlelength=2.4,
+        labelspacing=0.9,
         borderpad=1.0,
     )
     legend.get_title().set_fontweight("bold")
-    legend.get_frame().set_edgecolor("#D8DEE9")
-    legend.get_frame().set_linewidth(0.8)
-    legend.get_frame().set_facecolor("white")
 
 
 def add_panel_label(ax: plt.Axes, letter: str) -> None:
@@ -449,17 +451,6 @@ def write_panel_figures(
     )
 
     fig, ax = plt.subplots(figsize=PANEL_FIGSIZE)
-    panel_c(ax, inputs, best, config.recall_target)
-    finish_data_panel(ax, "C")
-    fig.tight_layout()
-    panel_outputs["C"] = save_figure(
-        fig,
-        config.out_dir,
-        f"{OUTPUT_PREFIX}_panel_c_validation_burden",
-        dpi=config.dpi,
-    )
-
-    fig, ax = plt.subplots(figsize=PANEL_FIGSIZE)
     panel_legend(ax, inputs)
     fig.tight_layout()
     panel_outputs["D"] = save_figure(
@@ -477,7 +468,7 @@ def write_combined_png(
     out_dir: Path,
     dpi: int,
 ) -> Path:
-    required = ("A", "B", "C", "D")
+    required = ("A", "B", "D")
     missing = [panel for panel in required if panel not in panel_outputs or "png" not in panel_outputs[panel]]
     if missing:
         raise ValueError(f"Missing PNG panel outputs: {missing}")
@@ -486,47 +477,41 @@ def write_combined_png(
         panel: trim_white_border(plt.imread(panel_outputs[panel]["png"]))
         for panel in required
     }
-    row_pairs = (("A", "B"), ("C", "D"))
-    column_pairs = (("A", "C"), ("B", "D"))
-    row_heights = [
-        max(panel_images[panel].shape[0] for panel in row_pair)
-        for row_pair in row_pairs
-    ]
-    column_widths = [
-        max(panel_images[panel].shape[1] for panel in column_pair)
-        for column_pair in column_pairs
-    ]
-    cells = {}
-    for row_index, row_pair in enumerate(row_pairs):
-        for column_index, panel in enumerate(row_pair):
-            cells[panel] = pad_to_shape(
-                panel_images[panel],
-                (row_heights[row_index], column_widths[column_index]),
-                vertical="center" if panel == "D" else "top",
-            )
-    gap_x = 70
+    left_width = max(panel_images[panel].shape[1] for panel in ("A", "B"))
     gap_y = 26
-    channels = next(iter(cells.values())).shape[2]
-    dtype = next(iter(cells.values())).dtype
-    rows = []
-    for left_panel, right_panel in row_pairs:
-        rows.append(
-            np.hstack(
-                [
-                    cells[left_panel],
-                    np.ones((cells[left_panel].shape[0], gap_x, channels), dtype=dtype),
-                    cells[right_panel],
-                ]
-            )
+    gap_x = 80
+    left_rows = [
+        pad_to_shape(
+            panel_images[panel],
+            (panel_images[panel].shape[0], left_width),
+            vertical="center",
+            horizontal="center",
         )
-    combined = np.vstack(
+        for panel in ("A", "B")
+    ]
+    channels = left_rows[0].shape[2]
+    dtype = left_rows[0].dtype
+    left_column = np.vstack(
         [
-            rows[0],
-            np.ones((gap_y, rows[0].shape[1], channels), dtype=dtype),
-            rows[1],
+            left_rows[0],
+            np.ones((gap_y, left_width, channels), dtype=dtype),
+            left_rows[1],
         ]
     )
-    fig_width = 14.0
+    legend_column = pad_to_shape(
+        panel_images["D"],
+        (left_column.shape[0], panel_images["D"].shape[1]),
+        vertical="center",
+        horizontal="center",
+    )
+    combined = np.hstack(
+        [
+            left_column,
+            np.ones((left_column.shape[0], gap_x, channels), dtype=dtype),
+            legend_column,
+        ]
+    )
+    fig_width = 14.5
     fig_height = fig_width * combined.shape[0] / combined.shape[1]
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
     ax.imshow(combined)
@@ -544,26 +529,19 @@ def write_combined_svg(
     *,
     out_dir: Path,
 ) -> Path:
-    required = ("A", "B", "C", "D")
+    required = ("A", "B", "D")
     missing = [panel for panel in required if panel not in panel_outputs or "svg" not in panel_outputs[panel]]
     if missing:
         raise ValueError(f"Missing SVG panel outputs: {missing}")
 
     ET.register_namespace("", SVG_NS)
-    row_pairs = (("A", "B"), ("C", "D"))
     panel_svgs = {panel: parse_svg_viewbox(panel_outputs[panel]["svg"]) for panel in required}
-    column_widths = [
-        max(panel_svgs[panel][0] for panel in column_pair)
-        for column_pair in (("A", "C"), ("B", "D"))
-    ]
-    row_heights = [
-        max(panel_svgs[panel][1] for panel in row_pair)
-        for row_pair in row_pairs
-    ]
-    gap_x = 18.0
+    left_width = max(panel_svgs[panel][0] for panel in ("A", "B"))
     gap_y = 12.0
-    combined_width = sum(column_widths) + gap_x
-    combined_height = sum(row_heights) + gap_y
+    gap_x = 22.0
+    left_height = panel_svgs["A"][1] + gap_y + panel_svgs["B"][1]
+    combined_width = left_width + gap_x + panel_svgs["D"][0]
+    combined_height = max(left_height, panel_svgs["D"][1])
     root = ET.Element(
         f"{{{SVG_NS}}}svg",
         {
@@ -584,28 +562,32 @@ def write_combined_svg(
             "fill": "#ffffff",
         },
     )
-    for row_index, (left_panel, right_panel) in enumerate(row_pairs):
-        cell_y = sum(row_heights[:row_index]) + gap_y * row_index
-        for column_index, panel in enumerate((left_panel, right_panel)):
-            panel_width, panel_height, panel_root = panel_svgs[panel]
-            cell_x = sum(column_widths[:column_index]) + gap_x * column_index
-            x = cell_x + (column_widths[column_index] - panel_width) / 2
-            y = cell_y
-            if panel == "D":
-                y = cell_y + (row_heights[row_index] - panel_height) / 2
-            nested = ET.SubElement(
-                root,
-                f"{{{SVG_NS}}}svg",
-                {
-                    "x": f"{x:g}",
-                    "y": f"{y:g}",
-                    "width": f"{panel_width:g}",
-                    "height": f"{panel_height:g}",
-                    "viewBox": panel_root.attrib["viewBox"],
-                },
-            )
-            for child in list(panel_root):
-                nested.append(child)
+    placements = {}
+    y_offset = (combined_height - left_height) / 2
+    for panel in ("A", "B"):
+        panel_width, panel_height, _panel_root = panel_svgs[panel]
+        placements[panel] = ((left_width - panel_width) / 2, y_offset)
+        y_offset += panel_height + gap_y
+    placements["D"] = (
+        left_width + gap_x,
+        (combined_height - panel_svgs["D"][1]) / 2,
+    )
+    for panel in required:
+        panel_width, panel_height, panel_root = panel_svgs[panel]
+        x, y = placements[panel]
+        nested = ET.SubElement(
+            root,
+            f"{{{SVG_NS}}}svg",
+            {
+                "x": f"{x:g}",
+                "y": f"{y:g}",
+                "width": f"{panel_width:g}",
+                "height": f"{panel_height:g}",
+                "viewBox": panel_root.attrib["viewBox"],
+            },
+        )
+        for child in list(panel_root):
+            nested.append(child)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     svg_path = out_dir / f"{OUTPUT_PREFIX}_combined.svg"
