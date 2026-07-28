@@ -29,6 +29,6 @@
 2026-07-27 17:37:03,458 INFO pipeline: Step 9/9: Build, validate, and write standardized output table
 2026-07-27 17:37:11,369 INFO utils: Drop final Ensembl_ID-miRNA_ID pairs with conflicting scores after NCBI/RefSeq-to-gene mapping: 7804461 -> 7799023 rows
 2026-07-27 17:37:13,648 INFO utils: Drop duplicate final Ensembl_ID-miRNA_ID pairs with identical scores after NCBI/RefSeq-to-gene mapping: 7799023 -> 7795525 rows
-2026-07-27 17:37:27,314 INFO pipeline: Output written to: /home/steph/projects/testing_funmirbench/FuNmiRBench/data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv
+2026-07-27 17:37:27,314 INFO pipeline: Output written to: data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv
 2026-07-27 17:37:27,315 INFO pipeline: Rows written: 7795525
 2026-07-27 17:37:27,315 INFO pipeline: Relative output path: data/predictions/mirdb_mirtarget/mirdb_mirtarget_standardized.tsv

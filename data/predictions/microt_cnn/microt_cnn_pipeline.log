@@ -17,6 +17,6 @@
 2026-07-27 17:04:32,652 INFO utils: Drop prediction rows with non-numeric scores: 48281464 -> 48281464 rows
 2026-07-27 17:05:06,643 INFO utils: Collapse transcript rows to one row per Ensembl gene-miRNA pair: 48281464 -> 48281464 rows
 2026-07-27 17:05:06,948 INFO pipeline: Step 7/7: Validate and write standardized output table
-2026-07-27 17:06:41,085 INFO pipeline: Output written to: /home/steph/projects/testing_funmirbench/FuNmiRBench/data/predictions/microt_cnn/microt_cnn_standardized.tsv
+2026-07-27 17:06:41,085 INFO pipeline: Output written to: data/predictions/microt_cnn/microt_cnn_standardized.tsv
 2026-07-27 17:06:41,085 INFO pipeline: Rows written: 48281464
 2026-07-27 17:06:41,085 INFO pipeline: Relative output path: data/predictions/microt_cnn/microt_cnn_standardized.tsv

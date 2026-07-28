@@ -1,4 +1,4 @@
-2026-07-27 17:38:22,664 INFO __main__: Logging to file: /home/steph/projects/testing_funmirbench/FuNmiRBench/data/predictions/targetscan/targetscan_pipeline.log
+2026-07-27 17:38:22,664 INFO __main__: Logging to file: data/predictions/targetscan/targetscan_pipeline.log
 2026-07-27 17:38:22,664 INFO __main__: Step 1/8: Download and unzip TargetScan inputs
 2026-07-27 17:38:22,664 INFO utils: 
 === STEP 1/7: Download + unzip TargetScan inputs ===
@@ -11,8 +11,8 @@
 2026-07-27 17:39:05,921 INFO utils: Downloading https://www.targetscan.org/vert_80/vert_80_data_download/Gene_info.txt.zip
 2026-07-27 17:39:06,836 INFO utils: Downloaded Gene_info.txt.zip
 2026-07-27 17:39:06,857 INFO utils: Unzipped Gene_info.txt.zip
-2026-07-27 17:39:06,857 INFO utils: ✔ TargetScan prediction data ready in /home/steph/projects/testing_funmirbench/FuNmiRBench/pipelines/standardized_predictors/targetscan/data
-2026-07-27 17:39:06,857 INFO utils: ✔ TargetScan supporting resources ready in /home/steph/projects/testing_funmirbench/FuNmiRBench/pipelines/standardized_predictors/targetscan/resources
+2026-07-27 17:39:06,857 INFO utils: ✔ TargetScan prediction data ready in pipelines/standardized_predictors/targetscan/data
+2026-07-27 17:39:06,857 INFO utils: ✔ TargetScan supporting resources ready in pipelines/standardized_predictors/targetscan/resources
 2026-07-27 17:39:06,857 INFO __main__: Step 2/8: Build representative-transcript index
 2026-07-27 17:39:06,857 INFO utils: 
 === STEP 2/7: Build representative-transcript index from Gene_info.txt ===
@@ -32,8 +32,8 @@
 === STEP 4/7: Build Ensembl v115 mapping tables + cache to TSVs ===
 2026-07-27 17:39:19,376 INFO utils: Ensembl GTF parsed: lines=7758731 | transcript_features=509650 | tx_mapped=509650 | genes_named=43048
 2026-07-27 17:39:22,802 INFO utils: Wrote cached Ensembl tables:
-2026-07-27 17:39:22,802 INFO utils:   - /home/steph/projects/testing_funmirbench/FuNmiRBench/pipelines/standardized_predictors/targetscan/resources/ensembl115_tx2gene.tsv.gz
-2026-07-27 17:39:22,802 INFO utils:   - /home/steph/projects/testing_funmirbench/FuNmiRBench/pipelines/standardized_predictors/targetscan/resources/ensembl115_gene2name.tsv.gz
+2026-07-27 17:39:22,802 INFO utils:   - pipelines/standardized_predictors/targetscan/resources/ensembl115_tx2gene.tsv.gz
+2026-07-27 17:39:22,802 INFO utils:   - pipelines/standardized_predictors/targetscan/resources/ensembl115_gene2name.tsv.gz
 2026-07-27 17:39:22,802 INFO __main__: Step 5/8: Run TargetScan-vs-Ensembl transcript QC
 2026-07-27 17:39:22,802 INFO utils: 
 === STEP 5/7: QC TargetScan representative transcript overlap with Ensembl v115 ===
@@ -70,7 +70,7 @@
 2026-07-27 17:39:22,849 INFO __main__: Step 6/8: Download and parse miRBase mature annotations
 2026-07-27 17:39:22,849 INFO utils: 
 === STEP 6/7: Download miRBase mature.fa (pinned release 22.1) ===
-2026-07-27 17:39:22,849 INFO utils: Skipping miRBase mature.fa (already exists): /home/steph/projects/testing_funmirbench/FuNmiRBench/data/common_resources/mirbase/mature.fa
+2026-07-27 17:39:22,849 INFO utils: Skipping miRBase mature.fa (already exists): data/common_resources/mirbase/mature.fa
 2026-07-27 17:39:22,849 INFO utils: Parsing miRBase mature.fa
 2026-07-27 17:39:22,873 INFO utils: Parsed 48885 mature miRNAs from miRBase
 2026-07-27 17:39:22,873 INFO __main__: Step 7/8: Build human miRNA annotations
@@ -96,7 +96,7 @@
 2026-07-27 17:40:24,961 INFO utils:   ENST00000600805.1 -> ENSG00000268509 -> ENSG00000233912
 2026-07-27 17:40:24,961 INFO utils:   ENST00000326958.1 -> ENSG00000181495 -> ENSG00000113389
 2026-07-27 17:40:24,961 INFO utils:   ENST00000399540.2 -> ENSG00000215067 -> ENSG00000267532
-2026-07-27 17:40:40,835 INFO utils: targetscan -> wrote 6853870 unique gene-miRNA rows from 6853870 kept transcript-level rows; output=/home/steph/projects/testing_funmirbench/FuNmiRBench/data/predictions/targetscan/targetscan_standardized.tsv
+2026-07-27 17:40:40,835 INFO utils: targetscan -> wrote 6853870 unique gene-miRNA rows from 6853870 kept transcript-level rows; output=data/predictions/targetscan/targetscan_standardized.tsv
 2026-07-27 17:40:41,445 INFO utils: 
 === FINAL STATISTICS ===
 2026-07-27 17:40:48,876 INFO utils: targetscan: 6853870 rows | 17325 unique genes | 2427 unique miRNAs

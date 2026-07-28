@@ -6,7 +6,7 @@
 2026-07-27 17:17:30,980 INFO miraw_utils: Using cached miRBase 22.1 mature.fa resource: data/common_resources/mirbase/mature.fa
 2026-07-27 17:17:30,981 INFO miraw_utils: Using cached Ensembl release 115 Homo sapiens GTF: data/common_resources/ensembl/Homo_sapiens.GRCh38.115.gtf.gz
 2026-07-27 17:17:30,981 INFO miraw_pipeline: Step 3/8: Load and validate raw miRAW prediction rows
-2026-07-27 17:19:40,927 INFO miraw_utils: Loaded 49223901 miRAW prediction rows generated against Ensembl release 112 and miRBase release 22.1 from /home/steph/projects/testing_funmirbench/FuNmiRBench/pipelines/standardized_predictors/miraw/data/helios_summary.tsv.gz
+2026-07-27 17:19:40,927 INFO miraw_utils: Loaded 49223901 miRAW prediction rows generated against Ensembl release 112 and miRBase release 22.1 from pipelines/standardized_predictors/miraw/data/helios_summary.tsv.gz
 2026-07-27 17:20:29,363 INFO miraw_utils: Validate parsed miRAW rows: 49223901 -> 49223901 rows
 2026-07-27 17:20:52,821 INFO miraw_utils: Drop exact duplicate parsed miRAW rows: 49223901 -> 49223901 rows
 2026-07-27 17:20:56,741 INFO miraw_pipeline: Step 4/8: Build miRNA-name-to-MIMAT mapping from miRBase 22.1
@@ -22,6 +22,6 @@
 2026-07-27 17:22:36,230 INFO miraw_utils: Validate standardized miRAW identifiers and values: 48041969 -> 48041969 rows
 2026-07-27 17:23:08,797 INFO miraw_utils: Finalize one highest-scoring row per Ensembl_ID-miRNA_ID pair: 48041969 -> 48041969 rows
 2026-07-27 17:23:15,843 INFO miraw_utils: Final miRAW table uses Ensembl release 115 gene IDs/names and miRBase release 22.1 mature miRNA names/accessions
-2026-07-27 17:24:55,586 INFO miraw_pipeline: Output written to: /home/steph/projects/testing_funmirbench/FuNmiRBench/data/predictions/miraw/miraw_standardized.tsv
+2026-07-27 17:24:55,586 INFO miraw_pipeline: Output written to: data/predictions/miraw/miraw_standardized.tsv
 2026-07-27 17:24:55,587 INFO miraw_pipeline: Rows written: 48041969
 2026-07-27 17:24:55,591 INFO miraw_pipeline: Relative output path: data/predictions/miraw/miraw_standardized.tsv

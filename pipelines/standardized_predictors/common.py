@@ -50,6 +50,18 @@ def resolve_cli_path(path: str | Path, root: Path | None = None) -> Path:
     return (root or ROOT) / value
 
 
+def display_path(path: str | Path, *, root: Path | None = None) -> Path:
+    """Return a repository-relative path for portable log messages."""
+    value = Path(path)
+    if not value.is_absolute():
+        return value
+
+    try:
+        return value.resolve().relative_to((root or ROOT).resolve())
+    except ValueError:
+        return value
+
+
 def add_log_level_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--log-level",
@@ -155,5 +167,5 @@ def write_standardized_table(
     validate_standardized_table(df, required_columns=columns)
     df.loc[:, columns].to_csv(output, sep="\t", index=False)
     if logger is not None:
-        logger.info("Output written to: %s", output)
+        logger.info("Output written to: %s", display_path(output))
         logger.info("Rows written: %d", len(df))

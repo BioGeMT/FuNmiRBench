@@ -13,6 +13,8 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
+from common import display_path
+
 logger = logging.getLogger(__name__)
 
 MIRBASE_RELEASE = "22.1"
@@ -107,8 +109,8 @@ def step1_download_targetscan_files(
         "Gene_info.txt": resources_dir / "Gene_info.txt",
     }
 
-    logger.info("✔ TargetScan prediction data ready in %s", data_dir)
-    logger.info("✔ TargetScan supporting resources ready in %s", resources_dir)
+    logger.info("✔ TargetScan prediction data ready in %s", display_path(data_dir))
+    logger.info("✔ TargetScan supporting resources ready in %s", display_path(resources_dir))
     return expected
 
 
@@ -321,8 +323,8 @@ def step4_build_and_cache_ensembl115_tables(
             writer.writerow({"gene_id": gene_id, "gene_name": gene_name})
 
     logger.info("Wrote cached Ensembl tables:")
-    logger.info("  - %s", tx2gene_path)
-    logger.info("  - %s", gene2name_path)
+    logger.info("  - %s", display_path(tx2gene_path))
+    logger.info("  - %s", display_path(gene2name_path))
 
     return {"tx_to_gene": tx_to_gene, "gene_to_name": gene_to_name}
 
@@ -410,13 +412,13 @@ def step6_download_mirbase_mature(
     dest = pathlib.Path(destination).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and not force:
-        logger.info("Skipping miRBase mature.fa (already exists): %s", dest)
+        logger.info("Skipping miRBase mature.fa (already exists): %s", display_path(dest))
         return dest
 
     logger.info("Downloading %s", MIRBASE_MATURE_URL)
     download_url(url=MIRBASE_MATURE_URL, dest=dest)
     assert_fasta(dest)
-    logger.info("Downloaded miRBase mature.fa -> %s", dest)
+    logger.info("Downloaded miRBase mature.fa -> %s", display_path(dest))
     return dest
 
 
@@ -709,7 +711,7 @@ def step_write_standardized_predictions(
         PREDICTOR_NAME,
         len(unique_rows),
         stats["rows_after_filters"],
-        output_path,
+        display_path(output_path),
     )
 
 

@@ -14,6 +14,7 @@ from common import (  # noqa: E402
     MIRBASE_MATURE_RELATIVE_PATH,
     add_standard_pipeline_args,
     configure_file_logging,
+    display_path,
     log_step,
     repo_root,
     resolve_cli_path,
@@ -56,7 +57,7 @@ def main() -> None:
     args.log_file = resolve_cli_path(args.log_file, root)
 
     configure_file_logging(args.log_file, args.log_level)
-    logger.info("Logging to file: %s", args.log_file)
+    logger.info("Logging to file: %s", display_path(args.log_file))
 
     total_steps = 8
 
