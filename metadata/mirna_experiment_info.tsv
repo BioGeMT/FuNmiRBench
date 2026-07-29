@@ -19,7 +19,7 @@ GSE175729	hsa-miR-1915-3p	Homo sapiens	Kelly	Peripheral nervous system	RNA-seq	O
 GSE175729	hsa-miR-380-3p	Homo sapiens	Kelly	Peripheral nervous system	RNA-seq	Overexpression	data/experiments/processed/GSE175729_OE_miR-380-3p_Kelly.tsv
 GSE175729	hsa-miR-485-3p	Homo sapiens	Kelly	Peripheral nervous system	RNA-seq	Overexpression	data/experiments/processed/GSE175729_OE_miR-485-3p_Kelly.tsv
 GSE175729	hsa-miR-99b-5p	Homo sapiens	Kelly	Peripheral nervous system	RNA-seq	Overexpression	data/experiments/processed/GSE175729_OE_miR-99b-5p_Kelly.tsv
-GSE179399	hsa-miR-3662	Homo sapiens	LNCaP clone FGC	Prostate	RNA-seq	Knockout	data/experiments/processed/GSE179399_KO_miR-3662_LNCaP.tsv
+GSE118315   hsa-miR-124-3p  Homo sapiens	iNGN	NA	RNA-seq	Knockout	data/experiments/processed/GSE118315_KO_miR-124-3p_iNGN.tsv																
 GSE199332	hsa-miR-27a-3p	Homo sapiens	HepG2	Liver	RNA-seq	Knockout	data/experiments/processed/GSE199332_KO_miR-27a-3p_HepG2.tsv
 GSE202135	hsa-miR-130a-3p	Homo sapiens	Primary isolated cells	Bone Marrow	RNA-seq	Overexpression	data/experiments/processed/GSE202135_OE_miR-130a-3p_NA.tsv
 GSE202135	hsa-miR-130b-3p	Homo sapiens	Primary isolated cells	Bone Marrow	RNA-seq	Overexpression	data/experiments/processed/GSE202135_OE_miR-130b-3p_NA.tsv
