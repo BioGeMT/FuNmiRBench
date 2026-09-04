@@ -1,4 +1,4 @@
-# FuNmiRBench
+# fun-miRBench
 
 Benchmark functional miRNA target predictors against differential-expression tables.
 
